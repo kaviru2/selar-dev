@@ -4,7 +4,10 @@
 // This is THE core table for the pedagogical intervention study.
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // SuggestionStatus represents the state of a semantic match suggestion.
 type SuggestionStatus string
@@ -43,11 +46,12 @@ type LinkSuggestion struct {
 	RespondedAt     *time.Time       `json:"responded_at,omitempty"`
 
 	// Joined fields for API responses
-	SrcText   string `json:"src_text,omitempty"`
-	TgtText   string `json:"tgt_text,omitempty"`
-	SrcDoc    string `json:"src_doc,omitempty"`
-	TgtDoc    string `json:"tgt_doc,omitempty"`
-	TgtPage   int    `json:"tgt_page,omitempty"`
+	SrcText     string          `json:"src_text,omitempty"`
+	TgtText     string          `json:"tgt_text,omitempty"`
+	SrcDoc      string          `json:"src_doc,omitempty"`
+	TgtDoc      string          `json:"tgt_doc,omitempty"`
+	TgtPage     int             `json:"tgt_page,omitempty"`
+	SrcBBoxes   json.RawMessage `json:"src_bboxes,omitempty"`
 }
 
 // SuggestionResponse is the payload for confirming/rejecting a suggestion.
