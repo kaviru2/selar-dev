@@ -72,7 +72,8 @@ async function handleProxyRequest(
     };
 
     if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = await request.text();
+      init.body = request.body;
+      (init as any).duplex = "half"; // Required for Node 18+ streaming request bodies
     }
 
     const res = await fetch(targetUrl, init);

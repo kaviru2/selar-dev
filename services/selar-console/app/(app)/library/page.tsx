@@ -4,6 +4,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { getDocuments, getDocumentStats, type Document } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import Link from "next/link";
 import { UploadButton } from "@/components/UploadButton";
 
 export default async function LibraryPage() {
@@ -79,30 +80,35 @@ export default async function LibraryPage() {
             Your library is empty. Upload a PDF or connect Google Drive to begin.
           </div>
         ) : docs.map((d) => (
-          <div key={d.id} className="doc-row">
-            <span className={`dot ${d.status}`} />
-            <span className="title">{d.title}</span>
-            <span className="authors">{d.authors || "Unknown"}</span>
-            <span className="mono">{d.year || "—"}</span>
-            <span className="mono">{d.page_count}p</span>
-            <span>
-              {d.status === "ready" ? (
-                <span className="mono" style={{ color: "var(--accent-2)" }}>ready</span>
-              ) : d.status === "processing" ? (
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div className="prog" style={{ height: 3, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden", width: 80 }}>
-                    <div className="fill" style={{ width: `${(d.progress ?? 0) * 100}%`, height: "100%", background: "var(--accent)" }} />
-                  </div>
-                  <span className="mono" style={{ fontSize: 10 }}>{Math.round((d.progress ?? 0) * 100)}%</span>
-                </span>
-              ) : (
-                <span className="mono" style={{ color: "var(--ink-4)" }}>{d.status}</span>
-              )}
-            </span>
-            <button className="icon-btn" style={{ width: 22, height: 22, borderRadius: 3, border: "none", background: "transparent", color: "var(--ink-3)", cursor: "pointer", display: "grid", placeItems: "center" }}>
-              <Icon name="more" size={12} />
-            </button>
-          </div>
+          <Link key={d.id} href={`/reader?docId=${d.id}`} style={{ textDecoration: "none", color: "inherit", display: "contents" }}>
+            <div className="doc-row" style={{ cursor: "pointer" }}>
+              <span className={`dot ${d.status}`} />
+              <span className="title">{d.title}</span>
+              <span className="authors">{d.authors || "Unknown"}</span>
+              <span className="mono">{d.year || "—"}</span>
+              <span className="mono">{d.page_count}p</span>
+              <span>
+                {d.status === "ready" ? (
+                  <span className="mono" style={{ color: "var(--accent-2)" }}>ready</span>
+                ) : d.status === "processing" ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div className="prog" style={{ height: 3, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden", width: 80 }}>
+                      <div className="fill" style={{ width: `${(d.progress ?? 0) * 100}%`, height: "100%", background: "var(--accent)" }} />
+                    </div>
+                    <span className="mono" style={{ fontSize: 10 }}>{Math.round((d.progress ?? 0) * 100)}%</span>
+                  </span>
+                ) : (
+                  <span className="mono" style={{ color: "var(--ink-4)" }}>{d.status}</span>
+                )}
+              </span>
+              <button 
+                className="icon-btn" 
+                style={{ width: 22, height: 22, borderRadius: 3, border: "none", background: "transparent", color: "var(--ink-3)", cursor: "pointer", display: "grid", placeItems: "center" }}
+              >
+                <Icon name="more" size={12} />
+              </button>
+            </div>
+          </Link>
         ))}
       </div>
     </div>
