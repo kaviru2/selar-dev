@@ -34,7 +34,8 @@ export type IconName =
   | "highlight"
   | "zoom_in"
   | "zoom_out"
-  | "eye";
+  | "eye"
+  | "trash";
 
 interface IconProps {
   name: IconName;
@@ -170,6 +171,13 @@ export function Icon({ name, size = 14, style, className }: IconProps) {
           d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"
         />
         <circle cx="8" cy="8" r="2" {...p} />
+      </>
+    ),
+    trash: (
+      <>
+        <path {...p} d="M4.5 4v10a1 1 0 001 1h5a1 1 0 001-1V4" />
+        <path {...p} d="M3 4h10 M6 4v-1.5a1 1 0 011-1h2a1 1 0 011 1V4" />
+        <path {...p} d="M7 6v6 M9 6v6" />
       </>
     ),
   };
