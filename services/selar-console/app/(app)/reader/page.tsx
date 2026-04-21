@@ -9,13 +9,12 @@ import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { clientFetch, type LinkSuggestion } from "@/lib/api";
 import { useSelar } from "@/lib/context";
+import dynamic from "next/dynamic";
 
-import { Document, Page, pdfjs } from "react-pdf";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
-
-// Configure react-pdf worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
+  ssr: false,
+  loading: () => <div style={{ padding: 40, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-4)" }}>Initializing PDF engine...</div> 
+});
 
 const RELATION_LABELS: Record<string, string> = {
   related_to: "related to",
@@ -25,11 +24,16 @@ const RELATION_LABELS: Record<string, string> = {
   extends: "extends",
 };
 
+import { useSearchParams } from 'next/navigation';
+
 export default function ReaderPage() {
   const { user } = useSelar();
-  const [docId, setDocId] = useState("backprop"); // Fallback mock ID
+  const searchParams = useSearchParams();
+  const urlDocId = searchParams.get('docId') || "backprop";
   
+  const [docId, setDocId] = useState(urlDocId); // Use URL param falling back to mock
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
+  const [annotations, setAnnotations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
@@ -42,18 +46,45 @@ export default function ReaderPage() {
     if (!docId) return;
     setLoading(true);
     // 0 fetches all pages for now
-    clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`)
-      .then((data) => {
-        setSuggestions(data || []);
+    Promise.all([
+      clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`),
+      clientFetch<any[]>(`/api/documents/${docId}/annotations`)
+    ])
+      .then(([sData, aData]) => {
+        setSuggestions(sData || []);
+        setAnnotations(aData || []);
       })
       .catch((err) => {
         console.error("Failed to fetch suggestions", err);
         setSuggestions([]);
+        setAnnotations([]);
       })
       .finally(() => {
         setLoading(false);
       });
   }, [docId]);
+
+  const handleCreateAnnotation = async (type: string, bboxes: any[], color: string, pageIndex: number, comment: string = "") => {
+    try {
+      const resp = await clientFetch<any>(`/api/annotations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_id: docId,
+          page: pageIndex,
+          bbox: JSON.stringify(bboxes),
+          type,
+          color,
+          comment
+        })
+      });
+      if (resp && resp.id) {
+         setAnnotations(prev => [...prev, resp]);
+      }
+    } catch (err) {
+      console.error("Failed to save annotation", err);
+    }
+  };
 
   // Handle responding to a suggestion
   const respond = async (id: string, action: "confirmed" | "rejected" | "relabeled") => {
@@ -71,11 +102,6 @@ export default function ReaderPage() {
       console.error("Failed to submit response", err);
     }
   };
-
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages);
-    setPageNumber(1);
-  }
 
   const pendingCount = suggestions.filter((m) => m.status === "pending").length;
   const confirmedCount = suggestions.filter((m) => m.status === "confirmed").length;
@@ -133,38 +159,16 @@ export default function ReaderPage() {
             padding: "20px 0",
             background: "var(--bg-2)"
         }}>
-          <div style={{
-            transform: `scale(${zoom})`,
-            transformOrigin: "top center",
-            transition: "transform 0.12s",
-            position: "relative" // Setup for the BBox highlight canvas overlay
-          }}>
-            <Document
-              file={`/api/documents/${docId}/pdf`}
-              onLoadSuccess={onDocumentLoadSuccess}
-              loading={<div style={{ padding: 40, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-4)" }}>Loading PDF stream...</div>}
-              error={
-                <div style={{ padding: 40, textAlign: "center", color: "var(--ink-4)" }}>
-                  <p>Document not available.</p>
-                  <p style={{ fontSize: "var(--t-sm)", marginTop: 8 }}>Use the upload feature to process a real PDF into the semantic pipeline.</p>
-                </div>
-              }
-            >
-              <Page 
-                pageNumber={pageNumber} 
-                className="pdf-page-shadow" 
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
-              />
-            </Document>
-
-            {/* Bounding Box Highlights Canvas (Rendered precisely over the react-pdf page) */}
-            {annotationsOn && (
-               <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
-                   {/* We will map pgvector chunk bboxes into div structures here. e.g. <div style={{position: 'absolute', top: bbox.y, left: bbox.x, width: bbox.w, height: bbox.h, background: 'rgba(235,164,15,0.2)' }} /> */}
-               </div>
-            )}
-          </div>
+          <PdfCanvas 
+            docId={docId} 
+            zoom={zoom} 
+            pageNumber={pageNumber} 
+            annotationsOn={annotationsOn} 
+            suggestions={suggestions}
+            annotations={annotations}
+            onCreateAnnotation={handleCreateAnnotation}
+            onPageLoad={setNumPages} 
+          />
         </div>
       </div>
 
