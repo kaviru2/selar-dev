@@ -6,6 +6,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -200,6 +201,10 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete document"})
 		return
 	}
+	
+	// Clean up local temp file storage to save space
+	_ = os.Remove("/tmp/selar_uploads/" + id + ".pdf")
+	
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

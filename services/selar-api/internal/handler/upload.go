@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -73,8 +74,8 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Insert Document into Database
 	doc := model.Document{
-		ID:        docID,
-		UserID:    userID,
+		ID:        docID.String(),
+		UserID:    userID.String(),
 		Title:     header.Filename,
 		Status:    "processing",
 		Progress:  0.01, // Mock progress to trigger pipeline visualization
@@ -89,8 +90,28 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Trigger async parsing logic here in the future
-	// go pipeline.ProcessPDF(docID, outPath)
+	// Rename the file to precisely match the auto-generated database UUID
+	newOutPath := filepath.Join("/tmp/selar_uploads", doc.ID+".pdf")
+	if doc.ID != docID.String() {
+		os.Rename(outPath, newOutPath)
+	}
+
+	// Trigger async parsing logic in Python Worker
+	go func() {
+		workerURL := os.Getenv("WORKER_URL")
+		if workerURL == "" {
+			workerURL = "http://localhost:8000"
+		}
+		
+		payload := fmt.Sprintf(`{"doc_id": "%s", "file_path": "%s"}`, doc.ID, newOutPath)
+		resp, err := http.Post(workerURL + "/process", "application/json", strings.NewReader(payload))
+		if err != nil {
+			fmt.Printf("Worker connection failed: %v\n", err)
+			return
+		}
+		defer resp.Body.Close()
+		fmt.Printf("Worker triggered for %s: Status %d\n", docID, resp.StatusCode)
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
