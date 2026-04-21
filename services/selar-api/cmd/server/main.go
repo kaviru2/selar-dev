@@ -80,8 +80,10 @@ func main() {
 		// Documents
 		r.Get("/documents", h.ListDocuments)
 		r.Post("/documents", h.CreateDocument)
+		r.Post("/documents/upload", h.UploadDocument)
 		r.Get("/documents/stats", h.GetDocumentStats)
 		r.Get("/documents/{id}", h.GetDocument)
+		r.Get("/documents/{docId}/pdf", h.ServeDocument)
 		r.Delete("/documents/{id}", h.DeleteDocument)
 
 		// Suggestions (per document)

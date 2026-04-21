@@ -4,6 +4,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { getDocuments, getDocumentStats, type Document } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { UploadButton } from "@/components/UploadButton";
 
 export default async function LibraryPage() {
   const token = await getAuthToken();
@@ -47,9 +48,7 @@ export default async function LibraryPage() {
         <button className="btn">
           <Icon name="drive" size={12} /> From Drive
         </button>
-        <button className="btn primary">
-          <Icon name="upload" size={12} /> Upload PDF
-        </button>
+        <UploadButton />
       </div>
 
       <div className="stats">

@@ -1,6 +1,6 @@
 // page.tsx — Reader view (hero view).
 // Three-column layout: Sidebar · Doc pane · Matches panel.
-// This is the core view where users read PDFs and review semantic suggestions.
+// Now incorporates react-pdf for true PDF rendering.
 
 "use client";
 
@@ -9,6 +9,13 @@ import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { clientFetch, type LinkSuggestion } from "@/lib/api";
 import { useSelar } from "@/lib/context";
+
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "react-pdf/dist/esm/Page/TextLayer.css";
+
+// Configure react-pdf worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const RELATION_LABELS: Record<string, string> = {
   related_to: "related to",
@@ -20,12 +27,15 @@ const RELATION_LABELS: Record<string, string> = {
 
 export default function ReaderPage() {
   const { user } = useSelar();
-  const [docId, setDocId] = useState("backprop");
+  const [docId, setDocId] = useState("backprop"); // Fallback mock ID
   
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
+
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
 
   // Fetch suggestions when docId changes
   useEffect(() => {
@@ -48,7 +58,6 @@ export default function ReaderPage() {
   // Handle responding to a suggestion
   const respond = async (id: string, action: "confirmed" | "rejected" | "relabeled") => {
     try {
-      // Optimistic update
       setSuggestions(prev => prev.map(s => 
         s.id === id ? { ...s, status: action } : s
       ));
@@ -56,13 +65,17 @@ export default function ReaderPage() {
       await clientFetch(`/api/suggestions/${id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, time_to_respond_ms: 1500 }), // Mocked 1.5s response time
+        body: JSON.stringify({ action, time_to_respond_ms: 1500 }),
       });
     } catch (err) {
       console.error("Failed to submit response", err);
-      // Ideally revert optimistic update here, skipped for brevity
     }
   };
+
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+    setPageNumber(1);
+  }
 
   const pendingCount = suggestions.filter((m) => m.status === "pending").length;
   const confirmedCount = suggestions.filter((m) => m.status === "confirmed").length;
@@ -75,9 +88,15 @@ export default function ReaderPage() {
       <div className="doc-pane">
         <div className="doc-toolbar">
           <div className="grp">
-            <button>‹</button>
-            <span className="page-indicator">4 / 14</span>
-            <button>›</button>
+            <button 
+              disabled={pageNumber <= 1}
+              onClick={() => setPageNumber(p => Math.max(1, p - 1))}
+            >‹</button>
+            <span className="page-indicator">{pageNumber} / {numPages || "?"}</span>
+            <button 
+              disabled={numPages === 0 || pageNumber >= numPages}
+              onClick={() => setPageNumber(p => Math.min(numPages, p + 1))}
+            >›</button>
           </div>
           <div className="grp">
             <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}>
@@ -106,33 +125,45 @@ export default function ReaderPage() {
           </div>
         </div>
 
-        <div
-          style={{
+        <div className="pdf-container" style={{
+            flex: 1,
+            overflow: "auto",
+            display: "flex",
+            justifyContent: "center",
+            padding: "20px 0",
+            background: "var(--bg-2)"
+        }}>
+          <div style={{
             transform: `scale(${zoom})`,
             transformOrigin: "top center",
             transition: "transform 0.12s",
-          }}
-        >
-          {/* PDF Page mock — will be replaced by react-pdf canvas + overlay layer */}
-          <div className="pdf-page">
-            <div
-              style={{
-                marginBottom: 16,
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                color: "#aaa",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
+            position: "relative" // Setup for the BBox highlight canvas overlay
+          }}>
+            <Document
+              file={`/api/documents/${docId}/pdf`}
+              onLoadSuccess={onDocumentLoadSuccess}
+              loading={<div style={{ padding: 40, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-4)" }}>Loading PDF stream...</div>}
+              error={
+                <div style={{ padding: 40, textAlign: "center", color: "var(--ink-4)" }}>
+                  <p>Document not available.</p>
+                  <p style={{ fontSize: "var(--t-sm)", marginTop: 8 }}>Use the upload feature to process a real PDF into the semantic pipeline.</p>
+                </div>
+              }
             >
-              <span>{docId}</span>
-              <span>page 4</span>
-            </div>
-            
-            <div style={{ textAlign: "center", padding: 40, color: "var(--ink-4)" }}>
-              <p>Database is empty.</p>
-              <p style={{ fontSize: "var(--t-sm)" }}>Waiting for Python ingest script to populate PDF chunks and execute AI matching.</p>
-            </div>
+              <Page 
+                pageNumber={pageNumber} 
+                className="pdf-page-shadow" 
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+              />
+            </Document>
+
+            {/* Bounding Box Highlights Canvas (Rendered precisely over the react-pdf page) */}
+            {annotationsOn && (
+               <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }}>
+                   {/* We will map pgvector chunk bboxes into div structures here. e.g. <div style={{position: 'absolute', top: bbox.y, left: bbox.x, width: bbox.w, height: bbox.h, background: 'rgba(235,164,15,0.2)' }} /> */}
+               </div>
+            )}
           </div>
         </div>
       </div>
@@ -188,7 +219,7 @@ export default function ReaderPage() {
           
           {suggestions.length === 0 && !loading && (
              <div style={{ padding: 20, textAlign: "center", color: "var(--ink-4)", fontSize: "var(--t-sm)" }}>
-               No suggestions generated yet for this document.
+               No suggestions generated yet for this page.
              </div>
           )}
 

@@ -76,12 +76,15 @@ async function handleProxyRequest(
     }
 
     const res = await fetch(targetUrl, init);
-    const data = await res.text();
+    const contentType = res.headers.get("Content-Type") || "";
 
-    return new NextResponse(data, {
+    // If it's a JSON response, we can safely read text, but for streaming/binaries
+    // it's best to return the raw body as a standard stream.
+    // However, Next.js requires returning the body directly.
+    return new NextResponse(res.body, {
       status: res.status,
       headers: {
-        "Content-Type": res.headers.get("Content-Type") || "application/json",
+        "Content-Type": contentType,
       },
     });
   } catch (error) {
