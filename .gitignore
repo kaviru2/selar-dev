@@ -15,6 +15,12 @@ lerna-debug.log*
 # Temporary/Upload files
 /tmp/
 
+# Python Environments
+venv/
+.venv/
+env/
+__pycache__/
+
 # OS metadata
 .DS_Store
 Thumbs.db
