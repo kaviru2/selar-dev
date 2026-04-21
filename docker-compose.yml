@@ -1,0 +1,63 @@
+# SELAR Docker Compose — Development Environment
+# Orchestrates three services: Postgres (with pgvector), Go API, and Next.js console.
+# Usage: docker compose up --build
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: selar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-selar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-selar_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-selar}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./services/selar-api/internal/store/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-selar}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  selar-api:
+    container_name: selar-api
+    build:
+      context: ./services/selar-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  selar-console:
+    container_name: selar-console
+    build:
+      context: ./services/selar-console
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      API_INTERNAL_URL: http://selar-api:8080
+    depends_on:
+      selar-api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
