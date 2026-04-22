@@ -6,6 +6,7 @@ import { getDocuments, getDocumentStats, type Document } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import Link from "next/link";
 import { UploadButton } from "@/components/UploadButton";
+import { DeleteDocButton } from "@/components/DeleteDocButton";
 
 export default async function LibraryPage() {
   const token = await getAuthToken();
@@ -101,12 +102,7 @@ export default async function LibraryPage() {
                   <span className="mono" style={{ color: "var(--ink-4)" }}>{d.status}</span>
                 )}
               </span>
-              <button 
-                className="icon-btn" 
-                style={{ width: 22, height: 22, borderRadius: 3, border: "none", background: "transparent", color: "var(--ink-3)", cursor: "pointer", display: "grid", placeItems: "center" }}
-              >
-                <Icon name="more" size={12} />
-              </button>
+              <DeleteDocButton docId={d.id} />
             </div>
           </Link>
         ))}
