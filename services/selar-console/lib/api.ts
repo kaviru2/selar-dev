@@ -80,6 +80,7 @@ export interface LinkSuggestion {
   src_doc: string;
   tgt_doc: string;
   tgt_page: number;
+  summary: string;
   suggested_at: string;
   responded_at: string | null;
 }

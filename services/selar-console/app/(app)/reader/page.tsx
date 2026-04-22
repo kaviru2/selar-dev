@@ -29,9 +29,9 @@ import { useSearchParams } from 'next/navigation';
 export default function ReaderPage() {
   const { user } = useSelar();
   const searchParams = useSearchParams();
-  const urlDocId = searchParams.get('docId') || "backprop";
+  const urlDocId = searchParams.get('docId') || "";
   
-  const [docId, setDocId] = useState(urlDocId); // Use URL param falling back to mock
+  const [docId, setDocId] = useState(urlDocId);
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [annotations, setAnnotations] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -229,6 +229,15 @@ export default function ReaderPage() {
 
           {suggestions.map((m) => {
             const st = m.status;
+            const relColor: Record<string, string> = {
+              prerequisite_of: "var(--accent)",
+              extends: "var(--accent-2)",
+              sub_concept_of: "var(--accent-3)",
+              contradicts: "#c0443a",
+              related_to: "var(--ink-4)",
+            };
+            const rc = relColor[m.relation] || "var(--ink-4)";
+
             return (
               <div
                 key={m.id}
@@ -236,45 +245,52 @@ export default function ReaderPage() {
                   st === "confirmed" ? " confirmed" : ""
                 }${st === "rejected" ? " rejected" : ""}`}
               >
+                {/* Row 1: Relation pill + similarity + target doc */}
                 <div className="row1">
+                  <span style={{
+                    fontSize: 9, fontFamily: "var(--font-mono)", fontWeight: 600,
+                    color: rc, border: `1px solid ${rc}`, borderRadius: 10,
+                    padding: "1px 7px", textTransform: "uppercase" as const, letterSpacing: "0.04em",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {RELATION_LABELS[m.relation] || m.relation}
+                  </span>
                   <span className="sim">{(m.similarity * 100).toFixed(0)}%</span>
                   <div className="sim-bar">
-                    <div
-                      className="fill"
-                      style={{ width: `${m.similarity * 100}%` }}
-                    />
+                    <div className="fill" style={{ width: `${m.similarity * 100}%` }} />
                   </div>
-                  <span className="src">{m.tgt_doc || "Unknown Document"}</span>
+                  <span className="src">{m.tgt_doc || "Unknown"}</span>
                 </div>
-                <div className="snippet">{m.tgt_text}</div>
+
+                {/* Row 2: AI Summary (if available) or truncated text */}
+                {m.summary ? (
+                  <div style={{
+                    fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45,
+                    margin: "6px 0 8px", fontStyle: "italic",
+                  }}>
+                    {m.summary}
+                  </div>
+                ) : (
+                  <div className="snippet">{m.tgt_text}</div>
+                )}
+
+                {/* Footer: actions + page ref */}
                 <div className="foot">
                   {st === "confirmed" ? (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 10,
-                        color: "var(--accent-2)",
-                      }}
-                    >
-                      <Icon name="check" size={11} /> confirmed ·{" "}
-                      {RELATION_LABELS[m.relation] || m.relation}
+                    <span style={{
+                      fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--accent-2)",
+                    }}>
+                      <Icon name="check" size={11} /> confirmed
                     </span>
                   ) : st === "rejected" ? (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 10,
-                        color: "var(--ink-4)",
-                      }}
-                    >
+                    <span style={{
+                      fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-4)",
+                    }}>
                       <Icon name="x" size={11} /> rejected
                     </span>
                   ) : (
                     <>
-                      <button
-                        className="confirm"
-                        onClick={() => respond(m.id, "confirmed")}
-                      >
+                      <button className="confirm" onClick={() => respond(m.id, "confirmed")}>
                         <Icon name="check" size={11} /> Confirm
                       </button>
                       <button onClick={() => respond(m.id, "rejected")}>
@@ -286,13 +302,9 @@ export default function ReaderPage() {
                     </>
                   )}
                   <div style={{ flex: 1 }} />
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--ink-4)",
-                    }}
-                  >
+                  <span style={{
+                    fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-4)",
+                  }}>
                     p.{m.tgt_page}
                   </span>
                 </div>
