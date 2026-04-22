@@ -51,6 +51,7 @@ type LinkSuggestion struct {
 	SrcDoc      string          `json:"src_doc,omitempty"`
 	TgtDoc      string          `json:"tgt_doc,omitempty"`
 	TgtPage     int             `json:"tgt_page,omitempty"`
+	Summary     string          `json:"summary,omitempty"`
 	SrcBBoxes   json.RawMessage `json:"src_bboxes,omitempty"`
 }
 

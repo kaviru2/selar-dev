@@ -159,7 +159,7 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 		        ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
 		        sc.content AS src_text, tc.content AS tgt_text,
 		        sd.title AS src_doc, td.title AS tgt_doc, tc.page_start AS tgt_page,
-		        sc.bboxes AS src_bboxes
+		        ls.summary, sc.bboxes AS src_bboxes
 		 FROM link_suggestions ls
 		 JOIN chunks sc ON ls.source_chunk_id = sc.id
 		 JOIN chunks tc ON ls.target_chunk_id = tc.id
@@ -184,7 +184,7 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 			&sg.Similarity, &sg.Relation, &sg.Status, &sg.UserLabel,
 			&sg.TimeToRespondMs, &sg.SuggestedAt, &sg.RespondedAt,
 			&sg.SrcText, &sg.TgtText, &sg.SrcDoc, &sg.TgtDoc, &sg.TgtPage,
-			&srcBBoxes,
+			&sg.Summary, &srcBBoxes,
 		); err != nil {
 			return nil, err
 		}
