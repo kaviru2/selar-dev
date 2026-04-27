@@ -1,0 +1,27 @@
+# Lefthook — Local Git Hooks
+# Runs lint, type-check, and build verification before commit and push.
+# Install: brew install lefthook (macOS) or go install github.com/evilmartians/lefthook@latest
+# Activate: lefthook install
+
+pre-commit:
+  parallel: true
+  commands:
+    go-vet:
+      root: services/selar-api/
+      run: go vet ./...
+    python-check:
+      root: services/selar-worker/
+      run: python3 -m py_compile main.py
+
+pre-push:
+  parallel: true
+  commands:
+    go-build:
+      root: services/selar-api/
+      run: go build ./...
+    console-build:
+      root: services/selar-console/
+      run: pnpm build
+    python-imports:
+      root: services/selar-worker/
+      run: python3 -c "import main"

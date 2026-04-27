@@ -1,0 +1,97 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-coverage:
+    name: Go API Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/selar-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+          cache-dependency-path: services/selar-api/go.sum
+
+      - name: Run tests with coverage
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: services/selar-api/coverage.out
+          flags: go-api
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  console-coverage:
+    name: Console Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/selar-console
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: services/selar-console/coverage/lcov.info
+          flags: console
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  worker-coverage:
+    name: Worker Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/selar-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov httpx
+
+      - name: Run tests with coverage
+        run: pytest test_main.py --cov=. --cov-report=xml:coverage.xml -v
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: services/selar-worker/coverage.xml
+          flags: worker
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

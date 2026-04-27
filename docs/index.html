@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SELAR — Semantic Linking for Active Retention</title>
+  <meta name="description" content="AI-powered PDF reader that discovers cross-document semantic connections to strengthen long-term retention.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface-2: #1a1a26;
+      --border: #2a2a3a;
+      --text: #e4e4ed;
+      --text-dim: #8888a0;
+      --accent: #6c63ff;
+      --accent-glow: rgba(108, 99, 255, 0.15);
+      --green: #34d399;
+      --orange: #fb923c;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; transition: opacity 0.2s; }
+    a:hover { opacity: 0.85; }
+
+    /* ── Nav ─────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 64px;
+      background: rgba(10, 10, 15, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    nav .logo { font-weight: 700; font-size: 1.25rem; letter-spacing: -0.02em; }
+    nav .logo span { color: var(--accent); }
+    nav ul { list-style: none; display: flex; gap: 1.5rem; }
+    nav ul a { color: var(--text-dim); font-size: 0.9rem; font-weight: 500; }
+    nav ul a:hover { color: var(--text); }
+    nav .github-link {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 1rem; border-radius: 8px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text); font-size: 0.85rem; font-weight: 500;
+    }
+
+    /* ── Hero ────────────────────────────────────────── */
+    .hero {
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; padding: 10rem 2rem 6rem;
+      background: radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 60%);
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 700; letter-spacing: -0.03em;
+      line-height: 1.1; max-width: 720px;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      margin-top: 1.5rem; font-size: 1.15rem;
+      color: var(--text-dim); max-width: 560px; line-height: 1.7;
+    }
+    .hero .badges {
+      margin-top: 2rem; display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;
+    }
+    .hero .cta {
+      margin-top: 2.5rem; display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.75rem; border-radius: 10px;
+      font-weight: 600; font-size: 0.95rem; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px var(--accent-glow); opacity: 1; }
+    .btn-outline { border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { border-color: var(--accent); background: var(--accent-glow); opacity: 1; }
+
+    /* ── Sections ────────────────────────────────────── */
+    section { padding: 5rem 2rem; max-width: 1100px; margin: 0 auto; }
+    section h2 {
+      font-size: 2rem; font-weight: 700; letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+    section h2 span { color: var(--accent); }
+    section > p { color: var(--text-dim); max-width: 640px; margin-bottom: 3rem; }
+
+    /* Features grid */
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 2rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-4px); }
+    .card .icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; margin-bottom: 1rem;
+      background: var(--accent-glow); color: var(--accent);
+    }
+    .card h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .card p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; }
+
+    /* Architecture */
+    .arch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+    .arch-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; text-align: center;
+    }
+    .arch-item .label {
+      display: inline-block; padding: 0.25rem 0.75rem; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+    .arch-item:nth-child(1) .label { background: rgba(108,99,255,0.15); color: var(--accent); }
+    .arch-item:nth-child(2) .label { background: rgba(52,211,153,0.15); color: var(--green); }
+    .arch-item:nth-child(3) .label { background: rgba(251,146,60,0.15); color: var(--orange); }
+    .arch-item h3 { font-size: 1rem; margin-bottom: 0.25rem; }
+    .arch-item p { color: var(--text-dim); font-size: 0.85rem; }
+
+    /* Quick start */
+    .quickstart {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 2rem; overflow-x: auto;
+    }
+    .quickstart pre {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.85rem; line-height: 1.8; color: var(--text-dim);
+    }
+    .quickstart .cmd { color: var(--green); }
+    .quickstart .comment { color: #555570; }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border); padding: 3rem 2rem;
+      text-align: center; color: var(--text-dim); font-size: 0.85rem;
+    }
+    footer a { color: var(--text-dim); }
+    footer .links { display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 1rem; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      nav ul { display: none; }
+      .arch-grid { grid-template-columns: 1fr; }
+      .hero { padding: 8rem 1.5rem 4rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="logo"><span>S</span>ELAR</div>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+      <li><a href="https://github.com/Kavirubc/selar-dev/blob/main/CONTRIBUTING.md">Contributing</a></li>
+    </ul>
+    <a href="https://github.com/Kavirubc/selar-dev" class="github-link">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </nav>
+
+  <section class="hero">
+    <h1>Semantic Linking for <span>Active Retention</span></h1>
+    <p>An AI-powered PDF reader that discovers cross-document connections. Every interaction is a retrieval-practice event grounded in cognitive science.</p>
+    <div class="badges">
+      <img src="https://github.com/Kavirubc/selar-dev/actions/workflows/ci.yml/badge.svg" alt="CI">
+      <img src="https://codecov.io/gh/Kavirubc/selar-dev/graph/badge.svg" alt="Coverage">
+      <img src="https://img.shields.io/github/license/Kavirubc/selar-dev?color=blue" alt="License">
+      <img src="https://img.shields.io/github/v/release/Kavirubc/selar-dev?color=green" alt="Release">
+    </div>
+    <div class="cta">
+      <a href="https://github.com/Kavirubc/selar-dev" class="btn btn-primary">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+      <a href="#quickstart" class="btn btn-outline">Get Started</a>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>Core <span>Features</span></h2>
+    <p>SELAR turns passive PDF reading into active knowledge construction. Built for researchers, designed for retention.</p>
+    <div class="features">
+      <div class="card">
+        <div class="icon">&#x1f50d;</div>
+        <h3>Semantic Link Discovery</h3>
+        <p>Automatic vector embedding of document chunks via Gemini. Bi-directional cross-document link suggestions using cosine similarity with pgvector.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f3af;</div>
+        <h3>Active Retrieval Practice</h3>
+        <p>Confirm, reject, or relabel every suggestion. Each interaction is a micro-test calibrated against spaced repetition principles.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f578;</div>
+        <h3>Knowledge Graph</h3>
+        <p>Automatic concept extraction and force-directed visualization. Explore how your papers connect at the idea level, not just the citation level.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f4c4;</div>
+        <h3>PDF Reader</h3>
+        <p>Continuous-scroll rendering with manual highlighting, annotations, and a floating popup menu for notes. Matches panel alongside your reading.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f916;</div>
+        <h3>AI Relation Classification</h3>
+        <p>Every link is classified: prerequisite_of, extends, sub_concept_of, contradicts, or related_to. With human-readable one-sentence summaries.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f4da;</div>
+        <h3>Document Library</h3>
+        <p>Upload, track processing status, view stats. Cascading cleanup on delete. Real-time progress indicators during ingestion.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <h2>Service <span>Architecture</span></h2>
+    <p>Three loosely-coupled services in a monorepo, orchestrated with Docker Compose.</p>
+    <div class="arch-grid">
+      <div class="arch-item">
+        <div class="label">Frontend</div>
+        <h3>selar-console</h3>
+        <p>Next.js 16 / TypeScript<br>Port 3000</p>
+      </div>
+      <div class="arch-item">
+        <div class="label">API</div>
+        <h3>selar-api</h3>
+        <p>Go 1.22+ / Chi Router<br>Port 8080</p>
+      </div>
+      <div class="arch-item">
+        <div class="label">AI Worker</div>
+        <h3>selar-worker</h3>
+        <p>Python 3.11+ / FastAPI<br>Port 8000</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <h2>Quick <span>Start</span></h2>
+    <p>Get SELAR running locally in under 5 minutes.</p>
+    <div class="quickstart">
+      <pre><span class="comment"># Clone and configure</span>
+<span class="cmd">git clone https://github.com/Kavirubc/selar-dev.git</span>
+<span class="cmd">cd selar-dev</span>
+<span class="cmd">cp .env.example .env.development</span>
+<span class="comment"># Edit .env.development and set GEMINI_API_KEY</span>
+
+<span class="comment"># Set up database</span>
+<span class="cmd">createdb selar</span>
+<span class="cmd">psql -d selar -c "CREATE EXTENSION IF NOT EXISTS vector;"</span>
+<span class="cmd">psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"</span>
+<span class="cmd">psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql</span>
+<span class="cmd">psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql</span>
+
+<span class="comment"># Terminal 1 — Go API</span>
+<span class="cmd">cd services/selar-api && go run cmd/server/main.go</span>
+
+<span class="comment"># Terminal 2 — Python Worker</span>
+<span class="cmd">cd services/selar-worker && pip install -r requirements.txt</span>
+<span class="cmd">python3 -m uvicorn main:app --reload --port 8000</span>
+
+<span class="comment"># Terminal 3 — Next.js Console</span>
+<span class="cmd">cd services/selar-console && pnpm install && pnpm dev</span>
+
+<span class="comment"># Open http://localhost:3000</span></pre>
+    </div>
+  </section>
+
+  <footer>
+    <div class="links">
+      <a href="https://github.com/Kavirubc/selar-dev">GitHub</a>
+      <a href="https://github.com/Kavirubc/selar-dev/blob/main/README.md">Docs</a>
+      <a href="https://github.com/Kavirubc/selar-dev/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/Kavirubc/selar-dev/blob/main/LICENSE">License</a>
+      <a href="https://github.com/Kavirubc/selar-dev/discussions">Discussions</a>
+    </div>
+    <p>Apache 2.0 License. Built by <a href="https://github.com/Kavirubc">Kavirubc</a>.</p>
+  </footer>
+
+</body>
+</html>

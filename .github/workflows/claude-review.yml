@@ -1,0 +1,45 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  review:
+    name: Claude / PR Review
+    # Skip on fork PRs (secrets unavailable) and only respond to @claude mentions on issue comments
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Review this pull request. Focus on:
+            - Correctness and logic errors
+            - Security vulnerabilities (OWASP top 10, injection, auth issues)
+            - Go idioms and error handling (selar-api)
+            - React/Next.js best practices and accessibility (selar-console)
+            - Python code quality (selar-worker)
+            - Any breaking changes to interfaces or APIs
+
+            Be concise. Group findings by severity: **Critical**, **Warning**, **Suggestion**.
+            If the PR looks good, say so briefly.
+          use_sticky_comment: true

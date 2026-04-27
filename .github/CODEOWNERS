@@ -1,0 +1,20 @@
+# CODEOWNERS — Auto-assign reviewers based on file paths.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: repository owner reviews everything
+*                                   @Kavirubc
+
+# Service-specific ownership
+services/selar-api/**               @Kavirubc
+services/selar-console/**           @Kavirubc
+services/selar-worker/**            @Kavirubc
+
+# CI/CD and repo config
+.github/**                          @Kavirubc
+docker-compose.yml                  @Kavirubc
+Makefile                            @Kavirubc
+
+# Documentation
+README.md                           @Kavirubc
+CONTRIBUTING.md                     @Kavirubc
+docs/**                             @Kavirubc

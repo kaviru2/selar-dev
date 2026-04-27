@@ -1,5 +1,15 @@
 # SELAR — Semantic Linking for Active Retention
 
+[![CI](https://github.com/Kavirubc/selar-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/Kavirubc/selar-dev/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/Kavirubc/selar-dev/graph/badge.svg)](https://codecov.io/gh/Kavirubc/selar-dev)
+[![License](https://img.shields.io/github/license/Kavirubc/selar-dev?color=blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Kavirubc/selar-dev?color=green)](https://github.com/Kavirubc/selar-dev/releases)
+[![Last Commit](https://img.shields.io/github/last-commit/Kavirubc/selar-dev)](https://github.com/Kavirubc/selar-dev/commits/main)
+[![Issues](https://img.shields.io/github/issues/Kavirubc/selar-dev)](https://github.com/Kavirubc/selar-dev/issues)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Kavirubc/selar-dev)](https://goreportcard.com/report/github.com/Kavirubc/selar-dev)
+[![Dependency Review](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml)
+
 SELAR is a web-based PDF reader that discovers semantic connections across your document library using AI-powered vector embeddings. As you read, the system surfaces candidate links between passages in different papers. You confirm, reject, or relabel each suggestion — every interaction is a retrieval-practice event grounded in cognitive science research on active retention.
 
 Built for academic research. Designed for students and researchers who read across multiple papers and want to strengthen long-term comprehension.
