@@ -1,0 +1,22 @@
+title: "Ideas and Feature Proposals"
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share an idea or proposal for SELAR. Describe the problem, your suggested approach, and any relevant context.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: Describe your idea or proposal in detail.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Any background, references, or use cases that support this idea.
+    validations:
+      required: false

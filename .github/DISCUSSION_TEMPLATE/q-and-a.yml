@@ -1,0 +1,30 @@
+title: "Questions and Answers"
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask a question about SELAR setup, usage, architecture, or development. Check the README and existing discussions before posting.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do you need help with?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of SELAR does this relate to?
+      options:
+        - Setup / Installation
+        - selar-console (frontend)
+        - selar-api (Go backend)
+        - selar-worker (Python ingestion)
+        - Database / Postgres
+        - Deployment
+        - General
+    validations:
+      required: true
