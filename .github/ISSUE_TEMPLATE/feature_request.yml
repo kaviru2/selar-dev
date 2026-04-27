@@ -1,0 +1,60 @@
+name: Feature Request
+description: Suggest a new feature or improvement for SELAR
+title: "[Feature] "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a new feature or improvement! Please provide as much detail as possible to help us understand the context.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Describe the problem or limitation that motivates this feature request. What use case is currently unsupported or awkward?
+      placeholder: "When I try to do X, it is frustrating because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature you would like to see. Be specific about the expected behavior.
+      placeholder: "I would like it if the system did Y, which would allow..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative approaches you have considered and why they are insufficient.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: services
+    attributes:
+      label: Affected Services
+      description: Which part of the system would this affect? (Select all that apply)
+      options:
+        - label: "selar-console (frontend)"
+        - label: "selar-api (Go backend)"
+        - label: "selar-worker (Python ingestion)"
+        - label: "Database / schema"
+        - label: "Documentation"
+        - label: "Other DevOps/Infrastructure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Any mockups, design references, screenshots, or related issues that provide context.
+    validations:
+      required: false
