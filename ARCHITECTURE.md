@@ -34,13 +34,6 @@ graph TB
     Worker -->|SQL| PG
     
     Console -.->|Optional Direct| Worker
-    
-    style Console fill:#61dafb,stroke:#333,color:#000
-    style API fill:#00add8,stroke:#333,color:#fff
-    style PG fill:#336791,stroke:#333,color:#fff
-    style Worker fill:#3776ab,stroke:#333,color:#fff
-    style Gemini fill:#e37400,stroke:#333,color:#fff
-    style User fill:#90ee90,stroke:#333,color:#000
 ```
 
 ## Data Flow Diagram
@@ -104,12 +97,6 @@ graph TB
     Py -->|Read/Write<br/>Embeddings<br/>Chunks| DB
     Py -->|embeddings<br/>generateText| Gemini
     Browser -->|Fetch Status<br/>Get Results| Go
-    
-    style Browser fill:#61dafb,stroke:#333,color:#000
-    style Go fill:#00add8,stroke:#333,color:#fff
-    style Py fill:#3776ab,stroke:#333,color:#fff
-    style DB fill:#336791,stroke:#333,color:#fff
-    style Gemini fill:#e37400,stroke:#333,color:#fff
 ```
 
 ## Technology Stack Summary
