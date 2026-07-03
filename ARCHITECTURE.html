@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SELAR Architecture</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            width: 100%;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+            text-wrap: balance;
+            color: #ffffff;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: #cccccc;
+            margin-bottom: 3rem;
+        }
+
+        section {
+            margin-bottom: 4rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-icon {
+            font-size: 1.8rem;
+        }
+
+        .diagram-container {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 2rem;
+            border: 2px solid #ffffff;
+            margin-bottom: 2rem;
+            overflow-x: auto;
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        .description {
+            color: #cccccc;
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.7;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1a1a1a;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #ffffff;
+        }
+
+        th {
+            background: #ffffff;
+            color: #000000;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 0.025em;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #333333;
+            font-size: 0.95rem;
+            color: #cccccc;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:nth-child(even) {
+            background-color: #0a0a0a;
+        }
+
+        code {
+            font-family: "Menlo", "Monaco", "Courier New", monospace;
+            background: #0a0a0a;
+            color: #ffffff;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.9em;
+            border: 1px solid #ffffff;
+        }
+
+        .tech-name {
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .flow-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .flow-list li {
+            padding: 0.75rem 0;
+            padding-left: 2rem;
+            position: relative;
+            color: #cccccc;
+        }
+
+        .flow-list li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #ffffff;
+            font-weight: bold;
+        }
+
+        .footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 2px solid #ffffff;
+            color: #999999;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin: 0.25rem 0;
+            background: #1a1a1a;
+            color: #ffffff;
+            border: 1px solid #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SELAR Architecture</h1>
+        <p class="subtitle">Semantic Linking for Active Retention — system design and data flow</p>
+
+        <section>
+            <h2><span class="section-icon">🏗️</span> System Architecture</h2>
+            <p class="description">
+                SELAR comprises four interconnected layers: a frontend console in Next.js, a Go REST API, an asynchronous Python worker for document processing, and PostgreSQL with pgvector for semantic search.
+            </p>
+            <div class="diagram-container">
+                <div class="mermaid">
+graph TB
+    User["👤 User<br/>Browser"]
+
+    subgraph "Frontend Layer"
+        Console["selar-console<br/>Next.js 16<br/>Port 3000<br/>TypeScript/React"]
+    end
+
+    subgraph "API Layer"
+        API["selar-api<br/>Go 1.22<br/>Port 8080<br/>Chi Router"]
+    end
+
+    subgraph "Data Layer"
+        PG["PostgreSQL 16<br/>+ pgvector<br/>Port 5432"]
+        Tables["📊 Schema:<br/>users • documents<br/>chunks • concepts<br/>link_suggestions"]
+    end
+
+    subgraph "AI/Processing Layer"
+        Worker["selar-worker<br/>Python 3.11+<br/>Port 8000<br/>FastAPI"]
+        Gemini["🤖 Google Gemini API<br/>embedding-001<br/>3-flash-preview"]
+    end
+
+    User -->|Browser| Console
+    Console -->|HTTP/REST| API
+    API -->|SQL Queries| PG
+    PG --> Tables
+
+    API -->|Enqueue Task| Worker
+    Worker -->|HTTP| Gemini
+    Worker -->|Write Results| PG
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2><span class="section-icon">🔄</span> Data Flow: Document to Knowledge Graph</h2>
+            <p class="description">
+                From the moment a user uploads a PDF, the system orchestrates a multi-stage pipeline: ingestion, semantic analysis, link discovery, and knowledge extraction.
+            </p>
+            <div class="diagram-container">
+                <div class="mermaid">
+graph LR
+    subgraph "1. Auth & Upload"
+        Auth["Register/Login<br/>JWT issued"]
+        Upload["Upload PDF<br/>status: pending"]
+    end
+
+    subgraph "2. Document Ingestion"
+        Chunk["Chunk PDF<br/>Extract text"]
+        Embed["Generate embeddings<br/>3072 dimensions"]
+    end
+
+    subgraph "3. Link Discovery"
+        Search["pgvector<br/>similarity search"]
+        Suggest["Generate matches<br/>Candidate pairs"]
+    end
+
+    subgraph "4. User Feedback"
+        Confirm["Confirm/Reject<br/>Retrieval practice"]
+    end
+
+    subgraph "5. Knowledge Graph"
+        Extract["Extract concepts<br/>Build relationships"]
+        Visualize["Visualize graph<br/>Explore patterns"]
+    end
+
+    Auth -->|selar-console| Upload
+    Upload -->|selar-api<br/>enqueue| Chunk
+    Chunk -->|gemini-api| Embed
+    Embed -->|pgvector| Search
+    Search -->|selar-api| Suggest
+    Suggest -->|UI| Confirm
+    Confirm -->|feedback loop| Extract
+    Extract -->|graph view| Visualize
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2><span class="section-icon">⚙️</span> Component Interactions</h2>
+            <p class="description">
+                The API layer orchestrates all operations, serving as the single source of truth. The worker processes documents asynchronously and communicates results back to the database. The console queries the API for user data, documents, and suggestion status.
+            </p>
+            <div class="diagram-container">
+                <div class="mermaid">
+graph TB
+    subgraph "Client Layer"
+        Browser["🌐 Browser<br/>selar-console"]
+    end
+
+    subgraph "Service Layer"
+        Go["REST API<br/>selar-api"]
+        Py["Async Worker<br/>selar-worker"]
+    end
+
+    subgraph "Data Layer"
+        DB["🗄️ PostgreSQL<br/>+ pgvector"]
+    end
+
+    subgraph "External Services"
+        Gemini["🤖 Google Gemini"]
+    end
+
+    Browser -->|GET/POST<br/>JWT Auth| Go
+    Go -->|SQL<br/>Query/Mutate| DB
+    Go -->|Enqueue<br/>Job| Py
+    Py -->|embedding()<br/>generateText()| Gemini
+    Py -->|INSERT/UPDATE<br/>Chunks + Embeddings| DB
+    Browser -->|Poll Status<br/>WebSocket| Go
+    DB -.->|Read<br/>Vector Search| Py
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2><span class="section-icon">📋</span> Technology Stack</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Layer</th>
+                        <th>Service</th>
+                        <th>Stack</th>
+                        <th>Port</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Frontend</td>
+                        <td><span class="tech-name">selar-console</span></td>
+                        <td><span class="badge">Next.js 16</span> TypeScript, React</td>
+                        <td><code>3000</code></td>
+                        <td>PDF reader UI, matches panel, graph visualization</td>
+                    </tr>
+                    <tr>
+                        <td>API</td>
+                        <td><span class="tech-name">selar-api</span></td>
+                        <td><span class="badge">Go 1.22</span> Chi, JWT</td>
+                        <td><code>8080</code></td>
+                        <td>REST endpoints, auth, CRUD, business logic</td>
+                    </tr>
+                    <tr>
+                        <td>Worker</td>
+                        <td><span class="tech-name">selar-worker</span></td>
+                        <td><span class="badge">Python 3.11+</span> FastAPI</td>
+                        <td><code>8000</code></td>
+                        <td>PDF chunking, embeddings, link generation</td>
+                    </tr>
+                    <tr>
+                        <td>Database</td>
+                        <td><span class="tech-name">PostgreSQL</span></td>
+                        <td><span class="badge">PostgreSQL 16</span> + pgvector</td>
+                        <td><code>5432</code></td>
+                        <td>User data, documents, 3072-dim embeddings, concept graph</td>
+                    </tr>
+                    <tr>
+                        <td>External</td>
+                        <td><span class="tech-name">Gemini API</span></td>
+                        <td><span class="badge">Google AI Studio</span></td>
+                        <td>—</td>
+                        <td>Text embeddings and generation</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2><span class="section-icon">🔑</span> Key Features</h2>
+            <ul class="flow-list">
+                <li><strong>JWT Authentication:</strong> Secure session management in selar-api</li>
+                <li><strong>Async Document Processing:</strong> Worker handles CPU-intensive ingestion without blocking the API</li>
+                <li><strong>Vector Embeddings:</strong> 3072-dimensional vectors stored in pgvector for semantic similarity search</li>
+                <li><strong>Active Retrieval Practice:</strong> User confirms/rejects suggestions to strengthen learning through interaction</li>
+                <li><strong>Knowledge Graph Extraction:</strong> Concepts and relationships extracted from documents and presented visually</li>
+                <li><strong>Horizontal Scalability:</strong> Worker can be load-balanced; API is stateless; database is the single source of truth</li>
+            </ul>
+        </section>
+
+        <div class="footer">
+            <p>See <code>ARCHITECTURE.md</code> for Markdown version with detailed diagrams.</p>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#1a1a1a',
+                primaryTextColor: '#ffffff',
+                primaryBorderColor: '#ffffff',
+                lineColor: '#ffffff',
+                secondBkgColor: '#1a1a1a',
+                tertiaryColor: '#2a2a2a'
+            },
+            securityLevel: 'loose'
+        });
+        mermaid.contentLoaded();
+    </script>
+</body>
+</html>
