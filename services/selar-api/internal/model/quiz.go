@@ -59,10 +59,10 @@ type QuizAttempt struct {
 
 // QuizResponse records a single answer in an attempt.
 type QuizResponse struct {
-	ID              string `json:"id"`
-	AttemptID       string `json:"attempt_id"`
-	QuestionID      string `json:"question_id"`
-	UserAnswer      string `json:"user_answer,omitempty"`
-	IsCorrect       *bool  `json:"is_correct,omitempty"`
-	TimeToAnswerMs  int    `json:"time_to_answer_ms"`
+	ID             string `json:"id"`
+	AttemptID      string `json:"attempt_id"`
+	QuestionID     string `json:"question_id"`
+	UserAnswer     string `json:"user_answer,omitempty"`
+	IsCorrect      *bool  `json:"is_correct,omitempty"`
+	TimeToAnswerMs int    `json:"time_to_answer_ms"`
 }

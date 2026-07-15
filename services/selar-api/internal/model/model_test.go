@@ -188,6 +188,45 @@ func TestSuggestionResponseJSON(t *testing.T) {
 	}
 }
 
+func TestMentalLinkTypeConstants(t *testing.T) {
+	relations := []model.MentalLinkType{
+		model.MentalLinkConceptOverlap,
+		model.MentalLinkClaimExtension,
+		model.MentalLinkAssumptionConflict,
+		model.MentalLinkQuestionResolution,
+	}
+	expected := []string{"concept_overlap", "claim_extension", "assumption_conflict", "question_resolution"}
+	for index, relation := range relations {
+		if string(relation) != expected[index] {
+			t.Errorf("MentalLinkType[%d]: got %q, want %q", index, relation, expected[index])
+		}
+	}
+}
+
+func TestDocumentMentalModelJSON(t *testing.T) {
+	mentalModel := model.DocumentMentalModel{
+		ID:            "model-1",
+		DocumentID:    "doc-1",
+		MainClaim:     "Retrieval practice improves delayed recall.",
+		KeyConcepts:   []string{"retrieval practice", "delayed recall"},
+		Assumptions:   []string{"Effortful recall strengthens memory."},
+		OpenQuestions: []string{"How long does the effect persist?"},
+		Domain:        "learning science",
+		Status:        model.MentalModelReady,
+	}
+	data, err := json.Marshal(mentalModel)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	var decoded model.DocumentMentalModel
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if decoded.MainClaim != mentalModel.MainClaim || len(decoded.KeyConcepts) != 2 {
+		t.Fatalf("Mental model did not survive JSON round-trip: %#v", decoded)
+	}
+}
+
 // helpers
 
 func containsField(jsonStr, field string) bool {

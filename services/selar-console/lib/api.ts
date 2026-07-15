@@ -2,11 +2,6 @@
 // Server-side calls use the internal Docker network URL;
 // client-side calls go through Next.js API routes which proxy with httpOnly cookie.
 
-const API_BASE =
-  typeof window === "undefined"
-    ? process.env.API_INTERNAL_URL || "http://localhost:8080"
-    : "";  // Client-side: use relative paths through Next.js API routes
-
 interface ApiError {
   error: string;
 }
@@ -83,6 +78,7 @@ export interface LinkSuggestion {
   summary: string;
   suggested_at: string;
   responded_at: string | null;
+  src_bboxes: Array<{ x: number; y: number; w: number; h: number }> | string;
 }
 
 // --- Concept types ---
@@ -92,6 +88,9 @@ export interface Concept {
   user_id: string;
   name: string;
   description: string;
+  state: "candidate" | "supported" | "confirmed" | "rejected" | "archived";
+  model_version?: string;
+  prompt_version?: string;
   created_at: string;
 }
 
@@ -102,13 +101,101 @@ export interface ConceptEdge {
   target_concept_id: string;
   relation: string;
   created_via: string;
+  state: "candidate" | "supported" | "confirmed" | "rejected" | "archived";
+  confidence: number;
   confirmed_at: string | null;
   created_at: string;
 }
 
 export interface GraphData {
-  nodes: Concept[];
-  edges: ConceptEdge[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export type GraphNodeType = "concept" | "document" | "claim" | "assumption" | "question";
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  description: string;
+  node_type: GraphNodeType;
+  state: string;
+  document_id?: string;
+  document_title?: string;
+  confidence?: number;
+  created_at: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  state: string;
+  confidence?: number;
+  created_via: string;
+  explanation?: string;
+}
+
+// --- Runtime mental-model types ---
+
+export type MentalLinkType =
+  | "concept_overlap"
+  | "claim_extension"
+  | "assumption_conflict"
+  | "question_resolution";
+
+export interface DocumentMentalModel {
+  id: string;
+  document_id: string;
+  user_id: string;
+  document_title: string;
+  version: number;
+  main_claim: string;
+  key_concepts: string[];
+  assumptions: string[];
+  open_questions: string[];
+  domain: string;
+  model_version: string;
+  prompt_version: string;
+  status: "draft" | "ready" | "failed" | "superseded";
+  generated_at: string;
+}
+
+export interface MentalModelLink {
+  id: string;
+  user_id: string;
+  source_model_id: string;
+  target_model_id: string;
+  source_document_id: string;
+  target_document_id: string;
+  source_document_title: string;
+  target_document_title: string;
+  link_type: MentalLinkType;
+  similarity: number;
+  confidence: number;
+  bridge_explanation: string;
+  source_evidence_chunk_id?: string;
+  target_evidence_chunk_id?: string;
+  source_evidence?: string;
+  target_evidence?: string;
+  status: "candidate" | "confirmed" | "rejected" | "relabeled" | "archived";
+  created_via: string;
+  user_label?: string;
+  suggested_at: string;
+  responded_at?: string;
+}
+
+export interface LearnerConceptState {
+  user_id: string;
+  concept_id: string;
+  concept_name: string;
+  mastery_estimate: number;
+  recall_probability: number;
+  half_life_seconds: number;
+  evidence_count: number;
+  uncertainty: number;
+  updated_at: string;
 }
 
 // --- Annotation types ---
@@ -119,7 +206,7 @@ export interface Annotation {
   document_id: string;
   chunk_id: string | null;
   page: number;
-  bbox: Record<string, number>;
+  bbox: Array<{ x: number; y: number; w: number; h: number }> | string;
   color: "wheat" | "yellow" | "coral" | "sage";
   type: "highlight" | "underline" | "note" | "suggestion";
   comment: string;

@@ -7,11 +7,14 @@ import "time"
 
 // Concept represents a named concept extracted from document chunks.
 type Concept struct {
-	ID          string    `json:"id"`
-	UserID      string    `json:"user_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description,omitempty"`
+	State         string    `json:"state"`
+	ModelVersion  string    `json:"model_version,omitempty"`
+	PromptVersion string    `json:"prompt_version,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // ChunkConcept links chunks to the concepts they mention.
@@ -38,6 +41,8 @@ type ConceptEdge struct {
 	TargetConceptID string         `json:"target_concept_id"`
 	Relation        RelationType   `json:"relation"`
 	CreatedVia      EdgeCreatedVia `json:"created_via"`
+	State           string         `json:"state"`
+	Confidence      float32        `json:"confidence"`
 	ConfirmedAt     *time.Time     `json:"confirmed_at,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
 }

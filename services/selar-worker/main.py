@@ -31,7 +31,7 @@ class ProcessRequest(BaseModel):
     file_path: str
 
 
-def safe_parse_json(text: str) -> dict:
+def safe_parse_json(text: str) -> Any:
     """Robustly extract JSON from LLM output that may be wrapped in markdown."""
     text = text.strip()
     # Strip markdown code fences
@@ -42,13 +42,13 @@ def safe_parse_json(text: str) -> dict:
     if text.endswith("```"):
         text = text[:-3]
     text = text.strip()
-    
+
     # Try direct parse first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    
+
     # Regex fallback: find the first complete JSON object
     match = re.search(r'\{.*\}', text, re.DOTALL)
     if match:
@@ -56,8 +56,44 @@ def safe_parse_json(text: str) -> dict:
             return json.loads(match.group())
         except json.JSONDecodeError:
             pass
-    
+
     return {}
+
+
+def text_items(value: Any, key: str = "text") -> List[str]:
+    """Normalize structured or plain-string LLM fields into non-empty text."""
+    if not isinstance(value, list):
+        return []
+    items: List[str] = []
+    for item in value:
+        text = item.get(key, "") if isinstance(item, dict) else item
+        if isinstance(text, str) and text.strip():
+            items.append(text.strip())
+    return items
+
+
+def normalize_mental_model(payload: Any) -> Dict[str, Any]:
+    """Validate the stable article mental-model fields used by SELAR."""
+    if not isinstance(payload, dict):
+        payload = {}
+    concept_objects: List[Dict[str, Any]] = []
+    for item in payload.get("key_concepts", []):
+        if isinstance(item, str) and item.strip():
+            concept_objects.append({"name": item.strip(), "description": "", "evidence_chunk_index": 0})
+        elif isinstance(item, dict) and str(item.get("name", "")).strip():
+            concept_objects.append({
+                "name": str(item.get("name", "")).strip()[:250],
+                "description": str(item.get("description", "")).strip(),
+                "evidence_chunk_index": item.get("evidence_chunk_index", 0),
+            })
+    return {
+        "main_claim": str(payload.get("main_claim", "")).strip(),
+        "key_concepts": concept_objects[:12],
+        "assumptions": text_items(payload.get("assumptions", [])),
+        "open_questions": text_items(payload.get("open_questions", [])),
+        "domain": str(payload.get("domain", "")).strip()[:250],
+        "concept_edges": payload.get("concept_edges", []) if isinstance(payload.get("concept_edges", []), list) else [],
+    }
 
 
 async def process_document_task(doc_id: str, file_path: str):
@@ -80,10 +116,10 @@ async def process_document_task(doc_id: str, file_path: str):
                     continue
 
                 width, height = page.width, page.height
-                
+
                 current_chunk_words = []
                 x0, top, x1, bottom = float('inf'), float('inf'), 0.0, 0.0
-                
+
                 for word in words:
                     current_chunk_words.append(word['text'])
                     x0 = min(x0, word['x0'])
@@ -120,9 +156,9 @@ async def process_document_task(doc_id: str, file_path: str):
 
         # ── Phase 2: Embed chunks ──
         print(f"Extracted {len(chunks_data)} chunks. Generating embeddings...")
-        
+
         contents = [chunk["text"] for chunk in chunks_data]
-        
+
         batch_size = 100
         embeddings = []
         for i in range(0, len(contents), batch_size):
@@ -134,57 +170,78 @@ async def process_document_task(doc_id: str, file_path: str):
             )
             for emb in result.embeddings:
                 embeddings.append(emb.values)
-            
+
         print(f"Generated {len(embeddings)} embeddings. Inserting into Postgres...")
 
         # ── Phase 3: Database Insertion ──
         conn = await asyncpg.connect(DATABASE_URL)
-        
+
         row = await conn.fetchrow("SELECT user_id FROM documents WHERE id = $1", doc_id)
         if not row:
             raise Exception(f"Document {doc_id} not found in DB")
         user_id = row['user_id']
-        
+
+        # Serialize retries for the same document and replace its derived chunks.
+        # The connection-scoped lock is released automatically on close/failure.
+        await conn.execute("SELECT pg_advisory_lock(hashtextextended($1, 0))", doc_id)
+        await conn.execute("DELETE FROM chunks WHERE document_id = $1", doc_id)
+
+        chunk_ids = []
         for i, chunk in enumerate(chunks_data):
             bboxes_json = json.dumps([chunk['bbox']])
             vec = str(embeddings[i])
-            
-            await conn.execute("""
+
+            chunk_id = await conn.fetchval("""
                 INSERT INTO chunks (document_id, user_id, chunk_index, page_start, page_end, content, bboxes, embedding)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id
             """, doc_id, user_id, i, chunk['page'], chunk['page'], chunk['text'], bboxes_json, vec)
-            
+            chunk_ids.append(chunk_id)
+
         # ── Phase 4: Semantic Link Generation (wider threshold + LIMIT) ──
         print(f"Generating Semantic Links for {doc_id}...")
-        
-        # New → Existing (limit 20 best matches)
+
+        # New → Existing. Each new chunk uses the HNSW half-vector projection;
+        # this avoids an unbounded all-pairs comparison as the library grows.
         res1 = await conn.execute("""
             INSERT INTO link_suggestions (user_id, source_chunk_id, target_chunk_id, similarity, relation, status)
-            SELECT $2, new_chunk.id, existing.id, 1 - (new_chunk.embedding <=> existing.embedding), 'related_to', 'pending'
+            SELECT $2, new_chunk.id, match.id, 1 - match.distance, 'related_to', 'pending'
             FROM chunks new_chunk
-            CROSS JOIN chunks existing
+            CROSS JOIN LATERAL (
+                SELECT existing.id,
+                       existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072) AS distance
+                FROM chunks existing
+                WHERE existing.document_id != $1 AND existing.user_id = $2
+                  AND existing.embedding IS NOT NULL
+                ORDER BY existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072)
+                LIMIT 2
+            ) match
             WHERE new_chunk.document_id = $1
-              AND existing.document_id != $1
-              AND existing.user_id = $2
-              AND new_chunk.embedding <=> existing.embedding < 0.35
-            ORDER BY new_chunk.embedding <=> existing.embedding ASC
+              AND new_chunk.embedding IS NOT NULL AND match.distance < 0.35
+            ORDER BY match.distance ASC
             LIMIT 20
         """, doc_id, user_id)
-        
+
         # Existing → New (limit 20 best matches)
         res2 = await conn.execute("""
             INSERT INTO link_suggestions (user_id, source_chunk_id, target_chunk_id, similarity, relation, status)
-            SELECT $2, existing.id, new_chunk.id, 1 - (existing.embedding <=> new_chunk.embedding), 'related_to', 'pending'
+            SELECT $2, match.id, new_chunk.id, 1 - match.distance, 'related_to', 'pending'
             FROM chunks new_chunk
-            CROSS JOIN chunks existing
+            CROSS JOIN LATERAL (
+                SELECT existing.id,
+                       existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072) AS distance
+                FROM chunks existing
+                WHERE existing.document_id != $1 AND existing.user_id = $2
+                  AND existing.embedding IS NOT NULL
+                ORDER BY existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072)
+                LIMIT 2
+            ) match
             WHERE new_chunk.document_id = $1
-              AND existing.document_id != $1
-              AND existing.user_id = $2
-              AND existing.embedding <=> new_chunk.embedding < 0.35
-            ORDER BY existing.embedding <=> new_chunk.embedding ASC
+              AND new_chunk.embedding IS NOT NULL AND match.distance < 0.35
+            ORDER BY match.distance ASC
             LIMIT 20
         """, doc_id, user_id)
-        
+
         print(f"Link Generation results - Outbound: {res1}, Inbound: {res2}")
 
         # ── Phase 4b: Classify relations + generate summaries ──
@@ -210,7 +267,7 @@ async def process_document_task(doc_id: str, file_path: str):
                         src_snip = link['src_text'][:300]
                         tgt_snip = link['tgt_text'][:300]
                         pairs_text += f"\nPAIR {idx+1}:\nA: {src_snip}\nB: {tgt_snip}\n"
-                    
+
                     classify_prompt = f"""Classify each text pair's semantic relationship and write a one-sentence summary of how they connect.
 
 Return a JSON array. Each element must have:
@@ -225,7 +282,7 @@ Return a JSON array. Each element must have:
                         contents=classify_prompt,
                         config={"response_mime_type": "application/json"}
                     )
-                    
+
                     classifications = safe_parse_json(response.text)
                     if isinstance(classifications, dict) and 'results' in classifications:
                         classifications = classifications['results']
@@ -242,7 +299,7 @@ Return a JSON array. Each element must have:
                                 if rel not in ['prerequisite_of', 'related_to', 'sub_concept_of', 'contradicts', 'extends']:
                                     rel = 'related_to'
                                 summary = cls.get('summary', '')[:200]
-                                
+
                                 await conn.execute("""
                                     UPDATE link_suggestions SET relation = $1, summary = $2 WHERE id = $3
                                 """, rel, summary, batch[idx]['id'])
@@ -253,39 +310,92 @@ Return a JSON array. Each element must have:
         except Exception as e:
             print(f"Relation classification failed (non-fatal): {e}")
 
-        # ── Phase 5: Knowledge Graph Extraction ──
-        print(f"Generating Knowledge Graph Concepts for {doc_id}...")
+        # ── Phase 5: Structured Mental Model + Evidence Graph ──
+        print(f"Generating structured mental model for {doc_id}...")
         try:
-            full_text = "\n\n".join(contents)
-            if len(full_text) > 80000:
-                full_text = full_text[:80000]
-                
-            prompt = """Analyze this academic text and extract the core concepts and their relationships for a knowledge graph.
+            numbered_chunks = []
+            current_length = 0
+            for index, content in enumerate(contents):
+                block = f"[CHUNK {index}]\n{content}\n"
+                if current_length + len(block) > 80000:
+                    break
+                numbered_chunks.append(block)
+                current_length += len(block)
+
+            prompt = """Build a structured article mental model for active learning.
 
 Return ONLY valid JSON with this structure:
 {
-  "concepts": [
-    { "name": "Concept Name", "description": "1-2 sentence description." }
+  "main_claim": "The article's central argument in 1-2 sentences",
+  "key_concepts": [
+    {"name": "Concept", "description": "Grounded description", "evidence_chunk_index": 0}
   ],
-  "edges": [
+  "assumptions": [
+    {"text": "An explicit or implicit premise", "evidence_chunk_index": 0}
+  ],
+  "open_questions": [
+    {"text": "A question the article leaves unresolved", "evidence_chunk_index": 0}
+  ],
+  "domain": "Specific subject area",
+  "concept_edges": [
     { "source": "Source Concept Name", "target": "Target Concept Name", "relation": "related_to" }
   ]
 }
 
 Rules:
-- Extract 5-8 specific, domain-relevant concepts (not generic terms like "methodology")
+- Extract 5-8 specific, domain-relevant concepts.
+- Cite only chunk indexes that appear in the input.
+- Do not invent claims that are not supported by the text.
 - Valid relations: prerequisite_of, related_to, sub_concept_of, contradicts, extends
-- Edge source/target must exactly match a concept name"""
-            
+- Edge source/target must exactly match a key concept name."""
+
             response = client.models.generate_content(
                 model=TEXT_MODEL,
-                contents=f"{prompt}\n\nTEXT:\n{full_text}",
+                contents=f"{prompt}\n\nTEXT:\n{''.join(numbered_chunks)}",
                 config={"response_mime_type": "application/json"}
             )
-            
-            tg = safe_parse_json(response.text)
-            concepts = tg.get('concepts', [])
-            
+
+            mental_model = normalize_mental_model(safe_parse_json(response.text))
+            if not mental_model["main_claim"]:
+                raise ValueError("Mental model did not include a main claim")
+
+            model_embedding_text = "\n".join([
+                mental_model["main_claim"],
+                *[concept["name"] for concept in mental_model["key_concepts"]],
+                *mental_model["assumptions"],
+                *mental_model["open_questions"],
+                mental_model["domain"],
+            ])
+            model_embedding_result = client.models.embed_content(
+                model=EMBEDDING_MODEL,
+                contents=[model_embedding_text],
+                config={"task_type": "RETRIEVAL_DOCUMENT"}
+            )
+            model_vector = str(model_embedding_result.embeddings[0].values)
+            mental_model_id = await conn.fetchval("""
+                INSERT INTO document_mental_models (
+                    document_id, user_id, version, main_claim, key_concepts, assumptions,
+                    open_questions, domain, embedding, model_version, prompt_version, status
+                ) VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, 'mental-model-v1', 'ready')
+                ON CONFLICT (document_id, version) DO UPDATE SET
+                    main_claim = EXCLUDED.main_claim,
+                    key_concepts = EXCLUDED.key_concepts,
+                    assumptions = EXCLUDED.assumptions,
+                    open_questions = EXCLUDED.open_questions,
+                    domain = EXCLUDED.domain,
+                    embedding = EXCLUDED.embedding,
+                    model_version = EXCLUDED.model_version,
+                    prompt_version = EXCLUDED.prompt_version,
+                    status = 'ready',
+                    generated_at = now()
+                RETURNING id
+            """, doc_id, user_id, mental_model["main_claim"],
+                [concept["name"] for concept in mental_model["key_concepts"]],
+                mental_model["assumptions"], mental_model["open_questions"],
+                mental_model["domain"], model_vector, TEXT_MODEL)
+
+            concepts = mental_model["key_concepts"]
+
             if concepts:
                 concept_texts = [f"{c['name']}: {c.get('description', '')}" for c in concepts]
                 c_result = client.models.embed_content(
@@ -294,77 +404,191 @@ Rules:
                     config={"task_type": "RETRIEVAL_DOCUMENT"}
                 )
                 c_embeddings = [emb.values for emb in c_result.embeddings]
-                
+
                 name_to_uuid = {}
                 for i, concept in enumerate(concepts):
                     c_vec = str(c_embeddings[i])
                     row = await conn.fetchrow("""
-                        INSERT INTO concepts (user_id, name, description, embedding)
-                        VALUES ($1, $2, $3, $4)
-                        ON CONFLICT (user_id, name) DO UPDATE SET description = EXCLUDED.description
+                        INSERT INTO concepts (user_id, name, description, embedding, state, model_version, prompt_version)
+                        VALUES ($1, $2, $3, $4, 'supported', $5, 'mental-model-v1')
+                        ON CONFLICT (user_id, name) DO UPDATE SET
+                            description = EXCLUDED.description,
+                            embedding = EXCLUDED.embedding,
+                            state = CASE WHEN concepts.state = 'confirmed' THEN 'confirmed' ELSE 'supported' END,
+                            model_version = EXCLUDED.model_version,
+                            prompt_version = EXCLUDED.prompt_version
                         RETURNING id
-                    """, user_id, concept['name'][:250], concept.get('description', ''), c_vec)
-                    
+                    """, user_id, concept['name'][:250], concept.get('description', ''), c_vec, TEXT_MODEL)
+
                     if row:
                         name_to_uuid[concept['name']] = row['id']
-                
+                        try:
+                            evidence_index = int(concept.get("evidence_chunk_index", 0))
+                        except (TypeError, ValueError):
+                            evidence_index = 0
+                        if 0 <= evidence_index < len(chunk_ids):
+                            await conn.execute("""
+                                INSERT INTO chunk_concepts (chunk_id, concept_id, confidence)
+                                VALUES ($1, $2, 1.0)
+                                ON CONFLICT (chunk_id, concept_id) DO UPDATE SET confidence = EXCLUDED.confidence
+                            """, chunk_ids[evidence_index], row['id'])
+                        else:
+                            await conn.execute("""
+                                INSERT INTO chunk_concepts (chunk_id, concept_id, confidence)
+                                SELECT c.id, $2, 1 - (c.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072))
+                                FROM chunks c WHERE c.document_id = $1 AND c.embedding IS NOT NULL
+                                ORDER BY c.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072) LIMIT 2
+                                ON CONFLICT (chunk_id, concept_id) DO UPDATE SET confidence = EXCLUDED.confidence
+                            """, doc_id, row['id'], c_vec)
+
+                        # Incremental nearest-neighbour graph growth; never compare every pair.
+                        await conn.execute("""
+                            INSERT INTO concept_edges (
+                                user_id, source_concept_id, target_concept_id, relation,
+                                created_via, state, confidence
+                            )
+                            SELECT $1, $2, existing.id, 'related_to', 'ai_suggested', 'candidate',
+                                   1 - (existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072))
+                            FROM concepts existing
+                            WHERE existing.user_id = $1 AND existing.id != $2
+                              AND existing.embedding IS NOT NULL
+                              AND existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072) < 0.25
+                            ORDER BY existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072)
+                            LIMIT 3
+                            ON CONFLICT (source_concept_id, target_concept_id, relation) DO NOTHING
+                        """, user_id, row['id'], c_vec)
+
                 edge_count = 0
-                for edge in tg.get('edges', []):
+                for edge in mental_model.get('concept_edges', []):
                     src_id = name_to_uuid.get(edge.get('source'))
                     tgt_id = name_to_uuid.get(edge.get('target'))
-                    
+
                     if src_id and tgt_id and src_id != tgt_id:
                         rel = edge.get('relation', 'related_to')
                         if rel not in ['prerequisite_of', 'related_to', 'sub_concept_of', 'contradicts', 'extends']:
                             rel = 'related_to'
-                            
+
                         await conn.execute("""
-                            INSERT INTO concept_edges (user_id, source_concept_id, target_concept_id, relation, created_via)
-                            VALUES ($1, $2, $3, $4, 'ai_suggested')
+                            INSERT INTO concept_edges (
+                                user_id, source_concept_id, target_concept_id, relation,
+                                created_via, state, confidence
+                            )
+                            VALUES ($1, $2, $3, $4, 'ai_suggested', 'supported', 0.75)
                             ON CONFLICT (source_concept_id, target_concept_id, relation) DO NOTHING
                         """, user_id, src_id, tgt_id, rel)
                         edge_count += 1
-                        
-                print(f"Taxonomy -> Nodes: {len(name_to_uuid)}, Edges: {edge_count}")
-        except Exception as e:
-            print(f"Failed to generate taxonomy for {doc_id}: {e}")
 
-        # ── Phase 6: Cross-document concept linking ──
-        try:
-            existing_concepts = await conn.fetch("""
-                SELECT id, name, embedding FROM concepts WHERE user_id = $1
-            """, user_id)
-            
-            if len(existing_concepts) > 1:
-                cross_edges = 0
-                for i, c1 in enumerate(existing_concepts):
-                    for c2 in existing_concepts[i+1:]:
-                        if c1['embedding'] and c2['embedding']:
-                            # Check if edge already exists
-                            existing = await conn.fetchval("""
-                                SELECT COUNT(*) FROM concept_edges 
-                                WHERE (source_concept_id = $1 AND target_concept_id = $2)
-                                   OR (source_concept_id = $2 AND target_concept_id = $1)
-                            """, c1['id'], c2['id'])
-                            
-                            if existing == 0:
-                                # Compute similarity via pgvector
-                                sim = await conn.fetchval("""
-                                    SELECT 1 - ($1::vector(3072) <=> $2::vector(3072))
-                                """, str(c1['embedding']), str(c2['embedding']))
-                                
-                                if sim and sim > 0.75:
-                                    await conn.execute("""
-                                        INSERT INTO concept_edges (user_id, source_concept_id, target_concept_id, relation, created_via)
-                                        VALUES ($1, $2, $3, 'related_to', 'ai_suggested')
-                                        ON CONFLICT (source_concept_id, target_concept_id, relation) DO NOTHING
-                                    """, user_id, c1['id'], c2['id'])
-                                    cross_edges += 1
-                
-                if cross_edges > 0:
-                    print(f"Cross-document concept links: {cross_edges}")
+                print(f"Mental model -> Concepts: {len(name_to_uuid)}, Edges: {edge_count}")
+
+            # ── Phase 6: Bounded document-to-library mental-model linking ──
+            prior_models = await conn.fetch("""
+                SELECT mm.id, mm.document_id, d.title, mm.main_claim, mm.key_concepts,
+                       mm.assumptions, mm.open_questions, mm.domain,
+                       1 - (mm.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072)) AS similarity
+                FROM document_mental_models mm
+                JOIN documents d ON d.id = mm.document_id
+                WHERE mm.user_id = $1 AND mm.document_id != $2
+                  AND mm.status = 'ready' AND mm.embedding IS NOT NULL
+                ORDER BY mm.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072)
+                LIMIT 8
+            """, user_id, doc_id, model_vector)
+
+            if prior_models:
+                source_evidence = await conn.fetchrow("""
+                    SELECT id, content FROM chunks
+                    WHERE document_id = $1 AND embedding IS NOT NULL
+                    ORDER BY embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)
+                    LIMIT 1
+                """, doc_id, model_vector)
+                source_evidence_chunk_id = source_evidence["id"] if source_evidence else None
+                candidates = []
+                prior_evidence_ids = []
+                for index, prior in enumerate(prior_models, start=1):
+                    evidence = await conn.fetchrow("""
+                        SELECT c.id, c.content
+                        FROM chunks c
+                        JOIN document_mental_models mm ON mm.document_id = c.document_id
+                        WHERE mm.id = $1 AND c.embedding IS NOT NULL
+                        ORDER BY c.embedding::halfvec(3072) <=> mm.embedding::halfvec(3072)
+                        LIMIT 1
+                    """, prior["id"])
+                    prior_evidence_ids.append(evidence["id"] if evidence else None)
+                    candidates.append({
+                        "index": index,
+                        "title": prior["title"],
+                        "main_claim": prior["main_claim"],
+                        "key_concepts": list(prior["key_concepts"]),
+                        "assumptions": list(prior["assumptions"]),
+                        "open_questions": list(prior["open_questions"]),
+                        "domain": prior["domain"],
+                        "evidence_excerpt": evidence["content"][:700] if evidence else "",
+                    })
+                link_prompt = f"""Compare the new mental model with each prior mental model.
+Return a JSON array with at most one strongest meaningful link per prior model.
+Each result must contain: index, link_type, confidence, bridge_explanation.
+Valid link_type values: concept_overlap, claim_extension, assumption_conflict, question_resolution.
+Confidence must be between 0 and 1. Omit weak links below 0.55.
+The bridge explanation must make the learner think and must stay under 35 words.
+
+NEW MODEL:
+{json.dumps(mental_model, ensure_ascii=False)}
+
+NEW MODEL EVIDENCE:
+{source_evidence["content"][:700] if source_evidence else ""}
+
+PRIOR MODELS:
+{json.dumps(candidates, ensure_ascii=False)}"""
+                link_response = client.models.generate_content(
+                    model=TEXT_MODEL,
+                    contents=link_prompt,
+                    config={"response_mime_type": "application/json"}
+                )
+                classified_links = safe_parse_json(link_response.text)
+                if isinstance(classified_links, dict):
+                    classified_links = classified_links.get("links", [])
+                if not isinstance(classified_links, list):
+                    classified_links = []
+
+                valid_link_types = {
+                    "concept_overlap", "claim_extension",
+                    "assumption_conflict", "question_resolution"
+                }
+                created_links = 0
+                for classified in classified_links:
+                    try:
+                        prior_index = int(classified.get("index", 0)) - 1
+                        confidence = max(0.0, min(1.0, float(classified.get("confidence", 0))))
+                    except (TypeError, ValueError):
+                        continue
+                    link_type = classified.get("link_type")
+                    if not (0 <= prior_index < len(prior_models)) or link_type not in valid_link_types or confidence < 0.55:
+                        continue
+                    prior = prior_models[prior_index]
+                    target_chunk_id = prior_evidence_ids[prior_index]
+                    await conn.execute("""
+                        INSERT INTO mental_model_links (
+                            user_id, source_model_id, target_model_id, link_type,
+                            similarity, confidence, bridge_explanation,
+                            source_evidence_chunk_id, target_evidence_chunk_id,
+                            status, created_via, model_version, prompt_version
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                                  'candidate', 'ai_suggested', $10, 'mental-link-v1')
+                        ON CONFLICT (source_model_id, target_model_id, link_type) DO UPDATE SET
+                            similarity = EXCLUDED.similarity,
+                            confidence = EXCLUDED.confidence,
+                            bridge_explanation = EXCLUDED.bridge_explanation,
+                            source_evidence_chunk_id = EXCLUDED.source_evidence_chunk_id,
+                            target_evidence_chunk_id = EXCLUDED.target_evidence_chunk_id,
+                            model_version = EXCLUDED.model_version,
+                            prompt_version = EXCLUDED.prompt_version
+                    """, user_id, mental_model_id, prior["id"], link_type,
+                        float(prior["similarity"]), confidence,
+                        str(classified.get("bridge_explanation", ""))[:500],
+                        source_evidence_chunk_id, target_chunk_id, TEXT_MODEL)
+                    created_links += 1
+                print(f"Mental-model candidate links: {created_links}")
         except Exception as e:
-            print(f"Cross-doc concept linking failed (non-fatal): {e}")
+            print(f"Failed to generate mental model for {doc_id}: {e}")
 
         # ── Finalize ──
         await conn.execute("""

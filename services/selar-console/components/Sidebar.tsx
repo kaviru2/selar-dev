@@ -15,8 +15,6 @@ interface SidebarDoc {
   authors: string;
   year: number;
   status: "ready" | "processing" | "failed";
-  chunks_count: number;
-  links_count: number;
   page_count: number;
   progress?: number;
 }
@@ -89,7 +87,7 @@ export function Sidebar({ currentId, onPick }: SidebarProps) {
               ? `processing`
               : d.status === "failed"
               ? "failed"
-              : `${d.links_count} links`;
+              : d.page_count > 0 ? `${d.page_count} pages` : "ready";
 
           return (
             <div

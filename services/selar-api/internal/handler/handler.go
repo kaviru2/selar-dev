@@ -201,10 +201,10 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete document"})
 		return
 	}
-	
+
 	// Clean up local temp file storage to save space
 	_ = os.Remove("/tmp/selar_uploads/" + id + ".pdf")
-	
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -244,6 +244,7 @@ func (h *Handler) ListSuggestions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	var req model.SuggestionResponse
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -257,7 +258,7 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.RespondToSuggestion(r.Context(), id, status, req.Label, req.TimeToRespondMs); err != nil {
+	if err := h.store.RespondToSuggestion(r.Context(), userID, id, status, req.Label, req.TimeToRespondMs); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to respond"})
 		return
 	}
@@ -269,6 +270,7 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func (h *Handler) ListAnnotations(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
 	docID := chi.URLParam(r, "id")
 	page := 0
 	if p := r.URL.Query().Get("page"); p != "" {
@@ -277,7 +279,7 @@ func (h *Handler) ListAnnotations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	anns, err := h.store.ListAnnotations(r.Context(), docID, page)
+	anns, err := h.store.ListAnnotations(r.Context(), userID, docID, page)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list annotations"})
 		return
@@ -351,10 +353,128 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		edges = []model.ConceptEdge{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"nodes": concepts,
-		"edges": edges,
-	})
+	mentalModels, err := h.store.ListMentalModels(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental models"})
+		return
+	}
+	mentalLinks, err := h.store.ListMentalModelLinks(r.Context(), userID, "")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental-model links"})
+		return
+	}
+
+	graphNodes := make([]model.GraphNode, 0, len(concepts)+len(mentalModels)*4)
+	graphEdges := make([]model.GraphEdge, 0, len(edges)+len(mentalLinks)+len(mentalModels)*4)
+	for _, concept := range concepts {
+		graphNodes = append(graphNodes, model.GraphNode{
+			ID: concept.ID, Name: concept.Name, Description: concept.Description,
+			NodeType: "concept", State: concept.State, CreatedAt: concept.CreatedAt,
+		})
+	}
+	for _, edge := range edges {
+		graphEdges = append(graphEdges, model.GraphEdge{
+			ID: edge.ID, Source: edge.SourceConceptID, Target: edge.TargetConceptID,
+			Relation: string(edge.Relation), State: edge.State, Confidence: edge.Confidence,
+			CreatedVia: string(edge.CreatedVia),
+		})
+	}
+	for _, mentalModel := range mentalModels {
+		modelNodeID := "model:" + mentalModel.ID
+		claimNodeID := "claim:" + mentalModel.ID
+		graphNodes = append(graphNodes,
+			model.GraphNode{ID: modelNodeID, Name: mentalModel.DocumentTitle, Description: mentalModel.Domain,
+				NodeType: "document", State: string(mentalModel.Status), DocumentID: mentalModel.DocumentID,
+				DocumentTitle: mentalModel.DocumentTitle, CreatedAt: mentalModel.GeneratedAt},
+			model.GraphNode{ID: claimNodeID, Name: "Main claim", Description: mentalModel.MainClaim,
+				NodeType: "claim", State: "supported", DocumentID: mentalModel.DocumentID,
+				DocumentTitle: mentalModel.DocumentTitle, CreatedAt: mentalModel.GeneratedAt},
+		)
+		graphEdges = append(graphEdges, model.GraphEdge{ID: "has-claim:" + mentalModel.ID,
+			Source: modelNodeID, Target: claimNodeID, Relation: "has_claim", State: "confirmed", CreatedVia: "system"})
+		for index, assumption := range mentalModel.Assumptions {
+			nodeID := "assumption:" + mentalModel.ID + ":" + strconv.Itoa(index)
+			graphNodes = append(graphNodes, model.GraphNode{ID: nodeID, Name: "Assumption", Description: assumption,
+				NodeType: "assumption", State: "supported", DocumentID: mentalModel.DocumentID,
+				DocumentTitle: mentalModel.DocumentTitle, CreatedAt: mentalModel.GeneratedAt})
+			graphEdges = append(graphEdges, model.GraphEdge{ID: "has-assumption:" + mentalModel.ID + ":" + strconv.Itoa(index),
+				Source: modelNodeID, Target: nodeID, Relation: "has_assumption", State: "confirmed", CreatedVia: "system"})
+		}
+		for index, question := range mentalModel.OpenQuestions {
+			nodeID := "question:" + mentalModel.ID + ":" + strconv.Itoa(index)
+			graphNodes = append(graphNodes, model.GraphNode{ID: nodeID, Name: "Open question", Description: question,
+				NodeType: "question", State: "supported", DocumentID: mentalModel.DocumentID,
+				DocumentTitle: mentalModel.DocumentTitle, CreatedAt: mentalModel.GeneratedAt})
+			graphEdges = append(graphEdges, model.GraphEdge{ID: "raises:" + mentalModel.ID + ":" + strconv.Itoa(index),
+				Source: modelNodeID, Target: nodeID, Relation: "raises", State: "confirmed", CreatedVia: "system"})
+		}
+	}
+	for _, link := range mentalLinks {
+		graphEdges = append(graphEdges, model.GraphEdge{
+			ID: link.ID, Source: "model:" + link.SourceModelID, Target: "model:" + link.TargetModelID,
+			Relation: string(link.LinkType), State: string(link.Status), Confidence: link.Confidence,
+			CreatedVia: string(link.CreatedVia), Explanation: link.BridgeExplanation,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": graphNodes, "edges": graphEdges})
+}
+
+// ============================================================
+// Runtime Mental Models
+// ============================================================
+
+func (h *Handler) GetDocumentMentalModel(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	mentalModel, err := h.store.GetDocumentMentalModel(r.Context(), userID, chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental model not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, mentalModel)
+}
+
+func (h *Handler) ListMentalModelLinks(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	links, err := h.store.ListMentalModelLinks(r.Context(), userID, r.URL.Query().Get("document_id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental-model links"})
+		return
+	}
+	if links == nil {
+		links = []model.MentalModelLink{}
+	}
+	writeJSON(w, http.StatusOK, links)
+}
+
+func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	var response model.MentalModelLinkResponse
+	if err := json.NewDecoder(r.Body).Decode(&response); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if response.Action != model.MentalLinkConfirmed && response.Action != model.MentalLinkRejected && response.Action != model.MentalLinkRelabeled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be confirmed, rejected, or relabeled"})
+		return
+	}
+	if err := h.store.RespondToMentalModelLink(r.Context(), userID, chi.URLParam(r, "id"), response); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) ListLearnerConceptState(w http.ResponseWriter, r *http.Request) {
+	states, err := h.store.ListLearnerConceptState(r.Context(), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list learner state"})
+		return
+	}
+	if states == nil {
+		states = []model.LearnerConceptState{}
+	}
+	writeJSON(w, http.StatusOK, states)
 }
 
 // ============================================================
@@ -377,6 +497,7 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	var body struct {
 		PagesViewed    []int `json:"pages_viewed"`
@@ -386,7 +507,7 @@ func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if err := h.store.EndReadingSession(r.Context(), id, body.PagesViewed, body.MaxScrollDepth); err != nil {
+	if err := h.store.EndReadingSession(r.Context(), userID, id, body.PagesViewed, body.MaxScrollDepth); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to end session"})
 		return
 	}

@@ -4,12 +4,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 )
 
 func main() {
+	loadEnv()
 	port := getEnv("PORT", "8080")
 	dbURL := getEnv("DATABASE_URL", "postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable")
 	jwtSecret := getEnv("JWT_SECRET", "dev-secret-change-in-production")
@@ -98,6 +101,10 @@ func main() {
 		// Concepts & Graph
 		r.Get("/concepts", h.ListConcepts)
 		r.Get("/graph", h.GetGraph)
+		r.Get("/documents/{id}/mental-model", h.GetDocumentMentalModel)
+		r.Get("/mental-model-links", h.ListMentalModelLinks)
+		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)
+		r.Get("/learner-state", h.ListLearnerConceptState)
 
 		// Reading Sessions
 		r.Post("/sessions/start", h.StartSession)
@@ -137,4 +144,36 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func loadEnv() {
+	paths := []string{".env", "../../.env", "../../.env.development", "../../../.env", "../../../.env.development"}
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+					(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+					value = value[1 : len(value)-1]
+				}
+				if os.Getenv(key) == "" {
+					os.Setenv(key, value)
+				}
+			}
+		}
+		log.Printf("Loaded environment from %s", path)
+		break
+	}
 }

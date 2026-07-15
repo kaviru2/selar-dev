@@ -64,6 +64,27 @@ def test_safe_parse_json_array():
     assert result[0]["index"] == 1
 
 
+def test_normalize_mental_model_structured_fields():
+    """Mental models retain only the stable research schema."""
+    from main import normalize_mental_model
+
+    result = normalize_mental_model({
+        "main_claim": "Active recall improves retention.",
+        "key_concepts": [
+            {"name": "Active recall", "description": "Effortful retrieval", "evidence_chunk_index": 2},
+            "Spacing effect",
+        ],
+        "assumptions": [{"text": "Recall is effortful"}],
+        "open_questions": ["How should intervals adapt?"],
+        "domain": "Learning science",
+    })
+
+    assert result["main_claim"] == "Active recall improves retention."
+    assert [concept["name"] for concept in result["key_concepts"]] == ["Active recall", "Spacing effect"]
+    assert result["assumptions"] == ["Recall is effortful"]
+    assert result["open_questions"] == ["How should intervals adapt?"]
+
+
 def test_health_endpoint():
     """Test the /health endpoint returns ok."""
     from main import app
