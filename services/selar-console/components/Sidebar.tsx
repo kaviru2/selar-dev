@@ -29,16 +29,28 @@ export function Sidebar({ currentId, onPick }: SidebarProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    clientFetch<SidebarDoc[]>("/api/documents")
-      .then((data) => {
+    let cancelled = false;
+    async function loadDocuments() {
+      try {
+        const data = await clientFetch<SidebarDoc[]>("/api/documents");
+        if (cancelled) return;
         setDocs(data || []);
-        // If currentId is falsy or 'backprop', auto-select the first real doc
         if (data && data.length > 0 && (!currentId || currentId === "backprop")) {
           onPick?.(data[0].id);
         }
-      })
-      .catch((err) => console.error("Failed to fetch sidebar docs:", err))
-      .finally(() => setLoading(false));
+      } catch (error) {
+        console.error("Failed to fetch sidebar docs:", error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadDocuments();
+    const interval = window.setInterval(loadDocuments, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [currentId, onPick]);
 
   return (

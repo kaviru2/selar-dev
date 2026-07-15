@@ -155,7 +155,9 @@ export default function PdfCanvas({
 
               {suggestions.flatMap((suggestion) => {
                 if (suggestion.status === "rejected") return [];
-                return parseBBoxes(suggestion.src_bboxes).flatMap((bbox, index) => {
+                return parseBBoxes(suggestion.src_bboxes)
+                  .filter((bbox) => bbox.w * bbox.h <= 0.20)
+                  .flatMap((bbox, index) => {
                   const key = `${suggestion.status}-${bbox.x.toFixed(4)}-${bbox.y.toFixed(4)}-${bbox.w.toFixed(4)}-${bbox.h.toFixed(4)}`;
                   if (renderedSuggestionBoxes.has(key)) return [];
                   renderedSuggestionBoxes.add(key);
@@ -172,7 +174,7 @@ export default function PdfCanvas({
                       title={`Connection to ${suggestion.tgt_doc}`}
                     />
                   );
-                });
+                  });
               })}
             </div>
           )}

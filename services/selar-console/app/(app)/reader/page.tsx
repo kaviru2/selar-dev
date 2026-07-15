@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import {
@@ -88,16 +88,12 @@ export default function ReaderPage() {
     setDocId(id);
   }, []);
 
-  const pendingCount = useMemo(
-    () => suggestions.filter((item) => item.status === "pending").length
-      + mentalLinks.filter((item) => item.status === "candidate").length,
-    [suggestions, mentalLinks]
-  );
-  const confirmedCount = useMemo(
-    () => suggestions.filter((item) => item.status === "confirmed").length
-      + mentalLinks.filter((item) => item.status === "confirmed").length,
-    [suggestions, mentalLinks]
-  );
+  const pendingCount = panelMode === "argument"
+    ? mentalLinks.filter((item) => item.status === "candidate").length
+    : suggestions.filter((item) => item.status === "pending").length;
+  const confirmedCount = panelMode === "argument"
+    ? mentalLinks.filter((item) => item.status === "confirmed").length
+    : suggestions.filter((item) => item.status === "confirmed").length;
 
   async function createAnnotation(
     type: string,

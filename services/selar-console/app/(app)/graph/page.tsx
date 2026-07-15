@@ -76,6 +76,7 @@ export default function GraphPage() {
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLinkMetadata> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
 
   // Measure container dimensions dynamically to prevent canvas overflow
   useEffect(() => {
@@ -262,8 +263,7 @@ export default function GraphPage() {
     ctx.stroke();
 
     // Node Label (Always show selected or zoomed nodes)
-    const showLabel = globalScale > 1.1 || node.nodeType === "document"
-      || node.nodeType === "concept" || isSel || isHovered;
+    const showLabel = globalScale > 1.45 || node.nodeType === "document" || isSel || isHovered;
     if (showLabel) {
       ctx.font = `${isSel ? '600' : '500'} ${fontSize}px sans-serif`;
       ctx.textAlign = "center";
@@ -489,7 +489,7 @@ export default function GraphPage() {
             ref={fgRef}
             width={dimensions.width}
             height={dimensions.height}
-            graphData={{ nodes, links }}
+            graphData={graphData}
             nodeCanvasObject={nodeCanvasObject}
             linkCanvasObject={linkCanvasObject}
             onNodeClick={handleNodeClick}

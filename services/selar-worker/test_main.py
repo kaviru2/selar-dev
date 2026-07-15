@@ -85,6 +85,41 @@ def test_normalize_mental_model_structured_fields():
     assert result["open_questions"] == ["How should intervals adapt?"]
 
 
+def test_merge_word_bboxes_preserves_lines():
+    from main import merge_word_bboxes
+
+    words = [
+        {"x0": 10, "x1": 30, "top": 10, "bottom": 20},
+        {"x0": 32, "x1": 50, "top": 10, "bottom": 20},
+        {"x0": 10, "x1": 35, "top": 30, "bottom": 40},
+    ]
+    boxes = merge_word_bboxes(words, 100, 100)
+
+    assert len(boxes) == 2
+    assert boxes[0] == {"x": 0.1, "y": 0.1, "w": 0.4, "h": 0.1}
+
+
+def test_deterministic_model_link_finds_concept_overlap():
+    from main import deterministic_model_link
+
+    source = {
+        "main_claim": "Deterministic compensation improves reliable agents.",
+        "key_concepts": [{"name": "Compensation-based recovery"}],
+        "assumptions": [],
+        "open_questions": [],
+    }
+    target = {
+        "main_claim": "Recovery policies improve agent reliability.",
+        "key_concepts": ["Compensation recovery"],
+        "assumptions": [],
+        "open_questions": [],
+    }
+
+    result = deterministic_model_link(source, target, 0.8)
+    assert result is not None
+    assert result["link_type"] == "concept_overlap"
+
+
 def test_health_endpoint():
     """Test the /health endpoint returns ok."""
     from main import app

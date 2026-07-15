@@ -7,6 +7,7 @@ import { getAuthToken } from "@/lib/auth";
 import Link from "next/link";
 import { UploadButton } from "@/components/UploadButton";
 import { DeleteDocButton } from "@/components/DeleteDocButton";
+import { ProcessingRefresh } from "@/components/ProcessingRefresh";
 
 export default async function LibraryPage() {
   const token = await getAuthToken();
@@ -38,6 +39,7 @@ export default async function LibraryPage() {
 
   return (
     <div className="library">
+      <ProcessingRefresh active={docs.some((document) => document.status === "processing")} />
       <div className="head">
         <div>
           <h1>Library</h1>

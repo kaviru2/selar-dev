@@ -25,6 +25,7 @@ client = genai.Client(api_key=api_key) if api_key else None
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable")
 EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
 TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "models/gemini-3-flash-preview")
+CHUNK_WORD_LIMIT = int(os.getenv("CHUNK_WORD_LIMIT", "120"))
 
 class ProcessRequest(BaseModel):
     doc_id: str
@@ -96,6 +97,105 @@ def normalize_mental_model(payload: Any) -> Dict[str, Any]:
     }
 
 
+def merge_word_bboxes(words: List[Dict[str, Any]], width: float, height: float) -> List[Dict[str, float]]:
+    """Merge adjacent PDF words into precise line rectangles."""
+    if not words or not width or not height:
+        return []
+    lines: List[Dict[str, float]] = []
+    for word in words:
+        box = {
+            "x0": float(word["x0"]), "top": float(word["top"]),
+            "x1": float(word["x1"]), "bottom": float(word["bottom"]),
+        }
+        previous = lines[-1] if lines else None
+        same_line = previous and abs(box["top"] - previous["top"]) <= 3
+        nearby = previous and 0 <= box["x0"] - previous["x1"] <= width * 0.04
+        if same_line and nearby:
+            previous["x1"] = max(previous["x1"], box["x1"])
+            previous["bottom"] = max(previous["bottom"], box["bottom"])
+        else:
+            lines.append(box)
+    return [{
+        "x": line["x0"] / width,
+        "y": line["top"] / height,
+        "w": (line["x1"] - line["x0"]) / width,
+        "h": (line["bottom"] - line["top"]) / height,
+    } for line in lines]
+
+
+def semantic_tokens(text: str) -> set[str]:
+    """Return stable content tokens for deterministic relationship scoring."""
+    stop_words = {"about", "after", "also", "been", "between", "from", "have", "into",
+                  "more", "that", "their", "then", "this", "through", "using", "with"}
+    return {token for token in re.findall(r"[a-z0-9]+", text.lower())
+            if len(token) > 3 and token not in stop_words}
+
+
+def token_overlap(left: str, right: str) -> float:
+    left_tokens, right_tokens = semantic_tokens(left), semantic_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def deterministic_model_link(source: Dict[str, Any], target: Dict[str, Any], similarity: float) -> Optional[Dict[str, Any]]:
+    """Classify a bounded model pair without a generative model call."""
+    negations = {"cannot", "never", "without", "unreliable", "fails", "failure", "not"}
+    source_assumptions = source.get("assumptions", [])
+    target_assumptions = target.get("assumptions", [])
+    for source_text in source_assumptions:
+        for target_text in target_assumptions:
+            overlap = token_overlap(source_text, target_text)
+            source_negative = bool(semantic_tokens(source_text) & negations)
+            target_negative = bool(semantic_tokens(target_text) & negations)
+            if overlap >= 0.18 and source_negative != target_negative:
+                return {
+                    "link_type": "assumption_conflict",
+                    "confidence": min(0.95, 0.62 + overlap),
+                    "bridge_explanation": "These readings make opposing assumptions about "
+                                          + ", ".join(sorted(semantic_tokens(source_text) & semantic_tokens(target_text))[:3]) + ".",
+                }
+
+    resolution_scores = [
+        (token_overlap(question, target.get("main_claim", "")), question)
+        for question in source.get("open_questions", [])
+    ] + [
+        (token_overlap(question, source.get("main_claim", "")), question)
+        for question in target.get("open_questions", [])
+    ]
+    best_resolution = max(resolution_scores, default=(0.0, ""))
+    if best_resolution[0] >= 0.16:
+        return {
+            "link_type": "question_resolution",
+            "confidence": min(0.92, 0.60 + best_resolution[0]),
+            "bridge_explanation": "One reading directly informs an open question raised by the other.",
+        }
+
+    def concept_name(value: Any) -> str:
+        return str(value.get("name", "")) if isinstance(value, dict) else str(value)
+
+    source_concepts = [concept_name(value) for value in source.get("key_concepts", [])]
+    target_concepts = [concept_name(value) for value in target.get("key_concepts", [])]
+    concept_scores = [(token_overlap(left, right), left, right)
+                      for left in source_concepts for right in target_concepts]
+    best_concept = max(concept_scores, default=(0.0, "", ""))
+    if similarity >= 0.58 and best_concept[0] >= 0.20:
+        return {
+            "link_type": "concept_overlap",
+            "confidence": min(0.94, 0.58 + best_concept[0]),
+            "bridge_explanation": f"Both readings develop the concept of {best_concept[1]}.",
+        }
+
+    claim_overlap = token_overlap(source.get("main_claim", ""), target.get("main_claim", ""))
+    if similarity >= 0.62 and claim_overlap >= 0.10:
+        return {
+            "link_type": "claim_extension",
+            "confidence": min(0.90, 0.42 + similarity * 0.45 + claim_overlap),
+            "bridge_explanation": "The newer reading extends a closely related claim from the prior reading.",
+        }
+    return None
+
+
 async def process_document_task(doc_id: str, file_path: str):
     """
     Background job: Parses PDF, chunks texts with bboxes, embeddings, semantic links,
@@ -110,6 +210,7 @@ async def process_document_task(doc_id: str, file_path: str):
         chunks_data = []
 
         with pdfplumber.open(file_path) as pdf:
+            page_count = len(pdf.pages)
             for page_num, page in enumerate(pdf.pages, start=1):
                 words = page.extract_words()
                 if not words:
@@ -118,40 +219,27 @@ async def process_document_task(doc_id: str, file_path: str):
                 width, height = page.width, page.height
 
                 current_chunk_words = []
-                x0, top, x1, bottom = float('inf'), float('inf'), 0.0, 0.0
+                current_chunk_geometry = []
 
                 for word in words:
                     current_chunk_words.append(word['text'])
-                    x0 = min(x0, word['x0'])
-                    top = min(top, word['top'])
-                    x1 = max(x1, word['x1'])
-                    bottom = max(bottom, word['bottom'])
+                    current_chunk_geometry.append(word)
 
-                    if len(current_chunk_words) > 200:
+                    if len(current_chunk_words) >= CHUNK_WORD_LIMIT:
                         chunk_text = " ".join(current_chunk_words)
                         chunks_data.append({
                             "text": chunk_text,
                             "page": page_num,
-                            "bbox": {
-                                "x": x0 / width,
-                                "y": top / height,
-                                "w": (x1 - x0) / width,
-                                "h": (bottom - top) / height
-                            }
+                            "bboxes": merge_word_bboxes(current_chunk_geometry, width, height),
                         })
                         current_chunk_words = []
-                        x0, top, x1, bottom = float('inf'), float('inf'), 0.0, 0.0
+                        current_chunk_geometry = []
 
                 if current_chunk_words:
                     chunks_data.append({
                         "text": " ".join(current_chunk_words),
                         "page": page_num,
-                        "bbox": {
-                                "x": x0 / width,
-                                "y": top / height,
-                                "w": (x1 - x0) / width,
-                                "h": (bottom - top) / height
-                        }
+                        "bboxes": merge_word_bboxes(current_chunk_geometry, width, height),
                     })
 
         # ── Phase 2: Embed chunks ──
@@ -185,10 +273,14 @@ async def process_document_task(doc_id: str, file_path: str):
         # The connection-scoped lock is released automatically on close/failure.
         await conn.execute("SELECT pg_advisory_lock(hashtextextended($1, 0))", doc_id)
         await conn.execute("DELETE FROM chunks WHERE document_id = $1", doc_id)
+        await conn.execute(
+            "UPDATE documents SET progress = 0.30, page_count = $2 WHERE id = $1",
+            doc_id, page_count
+        )
 
         chunk_ids = []
         for i, chunk in enumerate(chunks_data):
-            bboxes_json = json.dumps([chunk['bbox']])
+            bboxes_json = json.dumps(chunk['bboxes'])
             vec = str(embeddings[i])
 
             chunk_id = await conn.fetchval("""
@@ -197,6 +289,7 @@ async def process_document_task(doc_id: str, file_path: str):
                 RETURNING id
             """, doc_id, user_id, i, chunk['page'], chunk['page'], chunk['text'], bboxes_json, vec)
             chunk_ids.append(chunk_id)
+        await conn.execute("UPDATE documents SET progress = 0.45 WHERE id = $1", doc_id)
 
         # ── Phase 4: Semantic Link Generation (wider threshold + LIMIT) ──
         print(f"Generating Semantic Links for {doc_id}...")
@@ -219,7 +312,7 @@ async def process_document_task(doc_id: str, file_path: str):
             WHERE new_chunk.document_id = $1
               AND new_chunk.embedding IS NOT NULL AND match.distance < 0.35
             ORDER BY match.distance ASC
-            LIMIT 20
+            LIMIT 8
         """, doc_id, user_id)
 
         # Existing → New (limit 20 best matches)
@@ -239,76 +332,11 @@ async def process_document_task(doc_id: str, file_path: str):
             WHERE new_chunk.document_id = $1
               AND new_chunk.embedding IS NOT NULL AND match.distance < 0.35
             ORDER BY match.distance ASC
-            LIMIT 20
+            LIMIT 8
         """, doc_id, user_id)
 
         print(f"Link Generation results - Outbound: {res1}, Inbound: {res2}")
-
-        # ── Phase 4b: Classify relations + generate summaries ──
-        print(f"Classifying link relations for {doc_id}...")
-        try:
-            pending_links = await conn.fetch("""
-                SELECT ls.id, sc.content AS src_text, tc.content AS tgt_text
-                FROM link_suggestions ls
-                JOIN chunks sc ON ls.source_chunk_id = sc.id
-                JOIN chunks tc ON ls.target_chunk_id = tc.id
-                WHERE (sc.document_id = $1 OR tc.document_id = $1)
-                  AND ls.status = 'pending'
-                  AND ls.summary = ''
-                LIMIT 40
-            """, doc_id)
-
-            if pending_links:
-                # Batch classify in groups of 10
-                for batch_start in range(0, len(pending_links), 10):
-                    batch = pending_links[batch_start:batch_start+10]
-                    pairs_text = ""
-                    for idx, link in enumerate(batch):
-                        src_snip = link['src_text'][:300]
-                        tgt_snip = link['tgt_text'][:300]
-                        pairs_text += f"\nPAIR {idx+1}:\nA: {src_snip}\nB: {tgt_snip}\n"
-
-                    classify_prompt = f"""Classify each text pair's semantic relationship and write a one-sentence summary of how they connect.
-
-Return a JSON array. Each element must have:
-- "index": the pair number (1-based)
-- "relation": one of 'prerequisite_of', 'related_to', 'sub_concept_of', 'contradicts', 'extends'
-- "summary": one clear sentence explaining the connection (max 20 words)
-
-{pairs_text}"""
-
-                    response = client.models.generate_content(
-                        model=TEXT_MODEL,
-                        contents=classify_prompt,
-                        config={"response_mime_type": "application/json"}
-                    )
-
-                    classifications = safe_parse_json(response.text)
-                    if isinstance(classifications, dict) and 'results' in classifications:
-                        classifications = classifications['results']
-                    if isinstance(classifications, dict) and not isinstance(classifications, list):
-                        classifications = [classifications]
-                    if not isinstance(classifications, list):
-                        classifications = []
-
-                    for cls in classifications:
-                        try:
-                            idx = int(cls.get('index', 0)) - 1
-                            if 0 <= idx < len(batch):
-                                rel = cls.get('relation', 'related_to')
-                                if rel not in ['prerequisite_of', 'related_to', 'sub_concept_of', 'contradicts', 'extends']:
-                                    rel = 'related_to'
-                                summary = cls.get('summary', '')[:200]
-
-                                await conn.execute("""
-                                    UPDATE link_suggestions SET relation = $1, summary = $2 WHERE id = $3
-                                """, rel, summary, batch[idx]['id'])
-                        except (ValueError, IndexError):
-                            continue
-
-                print(f"Classified {len(pending_links)} link relations")
-        except Exception as e:
-            print(f"Relation classification failed (non-fatal): {e}")
+        await conn.execute("UPDATE documents SET progress = 0.55 WHERE id = $1", doc_id)
 
         # ── Phase 5: Structured Mental Model + Evidence Graph ──
         print(f"Generating structured mental model for {doc_id}...")
@@ -366,12 +394,15 @@ Rules:
                 *mental_model["open_questions"],
                 mental_model["domain"],
             ])
+            concepts = mental_model["key_concepts"]
+            concept_texts = [f"{c['name']}: {c.get('description', '')}" for c in concepts]
             model_embedding_result = client.models.embed_content(
                 model=EMBEDDING_MODEL,
-                contents=[model_embedding_text],
+                contents=[model_embedding_text, *concept_texts],
                 config={"task_type": "RETRIEVAL_DOCUMENT"}
             )
             model_vector = str(model_embedding_result.embeddings[0].values)
+            concept_embeddings = [embedding.values for embedding in model_embedding_result.embeddings[1:]]
             mental_model_id = await conn.fetchval("""
                 INSERT INTO document_mental_models (
                     document_id, user_id, version, main_claim, key_concepts, assumptions,
@@ -393,21 +424,12 @@ Rules:
                 [concept["name"] for concept in mental_model["key_concepts"]],
                 mental_model["assumptions"], mental_model["open_questions"],
                 mental_model["domain"], model_vector, TEXT_MODEL)
-
-            concepts = mental_model["key_concepts"]
+            await conn.execute("UPDATE documents SET progress = 0.75 WHERE id = $1", doc_id)
 
             if concepts:
-                concept_texts = [f"{c['name']}: {c.get('description', '')}" for c in concepts]
-                c_result = client.models.embed_content(
-                    model=EMBEDDING_MODEL,
-                    contents=concept_texts,
-                    config={"task_type": "RETRIEVAL_DOCUMENT"}
-                )
-                c_embeddings = [emb.values for emb in c_result.embeddings]
-
                 name_to_uuid = {}
                 for i, concept in enumerate(concepts):
-                    c_vec = str(c_embeddings[i])
+                    c_vec = str(concept_embeddings[i])
                     row = await conn.fetchrow("""
                         INSERT INTO concepts (user_id, name, description, embedding, state, model_version, prompt_version)
                         VALUES ($1, $2, $3, $4, 'supported', $5, 'mental-model-v1')
@@ -479,8 +501,13 @@ Rules:
                         edge_count += 1
 
                 print(f"Mental model -> Concepts: {len(name_to_uuid)}, Edges: {edge_count}")
+                await conn.execute("UPDATE documents SET progress = 0.88 WHERE id = $1", doc_id)
 
             # ── Phase 6: Bounded document-to-library mental-model linking ──
+            await conn.execute("""
+                DELETE FROM mental_model_links
+                WHERE source_model_id = $1 AND status = 'candidate'
+            """, mental_model_id)
             prior_models = await conn.fetch("""
                 SELECT mm.id, mm.document_id, d.title, mm.main_claim, mm.key_concepts,
                        mm.assumptions, mm.open_questions, mm.domain,
@@ -501,9 +528,8 @@ Rules:
                     LIMIT 1
                 """, doc_id, model_vector)
                 source_evidence_chunk_id = source_evidence["id"] if source_evidence else None
-                candidates = []
                 prior_evidence_ids = []
-                for index, prior in enumerate(prior_models, start=1):
+                for prior in prior_models:
                     evidence = await conn.fetchrow("""
                         SELECT c.id, c.content
                         FROM chunks c
@@ -513,57 +539,22 @@ Rules:
                         LIMIT 1
                     """, prior["id"])
                     prior_evidence_ids.append(evidence["id"] if evidence else None)
-                    candidates.append({
-                        "index": index,
-                        "title": prior["title"],
+                created_links = 0
+                for prior_index, prior in enumerate(prior_models):
+                    prior_model = {
                         "main_claim": prior["main_claim"],
                         "key_concepts": list(prior["key_concepts"]),
                         "assumptions": list(prior["assumptions"]),
                         "open_questions": list(prior["open_questions"]),
                         "domain": prior["domain"],
-                        "evidence_excerpt": evidence["content"][:700] if evidence else "",
-                    })
-                link_prompt = f"""Compare the new mental model with each prior mental model.
-Return a JSON array with at most one strongest meaningful link per prior model.
-Each result must contain: index, link_type, confidence, bridge_explanation.
-Valid link_type values: concept_overlap, claim_extension, assumption_conflict, question_resolution.
-Confidence must be between 0 and 1. Omit weak links below 0.55.
-The bridge explanation must make the learner think and must stay under 35 words.
-
-NEW MODEL:
-{json.dumps(mental_model, ensure_ascii=False)}
-
-NEW MODEL EVIDENCE:
-{source_evidence["content"][:700] if source_evidence else ""}
-
-PRIOR MODELS:
-{json.dumps(candidates, ensure_ascii=False)}"""
-                link_response = client.models.generate_content(
-                    model=TEXT_MODEL,
-                    contents=link_prompt,
-                    config={"response_mime_type": "application/json"}
-                )
-                classified_links = safe_parse_json(link_response.text)
-                if isinstance(classified_links, dict):
-                    classified_links = classified_links.get("links", [])
-                if not isinstance(classified_links, list):
-                    classified_links = []
-
-                valid_link_types = {
-                    "concept_overlap", "claim_extension",
-                    "assumption_conflict", "question_resolution"
-                }
-                created_links = 0
-                for classified in classified_links:
-                    try:
-                        prior_index = int(classified.get("index", 0)) - 1
-                        confidence = max(0.0, min(1.0, float(classified.get("confidence", 0))))
-                    except (TypeError, ValueError):
+                    }
+                    classified = deterministic_model_link(
+                        mental_model, prior_model, float(prior["similarity"])
+                    )
+                    if not classified:
                         continue
-                    link_type = classified.get("link_type")
-                    if not (0 <= prior_index < len(prior_models)) or link_type not in valid_link_types or confidence < 0.55:
-                        continue
-                    prior = prior_models[prior_index]
+                    link_type = classified["link_type"]
+                    confidence = classified["confidence"]
                     target_chunk_id = prior_evidence_ids[prior_index]
                     await conn.execute("""
                         INSERT INTO mental_model_links (
@@ -572,7 +563,7 @@ PRIOR MODELS:
                             source_evidence_chunk_id, target_evidence_chunk_id,
                             status, created_via, model_version, prompt_version
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                                  'candidate', 'ai_suggested', $10, 'mental-link-v1')
+                                  'candidate', 'ai_suggested', $10, 'deterministic-link-v1')
                         ON CONFLICT (source_model_id, target_model_id, link_type) DO UPDATE SET
                             similarity = EXCLUDED.similarity,
                             confidence = EXCLUDED.confidence,
@@ -583,16 +574,17 @@ PRIOR MODELS:
                             prompt_version = EXCLUDED.prompt_version
                     """, user_id, mental_model_id, prior["id"], link_type,
                         float(prior["similarity"]), confidence,
-                        str(classified.get("bridge_explanation", ""))[:500],
-                        source_evidence_chunk_id, target_chunk_id, TEXT_MODEL)
+                        str(classified["bridge_explanation"])[:500],
+                        source_evidence_chunk_id, target_chunk_id, "deterministic-v1")
                     created_links += 1
                 print(f"Mental-model candidate links: {created_links}")
+            await conn.execute("UPDATE documents SET progress = 0.96 WHERE id = $1", doc_id)
         except Exception as e:
             print(f"Failed to generate mental model for {doc_id}: {e}")
 
         # ── Finalize ──
         await conn.execute("""
-            UPDATE documents SET status = 'ready', processed_at = NOW() WHERE id = $1
+            UPDATE documents SET status = 'ready', progress = 1, processed_at = NOW() WHERE id = $1
         """, doc_id)
 
         await conn.close()
@@ -604,7 +596,7 @@ PRIOR MODELS:
             if conn:
                 await conn.close()
             conn = await asyncpg.connect(DATABASE_URL)
-            await conn.execute("UPDATE documents SET status = 'failed' WHERE id = $1", doc_id)
+            await conn.execute("UPDATE documents SET status = 'failed', progress = 0 WHERE id = $1", doc_id)
             await conn.close()
         except:
             pass

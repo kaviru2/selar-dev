@@ -124,16 +124,28 @@ func (s *Store) GetDocument(ctx context.Context, id, userID string) (*model.Docu
 
 func (s *Store) CreateDocument(ctx context.Context, d *model.Document) error {
 	return s.pool.QueryRow(ctx,
-		`INSERT INTO documents (user_id, title, authors, year, page_count, status, file_path, gdrive_file_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO documents (user_id, title, authors, year, page_count, status, progress, file_path, gdrive_file_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING id, added_at`,
-		d.UserID, d.Title, d.Authors, d.Year, d.PageCount, d.Status, d.FilePath, d.GDriveFileID,
+		d.UserID, d.Title, d.Authors, d.Year, d.PageCount, d.Status, d.Progress, d.FilePath, d.GDriveFileID,
 	).Scan(&d.ID, &d.AddedAt)
 }
 
 func (s *Store) DeleteDocument(ctx context.Context, id, userID string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM documents WHERE id = $1 AND user_id = $2`, id, userID)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `DELETE FROM documents WHERE id = $1 AND user_id = $2`, id, userID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx,
+		`DELETE FROM concepts c WHERE c.user_id = $1
+		 AND NOT EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = c.id)`, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) GetDocumentStats(ctx context.Context, userID string) (*model.DocumentStats, error) {
@@ -367,7 +379,9 @@ func (s *Store) DeleteAnnotation(ctx context.Context, id, userID string) error {
 func (s *Store) ListConcepts(ctx context.Context, userID string) ([]model.Concept, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, user_id, name, description, state, model_version, prompt_version, created_at
-		 FROM concepts WHERE user_id = $1 AND state NOT IN ('rejected', 'archived') ORDER BY name`, userID)
+		 FROM concepts c WHERE user_id = $1 AND state NOT IN ('rejected', 'archived')
+		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = c.id)
+		 ORDER BY name`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +402,10 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, user_id, source_concept_id, target_concept_id, relation, created_via,
 		        state, confidence, confirmed_at, created_at
-		 FROM concept_edges WHERE user_id = $1 AND state NOT IN ('rejected', 'archived') ORDER BY created_at`, userID)
+		 FROM concept_edges e WHERE user_id = $1 AND state NOT IN ('rejected', 'archived')
+		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.source_concept_id)
+		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.target_concept_id)
+		 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, err
 	}
