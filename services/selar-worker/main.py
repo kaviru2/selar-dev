@@ -2,6 +2,7 @@ import os
 import re
 import json
 import asyncio
+from collections import Counter
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -95,6 +96,81 @@ def normalize_mental_model(payload: Any) -> Dict[str, Any]:
         "domain": str(payload.get("domain", "")).strip()[:250],
         "concept_edges": payload.get("concept_edges", []) if isinstance(payload.get("concept_edges", []), list) else [],
     }
+
+
+FALLBACK_STOP_WORDS = {
+    "about", "abstract", "after", "again", "against", "also", "among", "because", "been",
+    "before", "being", "between", "both", "could", "does", "during", "each",
+    "every", "from", "further", "have", "having", "improve", "improves", "into",
+    "introduce", "introduction", "more", "most", "other", "over", "paper", "present",
+    "same", "should", "such", "than", "that",
+    "their", "then", "there", "these", "they", "this", "those", "through",
+    "under", "using", "very", "were", "what", "when", "where", "which",
+    "while", "with", "within", "without", "would",
+}
+
+
+def deterministic_mental_model(contents: List[str], partial: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Complete a missing mental model from PDF text without another LLM call."""
+    result = normalize_mental_model(partial or {})
+    sentence_candidates = []
+    for chunk_index, content in enumerate(contents):
+        for sentence_index, raw_sentence in enumerate(re.split(r"(?<=[.!?])\s+", content)):
+            sentence = re.sub(r"\s+", " ", raw_sentence).strip(" -")
+            words = sentence.split()
+            if not 8 <= len(words) <= 70 or "@" in sentence or "http" in sentence.lower():
+                continue
+            lowered = sentence.lower()
+            cue_score = sum(cue in lowered for cue in (
+                "we present", "we propose", "we introduce", "we develop",
+                "we demonstrate", "we show", "we argue", "this work",
+            ))
+            score = cue_score * 12 + min(len(words), 35) / 10 - chunk_index * 0.12 - sentence_index * 0.02
+            sentence_candidates.append((score, chunk_index, sentence))
+
+    if not result["main_claim"]:
+        if sentence_candidates:
+            result["main_claim"] = max(sentence_candidates, key=lambda item: item[0])[2][:1000]
+        else:
+            fallback_text = next((re.sub(r"\s+", " ", text).strip() for text in contents if text.strip()), "")
+            result["main_claim"] = fallback_text[:1000]
+
+    if len(result["key_concepts"]) < 5:
+        phrase_counts: Counter = Counter()
+        phrase_evidence: Dict[str, int] = {}
+        phrase_sentence: Dict[str, str] = {}
+        for chunk_index, content in enumerate(contents):
+            for raw_sentence in re.split(r"(?<=[.!?])\s+", content):
+                sentence = re.sub(r"\s+", " ", raw_sentence).strip()
+                tokens = [token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9-]{3,}", sentence)]
+                for left, right in zip(tokens, tokens[1:]):
+                    if left in FALLBACK_STOP_WORDS or right in FALLBACK_STOP_WORDS or left == right:
+                        continue
+                    phrase = f"{left} {right}"
+                    phrase_counts[phrase] += 1
+                    phrase_evidence.setdefault(phrase, chunk_index)
+                    phrase_sentence.setdefault(phrase, sentence)
+
+        existing_names = {concept["name"].lower() for concept in result["key_concepts"]}
+        ranked_phrases = sorted(
+            phrase_counts,
+            key=lambda phrase: (-phrase_counts[phrase], phrase_evidence[phrase], phrase),
+        )
+        for phrase in ranked_phrases:
+            if len(result["key_concepts"]) >= 8:
+                break
+            if phrase in existing_names or any(phrase in name or name in phrase for name in existing_names):
+                continue
+            result["key_concepts"].append({
+                "name": phrase.title(),
+                "description": phrase_sentence[phrase][:500],
+                "evidence_chunk_index": phrase_evidence[phrase],
+            })
+            existing_names.add(phrase)
+
+    if not result["domain"] and result["key_concepts"]:
+        result["domain"] = result["key_concepts"][0]["name"]
+    return result
 
 
 def merge_word_bboxes(words: List[Dict[str, Any]], width: float, height: float) -> List[Dict[str, float]]:
@@ -377,13 +453,21 @@ Rules:
 - Valid relations: prerequisite_of, related_to, sub_concept_of, contradicts, extends
 - Edge source/target must exactly match a key concept name."""
 
-            response = client.models.generate_content(
-                model=TEXT_MODEL,
-                contents=f"{prompt}\n\nTEXT:\n{''.join(numbered_chunks)}",
-                config={"response_mime_type": "application/json"}
-            )
+            try:
+                response = client.models.generate_content(
+                    model=TEXT_MODEL,
+                    contents=f"{prompt}\n\nTEXT:\n{''.join(numbered_chunks)}",
+                    config={"response_mime_type": "application/json"}
+                )
+                partial_mental_model = normalize_mental_model(safe_parse_json(response.text or ""))
+            except Exception as generation_error:
+                print(f"Structured model call failed; using deterministic fallback: {generation_error}")
+                partial_mental_model = normalize_mental_model({})
 
-            mental_model = normalize_mental_model(safe_parse_json(response.text))
+            used_fallback = not partial_mental_model["main_claim"]
+            mental_model = deterministic_mental_model(contents, partial_mental_model)
+            if used_fallback:
+                print("Structured model response had no main claim; completed it deterministically.")
             if not mental_model["main_claim"]:
                 raise ValueError("Mental model did not include a main claim")
 
@@ -581,6 +665,7 @@ Rules:
             await conn.execute("UPDATE documents SET progress = 0.96 WHERE id = $1", doc_id)
         except Exception as e:
             print(f"Failed to generate mental model for {doc_id}: {e}")
+            raise
 
         # ── Finalize ──
         await conn.execute("""

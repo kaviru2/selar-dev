@@ -85,6 +85,38 @@ def test_normalize_mental_model_structured_fields():
     assert result["open_questions"] == ["How should intervals adapt?"]
 
 
+def test_deterministic_mental_model_supplies_grounded_fallback():
+    from main import deterministic_mental_model
+
+    chunks = [
+        "Abstract. We introduce deterministic compensation logging to improve reliable agent execution. "
+        "Deterministic compensation logging records every external side effect.",
+        "The compensation manager uses deterministic compensation logging during agent recovery.",
+        "Reliable agent execution requires recovery policies and transaction logging.",
+    ]
+    result = deterministic_mental_model(chunks, {"domain": "Agent systems"})
+
+    assert result["main_claim"].startswith("We introduce deterministic compensation logging")
+    assert len(result["key_concepts"]) >= 5
+    assert result["domain"] == "Agent systems"
+    assert all(0 <= concept["evidence_chunk_index"] < len(chunks) for concept in result["key_concepts"])
+
+
+def test_deterministic_mental_model_preserves_valid_llm_fields():
+    from main import deterministic_mental_model
+
+    partial = {
+        "main_claim": "A grounded claim.",
+        "key_concepts": [{"name": "Known concept", "evidence_chunk_index": 0}],
+        "assumptions": ["A known assumption"],
+    }
+    result = deterministic_mental_model(["Known concept supports deterministic recovery behavior."], partial)
+
+    assert result["main_claim"] == "A grounded claim."
+    assert result["assumptions"] == ["A known assumption"]
+    assert result["key_concepts"][0]["name"] == "Known concept"
+
+
 def test_merge_word_bboxes_preserves_lines():
     from main import merge_word_bboxes
 
