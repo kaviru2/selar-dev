@@ -55,6 +55,7 @@ const REL_COLORS: Record<string, string> = {
   has_claim: "#c8c1b7",
   has_assumption: "#c8c1b7",
   raises: "#c8c1b7",
+  uses_concept: "#6f7f8c",
 };
 
 const NODE_TYPE_COLORS: Record<GraphNodeType, string> = {

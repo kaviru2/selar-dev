@@ -132,6 +132,7 @@ func TestLinkSuggestionJSON(t *testing.T) {
 	s := model.LinkSuggestion{
 		ID:         "link-1",
 		UserID:     "user-1",
+		SrcPage:    3,
 		Similarity: 0.85,
 		Relation:   model.RelationPrerequisiteOf,
 		Status:     model.SuggestionPending,
@@ -151,6 +152,9 @@ func TestLinkSuggestionJSON(t *testing.T) {
 
 	if decoded.Similarity != 0.85 {
 		t.Errorf("Similarity: got %f, want 0.85", decoded.Similarity)
+	}
+	if decoded.SrcPage != 3 {
+		t.Errorf("SrcPage: got %d, want 3", decoded.SrcPage)
 	}
 	if decoded.Relation != model.RelationPrerequisiteOf {
 		t.Errorf("Relation: got %q, want %q", decoded.Relation, model.RelationPrerequisiteOf)

@@ -74,6 +74,7 @@ export interface LinkSuggestion {
   tgt_text: string;
   src_doc: string;
   tgt_doc: string;
+  src_page: number;
   tgt_page: number;
   summary: string;
   suggested_at: string;

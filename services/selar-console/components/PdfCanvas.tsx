@@ -154,7 +154,7 @@ export default function PdfCanvas({
               )}
 
               {suggestions.flatMap((suggestion) => {
-                if (suggestion.status === "rejected") return [];
+                if (suggestion.status === "rejected" || suggestion.src_page !== pageNumber) return [];
                 return parseBBoxes(suggestion.src_bboxes)
                   .filter((bbox) => bbox.w * bbox.h <= 0.20)
                   .flatMap((bbox, index) => {

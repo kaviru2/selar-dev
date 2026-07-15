@@ -179,7 +179,7 @@ export default function ReaderPage() {
               zoom={zoom}
               pageNumber={pageNumber}
               annotationsOn={annotationsOn}
-              suggestions={suggestions}
+              suggestions={panelMode === "passages" ? suggestions : []}
               annotations={annotations}
               onCreateAnnotation={createAnnotation}
               onPageLoad={setNumPages}

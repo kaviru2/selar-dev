@@ -172,7 +172,8 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 		        ls.similarity, ls.relation, ls.status, ls.user_label,
 		        ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
 		        sc.content AS src_text, tc.content AS tgt_text,
-		        sd.title AS src_doc, td.title AS tgt_doc, tc.page_start AS tgt_page,
+		        sd.title AS src_doc, td.title AS tgt_doc,
+		        sc.page_start AS src_page, tc.page_start AS tgt_page,
 		        ls.summary, sc.bboxes AS src_bboxes
 		 FROM link_suggestions ls
 		 JOIN chunks sc ON ls.source_chunk_id = sc.id
@@ -197,7 +198,7 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 			&sg.ID, &sg.UserID, &sg.SourceChunkID, &sg.TargetChunkID,
 			&sg.Similarity, &sg.Relation, &sg.Status, &sg.UserLabel,
 			&sg.TimeToRespondMs, &sg.SuggestedAt, &sg.RespondedAt,
-			&sg.SrcText, &sg.TgtText, &sg.SrcDoc, &sg.TgtDoc, &sg.TgtPage,
+			&sg.SrcText, &sg.TgtText, &sg.SrcDoc, &sg.TgtDoc, &sg.SrcPage, &sg.TgtPage,
 			&sg.Summary, &srcBBoxes,
 		); err != nil {
 			return nil, err
@@ -418,6 +419,47 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 			return nil, err
 		}
 		edges = append(edges, e)
+	}
+	return edges, rows.Err()
+}
+
+// ListDocumentConceptEdges connects each latest document mental model to the
+// concepts that have evidence in that document. This keeps the unified graph
+// grounded in stored chunk evidence rather than adding another model call.
+func (s *Store) ListDocumentConceptEdges(ctx context.Context, userID string) ([]model.GraphEdge, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT mm.id, c.id
+		 FROM document_mental_models mm
+		 JOIN chunks ch ON ch.document_id = mm.document_id
+		 JOIN chunk_concepts cc ON cc.chunk_id = ch.id
+		 JOIN concepts c ON c.id = cc.concept_id AND c.user_id = mm.user_id
+		 WHERE mm.user_id = $1 AND mm.status = 'ready'
+		   AND mm.version = (
+		     SELECT MAX(latest.version) FROM document_mental_models latest
+		     WHERE latest.document_id = mm.document_id AND latest.status = 'ready'
+		   )
+		   AND c.state NOT IN ('rejected', 'archived')
+		 ORDER BY mm.id, c.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var edges []model.GraphEdge
+	for rows.Next() {
+		var mentalModelID, conceptID string
+		if err := rows.Scan(&mentalModelID, &conceptID); err != nil {
+			return nil, err
+		}
+		edges = append(edges, model.GraphEdge{
+			ID:         "uses-concept:" + mentalModelID + ":" + conceptID,
+			Source:     "model:" + mentalModelID,
+			Target:     conceptID,
+			Relation:   "uses_concept",
+			State:      "supported",
+			Confidence: 1,
+			CreatedVia: "system",
+		})
 	}
 	return edges, rows.Err()
 }
