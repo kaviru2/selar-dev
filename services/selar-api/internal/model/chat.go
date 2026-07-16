@@ -26,15 +26,24 @@ type ChatCitation struct {
 
 // ChatMessage is an immutable conversation episode.
 type ChatMessage struct {
-	ID           string         `json:"id"`
-	ThreadID     string         `json:"thread_id"`
-	UserID       string         `json:"user_id"`
-	Role         string         `json:"role"`
-	Content      string         `json:"content"`
-	Status       string         `json:"status"`
-	ModelVersion string         `json:"model_version,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
-	Citations    []ChatCitation `json:"citations"`
+	ID           string           `json:"id"`
+	ThreadID     string           `json:"thread_id"`
+	UserID       string           `json:"user_id"`
+	Role         string           `json:"role"`
+	Content      string           `json:"content"`
+	Status       string           `json:"status"`
+	ModelVersion string           `json:"model_version,omitempty"`
+	CreatedAt    time.Time        `json:"created_at"`
+	Citations    []ChatCitation   `json:"citations"`
+	GraphUpdate  *ChatGraphUpdate `json:"graph_update,omitempty"`
+}
+
+// ChatGraphUpdate summarizes deterministic graph changes caused by grounded evidence.
+type ChatGraphUpdate struct {
+	ConceptsReinforced int    `json:"concepts_reinforced"`
+	LinksObserved      int    `json:"links_observed"`
+	LinksPromoted      int    `json:"links_promoted"`
+	ReducerVersion     string `json:"reducer_version"`
 }
 
 // ChatAnswer is returned by the worker after deterministic retrieval.

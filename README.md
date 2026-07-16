@@ -10,7 +10,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Kavirubc/selar-dev)](https://goreportcard.com/report/github.com/Kavirubc/selar-dev)
 [![Dependency Review](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml)
 
-SELAR is a web-based PDF reader that discovers semantic connections across your document library using AI-powered vector embeddings. As you read, the system surfaces candidate links between passages in different papers. Its grounded research chat combines vector, lexical, and graph retrieval and cites the source passages behind each answer. You confirm, reject, or relabel suggestions — every interaction is a retrieval-practice event grounded in cognitive science research on active retention.
+SELAR is a web-based PDF reader that discovers semantic connections across your document library using AI-powered vector embeddings. As you read, the system surfaces candidate links between passages in different papers. Its grounded research chat combines vector, lexical, and graph retrieval and cites the source passages behind each answer. A deterministic reducer reinforces cited concepts and adds auditable candidate relationships; repeated independent evidence promotes them to supported relationships without allowing an LLM to write to the graph. You confirm, reject, or relabel suggestions — every interaction is a retrieval-practice event grounded in cognitive science research on active retention.
 
 Built for academic research. Designed for students and researchers who read across multiple papers and want to strengthen long-term comprehension.
 
@@ -128,6 +128,7 @@ psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql
 psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql
 psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental_model.sql
 psql -d selar -f services/selar-api/internal/store/migrations/004_adaptive_chat.sql
+psql -d selar -f services/selar-api/internal/store/migrations/005_chat_graph_reducer.sql
 ```
 
 On Windows, use `psql` from the PostgreSQL installation directory, or pgAdmin.
@@ -171,7 +172,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts Postgres (with pgvector and auto-migration), the Go API, and the Next.js console. The worker is not included in the compose file and must be run separately.
+This starts Postgres (with pgvector and initialization migrations), the Python worker, the Go API, and the Next.js console. Run `make migrate` after pulling new migrations into an existing database volume.
 
 See the [Makefile](Makefile) for convenience targets:
 

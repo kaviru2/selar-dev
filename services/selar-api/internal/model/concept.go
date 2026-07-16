@@ -28,9 +28,10 @@ type ChunkConcept struct {
 type EdgeCreatedVia string
 
 const (
-	EdgeAISuggested   EdgeCreatedVia = "ai_suggested"
-	EdgeUserConfirmed EdgeCreatedVia = "user_confirmed"
-	EdgeUserCreated   EdgeCreatedVia = "user_created"
+	EdgeAISuggested       EdgeCreatedVia = "ai_suggested"
+	EdgeUserConfirmed     EdgeCreatedVia = "user_confirmed"
+	EdgeUserCreated       EdgeCreatedVia = "user_created"
+	EdgeDeterministicChat EdgeCreatedVia = "deterministic_chat"
 )
 
 // ConceptEdge represents a directed relationship between two concepts.
@@ -43,6 +44,8 @@ type ConceptEdge struct {
 	CreatedVia      EdgeCreatedVia `json:"created_via"`
 	State           string         `json:"state"`
 	Confidence      float32        `json:"confidence"`
+	SupportCount    int            `json:"support_count,omitempty"`
+	DocumentCount   int            `json:"document_count,omitempty"`
 	ConfirmedAt     *time.Time     `json:"confirmed_at,omitempty"`
 	CreatedAt       time.Time      `json:"created_at"`
 }

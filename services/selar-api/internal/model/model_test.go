@@ -241,6 +241,7 @@ func TestChatMessageJSONPreservesCitations(t *testing.T) {
 		Citations: []model.ChatCitation{{
 			ChunkID: "chunk-1", DocumentID: "document-1", DocumentTitle: "Paper.pdf", Page: 3, Rank: 1,
 		}},
+		GraphUpdate: &model.ChatGraphUpdate{ConceptsReinforced: 2, LinksObserved: 1, ReducerVersion: "chat-graph-reducer-v1"},
 	}
 	data, err := json.Marshal(message)
 	if err != nil {
@@ -252,6 +253,9 @@ func TestChatMessageJSONPreservesCitations(t *testing.T) {
 	}
 	if len(decoded.Citations) != 1 || decoded.Citations[0].Page != 3 {
 		t.Fatalf("citation was not preserved: %#v", decoded.Citations)
+	}
+	if decoded.GraphUpdate == nil || decoded.GraphUpdate.LinksObserved != 1 {
+		t.Fatalf("graph update was not preserved: %#v", decoded.GraphUpdate)
 	}
 }
 

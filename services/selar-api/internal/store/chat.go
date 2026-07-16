@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/selar-dev/selar-api/internal/model"
 )
 
@@ -84,6 +86,11 @@ func (s *Store) ListChatMessages(ctx context.Context, userID, threadID string) (
 			return nil, err
 		}
 		messages[index].Citations = citations
+		graphUpdate, err := s.loadChatGraphUpdate(ctx, messages[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		messages[index].GraphUpdate = graphUpdate
 	}
 	return messages, nil
 }
@@ -151,6 +158,12 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		message.Citations = append(message.Citations, saved)
 	}
 
+	graphUpdate, err := reduceChatGraph(ctx, tx, userID, message.ID)
+	if err != nil {
+		return nil, err
+	}
+	message.GraphUpdate = graphUpdate
+
 	candidates, err := json.Marshal(answer.Candidates)
 	if err != nil {
 		return nil, err
@@ -159,6 +172,18 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		`INSERT INTO retrieval_traces (user_id, thread_id, user_message_id, assistant_message_id, query, ranking_policy, candidates)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`, userID, threadID, userMessageID,
 		message.ID, query, answer.RankingPolicy, candidates)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
+		 VALUES ($1, 'chat_graph_reduced', $2,
+		         jsonb_build_object('concepts_reinforced', $3::int, 'links_observed', $4::int,
+		                            'links_promoted', $5::int, 'reducer_version', $6::text),
+		         'deterministic_reducer', $7)
+		 ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, message.ID,
+		graphUpdate.ConceptsReinforced, graphUpdate.LinksObserved, graphUpdate.LinksPromoted,
+		graphUpdate.ReducerVersion, fmt.Sprintf("chat-graph-reduced:%s", message.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -189,4 +214,230 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		return nil, err
 	}
 	return message, nil
+}
+
+type chatConceptEvidence struct {
+	conceptID         string
+	chunkID           string
+	documentID        string
+	rank              int
+	score             float32
+	bindingMethod     string
+	bindingConfidence float32
+}
+
+func (s *Store) loadChatGraphUpdate(ctx context.Context, messageID string) (*model.ChatGraphUpdate, error) {
+	update := &model.ChatGraphUpdate{}
+	err := s.pool.QueryRow(ctx,
+		`SELECT concepts_reinforced, links_observed, links_promoted, reducer_version
+		 FROM chat_graph_updates WHERE message_id = $1`, messageID).Scan(
+		&update.ConceptsReinforced, &update.LinksObserved, &update.LinksPromoted, &update.ReducerVersion)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return update, err
+}
+
+// reduceChatGraph converts cited, already-grounded passages into bounded graph
+// evidence. It never reads generated answer text and never asks a model to
+// choose nodes or edges.
+func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID string) (*model.ChatGraphUpdate, error) {
+	const reducerVersion = "chat-graph-reducer-v1"
+	update := &model.ChatGraphUpdate{ReducerVersion: reducerVersion}
+
+	// Serialize reducers per user so concurrent chat answers cannot create the
+	// same undirected edge in opposite directions.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, userID); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.Query(ctx, `
+		WITH citation_concepts AS (
+			SELECT cc.concept_id, mc.chunk_id, c.document_id, mc.rank, mc.score,
+			       'explicit_chunk_concept'::text AS binding_method,
+			       cc.confidence AS binding_confidence
+			FROM message_citations mc
+			JOIN chunks c ON c.id = mc.chunk_id AND c.user_id = $2
+			JOIN chunk_concepts cc ON cc.chunk_id = mc.chunk_id
+			JOIN concepts concept ON concept.id = cc.concept_id AND concept.user_id = $2
+			WHERE mc.message_id = $1 AND concept.state NOT IN ('rejected', 'archived')
+
+			UNION ALL
+
+			SELECT nearest.concept_id, mc.chunk_id, c.document_id, mc.rank, mc.score,
+			       'embedding_fallback'::text, nearest.similarity::real
+			FROM message_citations mc
+			JOIN chunks c ON c.id = mc.chunk_id AND c.user_id = $2
+			CROSS JOIN LATERAL (
+				SELECT concept.id AS concept_id,
+				       1 - (concept.embedding::halfvec(3072) <=> c.embedding::halfvec(3072)) AS similarity
+				FROM concepts concept
+				WHERE concept.user_id = $2 AND concept.embedding IS NOT NULL
+				  AND concept.state NOT IN ('rejected', 'archived')
+				ORDER BY concept.embedding::halfvec(3072) <=> c.embedding::halfvec(3072), concept.id
+				LIMIT 2
+			) nearest
+			WHERE mc.message_id = $1 AND c.embedding IS NOT NULL
+			  AND nearest.similarity >= 0.65
+			  AND NOT EXISTS (SELECT 1 FROM chunk_concepts existing WHERE existing.chunk_id = mc.chunk_id)
+		),
+		ranked AS (
+			SELECT concept_id, chunk_id, document_id, rank, score, binding_method, binding_confidence,
+			       row_number() OVER (
+			         PARTITION BY concept_id
+			         ORDER BY rank, binding_confidence DESC, chunk_id
+			       ) AS concept_rank
+			FROM citation_concepts
+		)
+		SELECT concept_id, chunk_id, document_id, rank, score, binding_method, binding_confidence
+		FROM ranked WHERE concept_rank = 1
+		ORDER BY rank, concept_id
+		LIMIT 8`, messageID, userID)
+	if err != nil {
+		return nil, err
+	}
+	var evidence []chatConceptEvidence
+	for rows.Next() {
+		var item chatConceptEvidence
+		if err := rows.Scan(&item.conceptID, &item.chunkID, &item.documentID, &item.rank, &item.score,
+			&item.bindingMethod, &item.bindingConfidence); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		evidence = append(evidence, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	for _, item := range evidence {
+		result, err := tx.Exec(ctx, `
+			INSERT INTO chat_concept_evidence (
+				message_id, concept_id, chunk_id, document_id, rank, score, binding_method, binding_confidence
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (message_id, concept_id) DO NOTHING`, messageID, item.conceptID,
+			item.chunkID, item.documentID, item.rank, item.score, item.bindingMethod, item.bindingConfidence)
+		if err != nil {
+			return nil, err
+		}
+		if result.RowsAffected() == 0 {
+			continue
+		}
+		update.ConceptsReinforced++
+		_, err = tx.Exec(ctx, `
+			INSERT INTO learner_concept_state (
+				user_id, concept_id, last_exposed_at, evidence_count, uncertainty, updated_at
+			) VALUES ($1, $2, now(), 1, 0.97, now())
+			ON CONFLICT (user_id, concept_id) DO UPDATE SET
+				last_exposed_at = now(),
+				evidence_count = learner_concept_state.evidence_count + 1,
+				uncertainty = GREATEST(0.05, learner_concept_state.uncertainty * 0.97),
+				state_version = learner_concept_state.state_version + 1,
+				updated_at = now()`, userID, item.conceptID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for sourceIndex := 0; sourceIndex < len(evidence); sourceIndex++ {
+		for targetIndex := sourceIndex + 1; targetIndex < len(evidence); targetIndex++ {
+			source := evidence[sourceIndex]
+			target := evidence[targetIndex]
+			if target.conceptID < source.conceptID {
+				source, target = target, source
+			}
+
+			var edgeID, oldState string
+			err := tx.QueryRow(ctx, `
+				SELECT id, state FROM concept_edges
+				WHERE user_id = $1 AND relation = 'related_to'
+				  AND ((source_concept_id = $2 AND target_concept_id = $3)
+				    OR (source_concept_id = $3 AND target_concept_id = $2))
+				  AND state NOT IN ('rejected', 'archived')
+				ORDER BY created_at LIMIT 1`, userID, source.conceptID, target.conceptID).Scan(&edgeID, &oldState)
+			if err == pgx.ErrNoRows {
+				err = tx.QueryRow(ctx, `
+					INSERT INTO concept_edges (
+						user_id, source_concept_id, target_concept_id, relation,
+						created_via, state, confidence, last_adapted_at
+					) VALUES ($1, $2, $3, 'related_to', 'deterministic_chat', 'candidate', 0.35, now())
+					RETURNING id, state`, userID, source.conceptID, target.conceptID).Scan(&edgeID, &oldState)
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			result, err := tx.Exec(ctx, `
+				INSERT INTO adaptive_edge_evidence (
+					edge_id, message_id, source_chunk_id, target_chunk_id,
+					source_document_id, target_document_id
+				) VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (edge_id, message_id) DO NOTHING`, edgeID, messageID,
+				source.chunkID, target.chunkID, source.documentID, target.documentID)
+			if err != nil {
+				return nil, err
+			}
+			if result.RowsAffected() == 0 {
+				continue
+			}
+			update.LinksObserved++
+
+			var messageCount, documentCount int
+			err = tx.QueryRow(ctx, `
+				SELECT count(*)::int,
+				       (SELECT count(DISTINCT document_id)::int FROM (
+				          SELECT source_document_id AS document_id FROM adaptive_edge_evidence WHERE edge_id = $1
+				          UNION ALL
+				          SELECT target_document_id FROM adaptive_edge_evidence WHERE edge_id = $1
+				       ) documents)
+				FROM adaptive_edge_evidence WHERE edge_id = $1`, edgeID).Scan(&messageCount, &documentCount)
+			if err != nil {
+				return nil, err
+			}
+			newState := adaptiveEdgeState(messageCount, documentCount)
+			confidence := adaptiveEdgeConfidence(messageCount, documentCount)
+			var savedState string
+			err = tx.QueryRow(ctx, `
+				UPDATE concept_edges SET
+					support_count = $2, document_count = $3,
+					confidence = GREATEST(confidence, $4),
+					state = CASE WHEN state IN ('confirmed', 'supported') THEN state ELSE $5 END,
+					last_adapted_at = now()
+				WHERE id = $1 RETURNING state`, edgeID, messageCount, documentCount,
+				confidence, newState).Scan(&savedState)
+			if err != nil {
+				return nil, err
+			}
+			if oldState == "candidate" && savedState == "supported" {
+				update.LinksPromoted++
+			}
+		}
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO chat_graph_updates (
+			message_id, concepts_reinforced, links_observed, links_promoted, reducer_version
+		) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (message_id) DO UPDATE SET
+			concepts_reinforced = EXCLUDED.concepts_reinforced,
+			links_observed = EXCLUDED.links_observed,
+			links_promoted = EXCLUDED.links_promoted,
+			reducer_version = EXCLUDED.reducer_version`, messageID, update.ConceptsReinforced,
+		update.LinksObserved, update.LinksPromoted, update.ReducerVersion)
+	return update, err
+}
+
+func adaptiveEdgeState(messageCount, documentCount int) string {
+	if messageCount >= 3 || (messageCount >= 2 && documentCount >= 2) {
+		return "supported"
+	}
+	return "candidate"
+}
+
+func adaptiveEdgeConfidence(messageCount, documentCount int) float64 {
+	messageEvidence := math.Min(float64(max(messageCount-1, 0)), 3) * 0.15
+	documentEvidence := math.Min(float64(max(documentCount-1, 0)), 2) * 0.10
+	return math.Min(0.95, 0.35+messageEvidence+documentEvidence)
 }

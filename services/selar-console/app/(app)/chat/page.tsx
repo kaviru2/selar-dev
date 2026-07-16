@@ -117,7 +117,7 @@ export default function ChatPage() {
         </div>
         <div className="chat-policy-note">
           <strong>Evidence-first</strong>
-          <span>Answers use bounded hybrid retrieval. Graph updates are recorded as deterministic events.</span>
+          <span>Cited concepts reinforce the graph. Repeated independent evidence promotes relationships.</span>
         </div>
       </aside>
 
@@ -159,6 +159,18 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
+              {message.graph_update && message.graph_update.concepts_reinforced > 0 && (
+                <Link className="chat-graph-update" href="/graph">
+                  <span className="chat-graph-update-mark">↗</span>
+                  <span>
+                    <strong>Knowledge graph adapted</strong>
+                    <small>
+                      {message.graph_update.concepts_reinforced} concepts reinforced · {message.graph_update.links_observed} relationships observed
+                      {message.graph_update.links_promoted > 0 ? ` · ${message.graph_update.links_promoted} promoted to supported` : ""}
+                    </small>
+                  </span>
+                </Link>
+              )}
             </article>
           ))}
           {sending && <div className="chat-thinking"><span /><span /><span /> Retrieving evidence and assembling an answer…</div>}
@@ -175,7 +187,7 @@ export default function ChatPage() {
             }} />
             <button type="submit" disabled={!input.trim() || sending}>Ask</button>
           </form>
-          <span className="chat-disclaimer">Answers are limited to retrieved library evidence and may identify gaps or conflicts.</span>
+          <span className="chat-disclaimer">Answers and graph adaptation are limited to retrieved, cited library evidence.</span>
         </div>
       </main>
     </div>

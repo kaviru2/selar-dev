@@ -668,6 +668,16 @@ export default function GraphPage() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>
                       {peer?.name || "Loading peer..."}
                     </span>
+                    {l.created_via === "deterministic_chat" && (
+                      <span style={{ color: "#7a8c5c", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
+                        Adapted from grounded chat · {Math.round((l.confidence || 0) * 100)}% confidence
+                      </span>
+                    )}
+                    {l.explanation && (
+                      <span style={{ color: "var(--ink-4)", fontSize: 10, lineHeight: 1.45 }}>
+                        {l.explanation}
+                      </span>
+                    )}
                   </div>
                 );
               })}

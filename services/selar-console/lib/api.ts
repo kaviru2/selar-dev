@@ -231,6 +231,14 @@ export interface ChatMessage {
   model_version?: string;
   created_at: string;
   citations: ChatCitation[];
+  graph_update?: ChatGraphUpdate;
+}
+
+export interface ChatGraphUpdate {
+  concepts_reinforced: number;
+  links_observed: number;
+  links_promoted: number;
+  reducer_version: string;
 }
 
 // --- Annotation types ---
