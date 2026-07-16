@@ -85,6 +85,26 @@ def test_normalize_mental_model_structured_fields():
     assert result["open_questions"] == ["How should intervals adapt?"]
 
 
+def test_normalize_mental_model_rejects_layout_and_reference_noise():
+    from main import normalize_mental_model
+
+    result = normalize_mental_model({
+        "main_claim": "5 return record.result; Algorithm shows pseudocode // rollback_report ← RCM.Rollback();",
+        "key_concepts": ["Https Arxiv", "May26 Sanjose", "Recovery policy"],
+        "domain": "https arxiv",
+    })
+
+    assert result["main_claim"] == ""
+    assert [concept["name"] for concept in result["key_concepts"]] == ["Recovery policy"]
+    assert result["domain"] == ""
+
+
+def test_clean_extracted_text_repairs_pdf_hyphenation():
+    from main import clean_extracted_text
+
+    assert clean_extracted_text("log-based recov- ery   paradigm") == "log-based recovery paradigm"
+
+
 def test_deterministic_mental_model_supplies_grounded_fallback():
     from main import deterministic_mental_model
 

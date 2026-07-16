@@ -2,6 +2,7 @@ import os
 import re
 import json
 import asyncio
+import unicodedata
 from collections import Counter
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -74,26 +75,76 @@ def text_items(value: Any, key: str = "text") -> List[str]:
     return items
 
 
+NOISE_TERMS = {
+    "arxiv", "cais", "doi", "github", "https", "http", "isbn", "issn", "jose",
+    "copyright", "proceedings", "reference", "references", "sanjose",
+}
+
+
+def clean_extracted_text(text: str) -> str:
+    """Normalize PDF glyphs and repair line-break hyphenation."""
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"(?<=\w)-\s+(?=\w)", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def is_noisy_prose(text: str) -> bool:
+    """Detect references, fused layout text, and pseudocode masquerading as prose."""
+    lowered = text.lower()
+    words = re.findall(r"[a-z0-9_]+", lowered)
+    if not words:
+        return True
+    code_hits = len(re.findall(
+        r"\b(?:algorithm|return|input|output|catch|rollback_report|record\.result|ifnot)\b|//|←|[{};]",
+        lowered,
+    ))
+    fused_hits = sum(len(word) > 28 for word in words)
+    noise_hits = sum(term in lowered for term in NOISE_TERMS)
+    return (
+        code_hits >= 3
+        or fused_hits > max(1, len(words) // 12)
+        or (noise_hits >= 2 and len(words) < 45)
+    )
+
+
+def is_valid_concept_name(name: str) -> bool:
+    normalized = clean_extracted_text(name)
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9+.-]*", normalized)
+    lowered_words = {word.lower().strip(".") for word in words}
+    if not 1 <= len(words) <= 6 or len(normalized) > 90:
+        return False
+    if lowered_words & NOISE_TERMS or any(len(word) > 28 for word in words):
+        return False
+    if re.search(r"\b(?:may|june|july|august|september|october|november|december)\s*\d{2,4}\b", normalized, re.I):
+        return False
+    return sum(character.isalpha() for character in normalized) >= max(3, len(normalized) // 2)
+
+
 def normalize_mental_model(payload: Any) -> Dict[str, Any]:
     """Validate the stable article mental-model fields used by SELAR."""
     if not isinstance(payload, dict):
         payload = {}
     concept_objects: List[Dict[str, Any]] = []
     for item in payload.get("key_concepts", []):
-        if isinstance(item, str) and item.strip():
-            concept_objects.append({"name": item.strip(), "description": "", "evidence_chunk_index": 0})
-        elif isinstance(item, dict) and str(item.get("name", "")).strip():
+        if isinstance(item, str) and is_valid_concept_name(item):
+            concept_objects.append({"name": clean_extracted_text(item), "description": "", "evidence_chunk_index": 0})
+        elif isinstance(item, dict) and is_valid_concept_name(str(item.get("name", ""))):
+            description = clean_extracted_text(str(item.get("description", "")))
             concept_objects.append({
-                "name": str(item.get("name", "")).strip()[:250],
-                "description": str(item.get("description", "")).strip(),
+                "name": clean_extracted_text(str(item.get("name", "")))[:250],
+                "description": "" if is_noisy_prose(description) else description,
                 "evidence_chunk_index": item.get("evidence_chunk_index", 0),
             })
+    main_claim = clean_extracted_text(str(payload.get("main_claim", "")))
+    assumptions = [text for text in text_items(payload.get("assumptions", [])) if not is_noisy_prose(text)]
+    open_questions = [text for text in text_items(payload.get("open_questions", [])) if not is_noisy_prose(text)]
+    domain = clean_extracted_text(str(payload.get("domain", "")))
     return {
-        "main_claim": str(payload.get("main_claim", "")).strip(),
+        "main_claim": "" if is_noisy_prose(main_claim) else main_claim,
         "key_concepts": concept_objects[:12],
-        "assumptions": text_items(payload.get("assumptions", [])),
-        "open_questions": text_items(payload.get("open_questions", [])),
-        "domain": str(payload.get("domain", "")).strip()[:250],
+        "assumptions": assumptions,
+        "open_questions": open_questions,
+        "domain": domain[:250] if is_valid_concept_name(domain) else "",
         "concept_edges": payload.get("concept_edges", []) if isinstance(payload.get("concept_edges", []), list) else [],
     }
 
@@ -117,8 +168,12 @@ def deterministic_mental_model(contents: List[str], partial: Optional[Dict[str, 
     for chunk_index, content in enumerate(contents):
         for sentence_index, raw_sentence in enumerate(re.split(r"(?<=[.!?])\s+", content)):
             sentence = re.sub(r"\s+", " ", raw_sentence).strip(" -")
+            abstract_match = re.search(r"\babstract\b\s*", sentence, re.I)
+            if abstract_match:
+                sentence = sentence[abstract_match.end():].strip()
             words = sentence.split()
-            if not 8 <= len(words) <= 70 or "@" in sentence or "http" in sentence.lower():
+            if (not 8 <= len(words) <= 70 or "@" in sentence or "http" in sentence.lower()
+                    or is_noisy_prose(sentence)):
                 continue
             lowered = sentence.lower()
             cue_score = sum(cue in lowered for cue in (
@@ -159,7 +214,10 @@ def deterministic_mental_model(contents: List[str], partial: Optional[Dict[str, 
         for phrase in ranked_phrases:
             if len(result["key_concepts"]) >= 8:
                 break
-            if phrase in existing_names or any(phrase in name or name in phrase for name in existing_names):
+            if (not is_valid_concept_name(phrase)
+                    or is_noisy_prose(phrase_sentence[phrase])
+                    or phrase in existing_names
+                    or any(phrase in name or name in phrase for name in existing_names)):
                 continue
             result["key_concepts"].append({
                 "name": phrase.title(),
@@ -288,7 +346,10 @@ async def process_document_task(doc_id: str, file_path: str):
         with pdfplumber.open(file_path) as pdf:
             page_count = len(pdf.pages)
             for page_num, page in enumerate(pdf.pages, start=1):
-                words = page.extract_words()
+                # Follow the PDF's content stream so multi-column papers are not
+                # interleaved line-by-line. A tighter x tolerance restores spaces
+                # in densely typeset conference PDFs.
+                words = page.extract_words(use_text_flow=True, x_tolerance=1, y_tolerance=3)
                 if not words:
                     continue
 
@@ -302,7 +363,7 @@ async def process_document_task(doc_id: str, file_path: str):
                     current_chunk_geometry.append(word)
 
                     if len(current_chunk_words) >= CHUNK_WORD_LIMIT:
-                        chunk_text = " ".join(current_chunk_words)
+                        chunk_text = clean_extracted_text(" ".join(current_chunk_words))
                         chunks_data.append({
                             "text": chunk_text,
                             "page": page_num,
@@ -313,7 +374,7 @@ async def process_document_task(doc_id: str, file_path: str):
 
                 if current_chunk_words:
                     chunks_data.append({
-                        "text": " ".join(current_chunk_words),
+                        "text": clean_extracted_text(" ".join(current_chunk_words)),
                         "page": page_num,
                         "bboxes": merge_word_bboxes(current_chunk_geometry, width, height),
                     })
