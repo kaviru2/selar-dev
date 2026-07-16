@@ -106,6 +106,12 @@ func main() {
 		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)
 		r.Get("/learner-state", h.ListLearnerConceptState)
 
+		// Grounded Chat
+		r.Get("/chat/threads", h.ListChatThreads)
+		r.Post("/chat/threads", h.CreateChatThread)
+		r.Get("/chat/threads/{id}/messages", h.ListChatMessages)
+		r.Post("/chat/threads/{id}/messages", h.CreateChatMessage)
+
 		// Reading Sessions
 		r.Post("/sessions/start", h.StartSession)
 		r.Post("/sessions/{id}/end", h.EndSession)
@@ -115,7 +121,7 @@ func main() {
 		Addr:         ":" + port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

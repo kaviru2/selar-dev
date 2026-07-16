@@ -58,7 +58,10 @@ export default function ReaderPage() {
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
   const [numPages, setNumPages] = useState(0);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [pageNumber, setPageNumber] = useState(() => {
+    const requestedPage = Number(searchParams.get("page") || "1");
+    return Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
+  });
 
   useEffect(() => {
     if (!docId) return;

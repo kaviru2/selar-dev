@@ -231,6 +231,30 @@ func TestDocumentMentalModelJSON(t *testing.T) {
 	}
 }
 
+func TestChatMessageJSONPreservesCitations(t *testing.T) {
+	message := model.ChatMessage{
+		ID:       "message-1",
+		ThreadID: "thread-1",
+		Role:     "assistant",
+		Content:  "Grounded answer [S1].",
+		Status:   "complete",
+		Citations: []model.ChatCitation{{
+			ChunkID: "chunk-1", DocumentID: "document-1", DocumentTitle: "Paper.pdf", Page: 3, Rank: 1,
+		}},
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	var decoded model.ChatMessage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if len(decoded.Citations) != 1 || decoded.Citations[0].Page != 3 {
+		t.Fatalf("citation was not preserved: %#v", decoded.Citations)
+	}
+}
+
 // helpers
 
 func containsField(jsonStr, field string) bool {

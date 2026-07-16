@@ -5,7 +5,7 @@ import asyncio
 import unicodedata
 from collections import Counter
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 import asyncpg
 import pdfplumber
@@ -32,6 +32,39 @@ CHUNK_WORD_LIMIT = int(os.getenv("CHUNK_WORD_LIMIT", "120"))
 class ProcessRequest(BaseModel):
     doc_id: str
     file_path: str
+
+
+class ChatHistoryItem(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    user_id: str
+    thread_id: str
+    question: str
+    history: List[ChatHistoryItem] = Field(default_factory=list)
+
+
+def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: int = 6) -> List[Dict[str, Any]]:
+    """Fuse independently ranked retrieval signals with fixed, replayable weights."""
+    weights = {"vector": 0.50, "lexical": 0.30, "graph": 0.20}
+    fused: Dict[str, Dict[str, Any]] = {}
+    for signal, results in result_sets.items():
+        for rank, candidate in enumerate(results, start=1):
+            chunk_id = str(candidate["chunk_id"])
+            entry = fused.setdefault(chunk_id, {**candidate, "rrf_score": 0.0, "signals": {}})
+            entry["rrf_score"] += weights.get(signal, 0) / (60 + rank)
+            entry["signals"][signal] = {"rank": rank, "score": float(candidate.get("score", 0))}
+    return sorted(fused.values(), key=lambda item: (-item["rrf_score"], item["chunk_id"]))[:limit]
+
+
+def referenced_citation_ranks(answer: str, maximum: int) -> set[int]:
+    """Return only source labels explicitly referenced in the generated answer."""
+    return {
+        rank for rank in (int(value) for value in re.findall(r"\[S(\d+)\]", answer, re.I))
+        if 1 <= rank <= maximum
+    }
 
 
 def safe_parse_json(text: str) -> Any:
@@ -751,6 +784,151 @@ Rules:
 async def process_document(req: ProcessRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_document_task, req.doc_id, req.file_path)
     return {"message": "Processing started in background", "doc_id": req.doc_id}
+
+
+@app.post("/chat")
+async def grounded_chat(req: ChatRequest):
+    question = req.question.strip()
+    if not question or len(question) > 4000:
+        raise HTTPException(status_code=400, detail="question must contain 1 to 4000 characters")
+    if not client:
+        raise HTTPException(status_code=503, detail="Gemini client is not configured")
+
+    query_embedding = await asyncio.to_thread(
+        client.models.embed_content,
+        model=EMBEDDING_MODEL,
+        contents=[question],
+        config={"task_type": "RETRIEVAL_QUERY"},
+    )
+    query_vector = str(query_embedding.embeddings[0].values)
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        vector_rows = await conn.fetch("""
+            SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
+                   c.page_start AS page, c.content,
+                   1 - (c.embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)) AS score
+            FROM chunks c JOIN documents d ON d.id = c.document_id
+            WHERE c.user_id = $1 AND d.status = 'ready' AND c.embedding IS NOT NULL
+            ORDER BY c.embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)
+            LIMIT 20
+        """, req.user_id, query_vector)
+        lexical_rows = await conn.fetch("""
+            SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
+                   c.page_start AS page, c.content,
+                   ts_rank_cd(to_tsvector('english', c.content), websearch_to_tsquery('english', $2)) AS score
+            FROM chunks c JOIN documents d ON d.id = c.document_id
+            WHERE c.user_id = $1 AND d.status = 'ready'
+              AND to_tsvector('english', c.content) @@ websearch_to_tsquery('english', $2)
+            ORDER BY score DESC, c.id
+            LIMIT 20
+        """, req.user_id, question)
+        graph_rows = await conn.fetch("""
+            WITH nearest_concepts AS (
+                SELECT id, 1 - (embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)) AS concept_score
+                FROM concepts
+                WHERE user_id = $1 AND embedding IS NOT NULL
+                  AND state NOT IN ('rejected', 'archived')
+                ORDER BY embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)
+                LIMIT 8
+            )
+            SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
+                   c.page_start AS page, c.content,
+                   MAX(nc.concept_score * cc.confidence) AS score
+            FROM nearest_concepts nc
+            JOIN chunk_concepts cc ON cc.concept_id = nc.id
+            JOIN chunks c ON c.id = cc.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE d.status = 'ready'
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            ORDER BY score DESC, c.id
+            LIMIT 20
+        """, req.user_id, query_vector)
+    finally:
+        await conn.close()
+
+    def serialize(rows: Any) -> List[Dict[str, Any]]:
+        return [{
+            "chunk_id": str(row["chunk_id"]),
+            "document_id": str(row["document_id"]),
+            "document_title": row["document_title"],
+            "page": row["page"],
+            "content": row["content"],
+            "score": float(row["score"]),
+        } for row in rows]
+
+    ranked = reciprocal_rank_fusion({
+        "vector": serialize(vector_rows),
+        "lexical": serialize(lexical_rows),
+        "graph": serialize(graph_rows),
+    })
+    if not ranked:
+        return {
+            "answer": "I could not find evidence for that question in your processed library.",
+            "model_version": "deterministic-no-evidence-v1",
+            "ranking_policy": "hybrid-rrf-v1",
+            "citations": [],
+            "candidates": [],
+        }
+
+    sources = []
+    citations = []
+    for rank, candidate in enumerate(ranked, start=1):
+        quote = candidate["content"][:1000]
+        sources.append(
+            f"[S{rank}] {candidate['document_title']}, page {candidate['page']}\n{quote}"
+        )
+        citations.append({
+            "chunk_id": candidate["chunk_id"],
+            "document_id": candidate["document_id"],
+            "document_title": candidate["document_title"],
+            "page": candidate["page"],
+            "rank": rank,
+            "score": candidate["rrf_score"],
+            "quote": quote,
+        })
+
+    history_text = "\n".join(
+        f"{item.role.upper()}: {item.content[:1200]}" for item in req.history[-6:]
+    )
+    prompt = f"""You are SELAR, a research-library assistant.
+
+Answer the question only from the supplied evidence. Cite factual statements using [S1], [S2], and so on. If the evidence is incomplete or conflicting, say so explicitly. Never invent a citation. Keep the answer concise and useful.
+
+RECENT CONVERSATION:
+{history_text}
+
+QUESTION:
+{question}
+
+EVIDENCE:
+{chr(10).join(sources)}
+"""
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model=TEXT_MODEL,
+        contents=prompt,
+    )
+    answer_text = (response.text or "").strip()
+    if not answer_text:
+        raise HTTPException(status_code=502, detail="answer model returned no text")
+
+    cited_ranks = referenced_citation_ranks(answer_text, len(citations))
+    citations = [citation for citation in citations if citation["rank"] in cited_ranks]
+    if not citations:
+        answer_text += "\n\nNo library citation was produced for this answer; treat it as unsupported."
+
+    candidates = [{
+        "chunk_id": item["chunk_id"],
+        "rrf_score": item["rrf_score"],
+        "signals": item["signals"],
+    } for item in ranked]
+    return {
+        "answer": answer_text,
+        "model_version": TEXT_MODEL,
+        "ranking_policy": "hybrid-rrf-v1",
+        "citations": citations,
+        "candidates": candidates,
+    }
 
 @app.get("/health")
 def health():

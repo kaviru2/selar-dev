@@ -10,7 +10,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Kavirubc/selar-dev)](https://goreportcard.com/report/github.com/Kavirubc/selar-dev)
 [![Dependency Review](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml)
 
-SELAR is a web-based PDF reader that discovers semantic connections across your document library using AI-powered vector embeddings. As you read, the system surfaces candidate links between passages in different papers. You confirm, reject, or relabel each suggestion — every interaction is a retrieval-practice event grounded in cognitive science research on active retention.
+SELAR is a web-based PDF reader that discovers semantic connections across your document library using AI-powered vector embeddings. As you read, the system surfaces candidate links between passages in different papers. Its grounded research chat combines vector, lexical, and graph retrieval and cites the source passages behind each answer. You confirm, reject, or relabel suggestions — every interaction is a retrieval-practice event grounded in cognitive science research on active retention.
 
 Built for academic research. Designed for students and researchers who read across multiple papers and want to strengthen long-term comprehension.
 
@@ -38,8 +38,8 @@ SELAR is a monorepo containing three services:
 | Service | Stack | Port | Description |
 |---------|-------|------|-------------|
 | `selar-api` | Go 1.22+, Chi router | 8080 | REST API, JWT auth, document CRUD, concept graph |
-| `selar-console` | Next.js 16, TypeScript | 3000 | Frontend: PDF reader, matches panel, knowledge graph |
-| `selar-worker` | Python 3.11+, FastAPI | 8000 | AI ingestion pipeline: chunking, embedding, link generation |
+| `selar-console` | Next.js 16, TypeScript | 3000 | Frontend: PDF reader, grounded chat, matches panel, knowledge graph |
+| `selar-worker` | Python 3.11+, FastAPI | 8000 | AI ingestion and deterministic hybrid chat retrieval |
 
 **Database:** PostgreSQL 16 with the [pgvector](https://github.com/pgvector/pgvector) extension for 3072-dimensional embedding storage and approximate nearest-neighbor search.
 
@@ -127,6 +127,7 @@ psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql
 psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql
 psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental_model.sql
+psql -d selar -f services/selar-api/internal/store/migrations/004_adaptive_chat.sql
 ```
 
 On Windows, use `psql` from the PostgreSQL installation directory, or pgAdmin.
