@@ -1,19 +1,23 @@
-// page.tsx — Reader view (hero view).
-// Three-column layout: Sidebar · Doc pane · Matches panel.
-// Now incorporates react-pdf for true PDF rendering.
-
 "use client";
 
-import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
-import { clientFetch, type LinkSuggestion } from "@/lib/api";
-import { useSelar } from "@/lib/context";
-import dynamic from "next/dynamic";
+import {
+  clientFetch,
+  type Annotation,
+  type DocumentMentalModel,
+  type LinkSuggestion,
+  type MentalModelLink,
+} from "@/lib/api";
 
 const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
   ssr: false,
-  loading: () => <div style={{ padding: 40, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-4)" }}>Initializing PDF engine...</div> 
+  loading: () => (
+    <div className="reader-empty">Initializing PDF engine…</div>
+  ),
 });
 
 const RELATION_LABELS: Record<string, string> = {
@@ -22,297 +26,287 @@ const RELATION_LABELS: Record<string, string> = {
   sub_concept_of: "sub-concept of",
   contradicts: "contradicts",
   extends: "extends",
+  concept_overlap: "concept overlap",
+  claim_extension: "claim extension",
+  assumption_conflict: "assumption conflict",
+  question_resolution: "question resolution",
 };
 
-import { useSearchParams } from 'next/navigation';
+const RELATION_COLORS: Record<string, string> = {
+  prerequisite_of: "var(--accent)",
+  extends: "var(--accent-2)",
+  sub_concept_of: "var(--accent-3)",
+  contradicts: "#c0443a",
+  related_to: "var(--ink-4)",
+  concept_overlap: "#5e8aaa",
+  claim_extension: "var(--accent-2)",
+  assumption_conflict: "#c0443a",
+  question_resolution: "#8a6a9a",
+};
+
+type PanelMode = "argument" | "passages";
 
 export default function ReaderPage() {
-  const { user } = useSelar();
   const searchParams = useSearchParams();
-  const urlDocId = searchParams.get('docId') || "";
-  
-  const [docId, setDocId] = useState(urlDocId);
+  const [docId, setDocId] = useState(searchParams.get("docId") || "");
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
-  const [annotations, setAnnotations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [mentalLinks, setMentalLinks] = useState<MentalModelLink[]>([]);
+  const [mentalModel, setMentalModel] = useState<DocumentMentalModel | null>(null);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
+  const [panelMode, setPanelMode] = useState<PanelMode>("argument");
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
+  const [numPages, setNumPages] = useState(0);
+  const [pageNumber, setPageNumber] = useState(1);
 
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
-
-  // Fetch suggestions when docId changes
   useEffect(() => {
     if (!docId) return;
-    setLoading(true);
-    // 0 fetches all pages for now
+    let cancelled = false;
     Promise.all([
-      clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`),
-      clientFetch<any[]>(`/api/documents/${docId}/annotations`)
-    ])
-      .then(([sData, aData]) => {
-        setSuggestions(sData || []);
-        setAnnotations(aData || []);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch suggestions", err);
-        setSuggestions([]);
-        setAnnotations([]);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`).catch(() => []),
+      clientFetch<Annotation[]>(`/api/documents/${docId}/annotations`).catch(() => []),
+      clientFetch<DocumentMentalModel>(`/api/documents/${docId}/mental-model`).catch(() => null),
+      clientFetch<MentalModelLink[]>(`/api/mental-model-links?document_id=${docId}`).catch(() => []),
+    ]).then(([suggestionData, annotationData, modelData, linkData]) => {
+      if (cancelled) return;
+      setSuggestions(suggestionData);
+      setAnnotations(annotationData);
+      setMentalModel(modelData);
+      setMentalLinks(linkData);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [docId]);
 
-  const handleCreateAnnotation = async (type: string, bboxes: any[], color: string, pageIndex: number, comment: string = "") => {
-    try {
-      const resp = await clientFetch<any>(`/api/annotations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          document_id: docId,
-          page: pageIndex,
-          bbox: JSON.stringify(bboxes),
-          type,
-          color,
-          comment
-        })
-      });
-      if (resp && resp.id) {
-         setAnnotations(prev => [...prev, resp]);
-      }
-    } catch (err) {
-      console.error("Failed to save annotation", err);
-    }
-  };
+  const selectDocument = useCallback((id: string) => {
+    setLoading(true);
+    setPageNumber(1);
+    setDocId(id);
+  }, []);
 
-  // Handle responding to a suggestion
-  const respond = async (id: string, action: "confirmed" | "rejected" | "relabeled") => {
-    try {
-      setSuggestions(prev => prev.map(s => 
-        s.id === id ? { ...s, status: action } : s
-      ));
+  const pendingCount = panelMode === "argument"
+    ? mentalLinks.filter((item) => item.status === "candidate").length
+    : suggestions.filter((item) => item.status === "pending").length;
+  const confirmedCount = panelMode === "argument"
+    ? mentalLinks.filter((item) => item.status === "confirmed").length
+    : suggestions.filter((item) => item.status === "confirmed").length;
 
+  async function createAnnotation(
+    type: string,
+    bboxes: Array<{ x: number; y: number; w: number; h: number }>,
+    color: string,
+    page: number,
+    comment = ""
+  ) {
+    const annotation = await clientFetch<Annotation>("/api/annotations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        document_id: docId,
+        page,
+        bbox: bboxes,
+        type,
+        color,
+        comment,
+      }),
+    });
+    setAnnotations((current) => [...current, annotation]);
+  }
+
+  async function respondToPassage(id: string, action: "confirmed" | "rejected") {
+    const previous = suggestions;
+    setSuggestions((current) => current.map((item) => item.id === id ? { ...item, status: action } : item));
+    try {
       await clientFetch(`/api/suggestions/${id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, time_to_respond_ms: 1500 }),
       });
-    } catch (err) {
-      console.error("Failed to submit response", err);
+    } catch (error) {
+      setSuggestions(previous);
+      console.error("Failed to save passage response", error);
     }
-  };
+  }
 
-  const pendingCount = suggestions.filter((m) => m.status === "pending").length;
-  const confirmedCount = suggestions.filter((m) => m.status === "confirmed").length;
+  async function respondToMentalLink(id: string, action: "confirmed" | "rejected") {
+    const previous = mentalLinks;
+    setMentalLinks((current) => current.map((item) => item.id === id ? { ...item, status: action } : item));
+    try {
+      await clientFetch(`/api/mental-model-links/${id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+    } catch (error) {
+      setMentalLinks(previous);
+      console.error("Failed to save mental-model response", error);
+    }
+  }
 
   return (
     <div className="reader">
-      <Sidebar currentId={docId} onPick={setDocId} />
+      <Sidebar currentId={docId} onPick={selectDocument} />
 
-      {/* Doc pane */}
-      <div className="doc-pane">
+      <main className="doc-pane">
         <div className="doc-toolbar">
           <div className="grp">
-            <button 
-              disabled={pageNumber <= 1}
-              onClick={() => setPageNumber(p => Math.max(1, p - 1))}
-            >‹</button>
+            <button aria-label="Previous page" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => Math.max(1, page - 1))}>‹</button>
             <span className="page-indicator">{pageNumber} / {numPages || "?"}</span>
-            <button 
-              disabled={numPages === 0 || pageNumber >= numPages}
-              onClick={() => setPageNumber(p => Math.min(numPages, p + 1))}
-            >›</button>
+            <button aria-label="Next page" disabled={!numPages || pageNumber >= numPages} onClick={() => setPageNumber((page) => Math.min(numPages, page + 1))}>›</button>
           </div>
           <div className="grp">
-            <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}>
-              <Icon name="zoom_out" size={12} />
-            </button>
-            <span className="page-indicator" style={{ padding: "0 6px" }}>
-              {Math.round(zoom * 100)}%
-            </span>
-            <button onClick={() => setZoom(Math.min(2, zoom + 0.1))}>
-              <Icon name="zoom_in" size={12} />
-            </button>
+            <button aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(0.6, value - 0.1))}><Icon name="zoom_out" size={12} /></button>
+            <span className="page-indicator">{Math.round(zoom * 100)}%</span>
+            <button aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(1.8, value + 0.1))}><Icon name="zoom_in" size={12} /></button>
           </div>
           <div className="grp">
-            <button
-              className={annotationsOn ? "on" : ""}
-              onClick={() => setAnnotationsOn(!annotationsOn)}
-            >
+            <button className={annotationsOn ? "on" : ""} onClick={() => setAnnotationsOn((value) => !value)}>
               <Icon name="highlight" size={12} /> Marks
             </button>
           </div>
           <div className="tool-spacer" />
-          <div className="grp">
-            <button><Icon name="search" size={12} /></button>
-            <button><Icon name="note" size={12} /> Note</button>
-            <button><Icon name="more" size={12} /></button>
-          </div>
+          {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
         </div>
 
-        <div className="pdf-container" style={{
-            flex: 1,
-            overflow: "auto",
-            display: "flex",
-            justifyContent: "center",
-            padding: "20px 0",
-            background: "var(--bg-2)"
-        }}>
-          <PdfCanvas 
-            docId={docId} 
-            zoom={zoom} 
-            pageNumber={pageNumber} 
-            annotationsOn={annotationsOn} 
-            suggestions={suggestions}
-            annotations={annotations}
-            onCreateAnnotation={handleCreateAnnotation}
-            onPageLoad={setNumPages} 
-          />
+        <div className="pdf-container">
+          {docId ? (
+            <PdfCanvas
+              docId={docId}
+              zoom={zoom}
+              pageNumber={pageNumber}
+              annotationsOn={annotationsOn}
+              suggestions={panelMode === "passages" ? suggestions : []}
+              annotations={annotations}
+              onCreateAnnotation={createAnnotation}
+              onPageLoad={setNumPages}
+            />
+          ) : (
+            <div className="reader-empty">
+              <Icon name="book" size={24} />
+              <strong>Select a document to begin reading</strong>
+              <span>SELAR will surface evidence-backed connections here.</span>
+            </div>
+          )}
         </div>
-      </div>
+      </main>
 
-      {/* Matches panel */}
-      <aside className="matches">
+      <aside className="matches mental-panel">
         <div className="matches-head">
-          <span className="ttl">Matches</span>
-          <span className="chip">{pendingCount} pending</span>
-          <span
-            className="chip"
-            style={{
-              color: "var(--accent-2)",
-              borderColor: "rgba(122,140,92,0.4)",
-            }}
-          >
-            {confirmedCount} linked
-          </span>
-          <div style={{ flex: 1 }} />
-          <div className="seg" style={{
-            display: "flex",
-            background: "var(--bg-2)",
-            borderRadius: "var(--r-sm)",
-            padding: 2,
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-          }}>
-            {["cards", "diff", "feed", "keyboard"].map((v) => (
-              <button
-                key={v}
-                className={v === "cards" ? "on" : ""}
-                style={{
-                  background: v === "cards" ? "var(--bg)" : "transparent",
-                  border: "none",
-                  padding: "2px 7px",
-                  borderRadius: 2,
-                  color: v === "cards" ? "var(--ink)" : "var(--ink-3)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  boxShadow: v === "cards" ? "var(--shadow-1)" : "none",
-                }}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+          <span className="ttl">Connections</span>
+          <span className="chip">{pendingCount} to review</span>
+          <span className="chip linked-chip">{confirmedCount} linked</span>
+        </div>
+
+        <div className="mental-panel-tabs" role="tablist" aria-label="Connection type">
+          <button role="tab" aria-selected={panelMode === "argument"} className={panelMode === "argument" ? "active" : ""} onClick={() => setPanelMode("argument")}>Argument links</button>
+          <button role="tab" aria-selected={panelMode === "passages"} className={panelMode === "passages" ? "active" : ""} onClick={() => setPanelMode("passages")}>Passage matches</button>
         </div>
 
         <div className="matches-body">
-          <div className="match-group-lbl">
-            Pending · {loading ? "..." : pendingCount}
-          </div>
-          
-          {suggestions.length === 0 && !loading && (
-             <div style={{ padding: 20, textAlign: "center", color: "var(--ink-4)", fontSize: "var(--t-sm)" }}>
-               No suggestions generated yet for this page.
-             </div>
+          {panelMode === "argument" ? (
+            <>
+              {mentalModel && <MentalModelSummary model={mentalModel} />}
+              <div className="match-group-lbl">Argument-level candidates · {loading ? "…" : mentalLinks.length}</div>
+              {!loading && mentalLinks.length === 0 && <PanelEmpty message="No argument-level links yet. They appear after at least two documents have mental models." />}
+              {mentalLinks.map((link) => {
+                const otherTitle = link.source_document_id === docId ? link.target_document_title : link.source_document_title;
+                return (
+                  <ConnectionCard
+                    key={link.id}
+                    relation={link.link_type}
+                    score={link.confidence}
+                    source={otherTitle}
+                    explanation={link.bridge_explanation}
+                    evidence={link.target_evidence || link.source_evidence}
+                    status={link.status}
+                    onConfirm={() => respondToMentalLink(link.id, "confirmed")}
+                    onReject={() => respondToMentalLink(link.id, "rejected")}
+                  />
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <div className="match-group-lbl">Passage-level matches · {loading ? "…" : suggestions.length}</div>
+              {!loading && suggestions.length === 0 && <PanelEmpty message="No passage matches were generated for this document." />}
+              {suggestions.map((suggestion) => (
+                <ConnectionCard
+                  key={suggestion.id}
+                  relation={suggestion.relation}
+                  score={suggestion.similarity}
+                  source={`${suggestion.tgt_doc || "Unknown source"} · p.${suggestion.tgt_page}`}
+                  explanation={suggestion.summary || suggestion.tgt_text}
+                  status={suggestion.status}
+                  onConfirm={() => respondToPassage(suggestion.id, "confirmed")}
+                  onReject={() => respondToPassage(suggestion.id, "rejected")}
+                />
+              ))}
+            </>
           )}
-
-          {suggestions.map((m) => {
-            const st = m.status;
-            const relColor: Record<string, string> = {
-              prerequisite_of: "var(--accent)",
-              extends: "var(--accent-2)",
-              sub_concept_of: "var(--accent-3)",
-              contradicts: "#c0443a",
-              related_to: "var(--ink-4)",
-            };
-            const rc = relColor[m.relation] || "var(--ink-4)";
-
-            return (
-              <div
-                key={m.id}
-                className={`match-card${
-                  st === "confirmed" ? " confirmed" : ""
-                }${st === "rejected" ? " rejected" : ""}`}
-              >
-                {/* Row 1: Relation pill + similarity + target doc */}
-                <div className="row1">
-                  <span style={{
-                    fontSize: 9, fontFamily: "var(--font-mono)", fontWeight: 600,
-                    color: rc, border: `1px solid ${rc}`, borderRadius: 10,
-                    padding: "1px 7px", textTransform: "uppercase" as const, letterSpacing: "0.04em",
-                    whiteSpace: "nowrap",
-                  }}>
-                    {RELATION_LABELS[m.relation] || m.relation}
-                  </span>
-                  <span className="sim">{(m.similarity * 100).toFixed(0)}%</span>
-                  <div className="sim-bar">
-                    <div className="fill" style={{ width: `${m.similarity * 100}%` }} />
-                  </div>
-                  <span className="src">{m.tgt_doc || "Unknown"}</span>
-                </div>
-
-                {/* Row 2: AI Summary (if available) or truncated text */}
-                {m.summary ? (
-                  <div style={{
-                    fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45,
-                    margin: "6px 0 8px", fontStyle: "italic",
-                  }}>
-                    {m.summary}
-                  </div>
-                ) : (
-                  <div className="snippet">{m.tgt_text}</div>
-                )}
-
-                {/* Footer: actions + page ref */}
-                <div className="foot">
-                  {st === "confirmed" ? (
-                    <span style={{
-                      fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--accent-2)",
-                    }}>
-                      <Icon name="check" size={11} /> confirmed
-                    </span>
-                  ) : st === "rejected" ? (
-                    <span style={{
-                      fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-4)",
-                    }}>
-                      <Icon name="x" size={11} /> rejected
-                    </span>
-                  ) : (
-                    <>
-                      <button className="confirm" onClick={() => respond(m.id, "confirmed")}>
-                        <Icon name="check" size={11} /> Confirm
-                      </button>
-                      <button onClick={() => respond(m.id, "rejected")}>
-                        <Icon name="x" size={11} /> Reject
-                      </button>
-                      <button>
-                        <Icon name="tag" size={11} /> Label
-                      </button>
-                    </>
-                  )}
-                  <div style={{ flex: 1 }} />
-                  <span style={{
-                    fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-4)",
-                  }}>
-                    p.{m.tgt_page}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
         </div>
       </aside>
     </div>
   );
+}
+
+function MentalModelSummary({ model }: { model: DocumentMentalModel }) {
+  return (
+    <section className="mental-summary">
+      <div className="mental-summary-kicker"><Icon name="graph" size={11} /> Article mental model</div>
+      <p>{model.main_claim}</p>
+      <div className="mental-concepts">
+        {model.key_concepts.slice(0, 6).map((concept) => <span key={concept}>{concept}</span>)}
+      </div>
+      {(model.assumptions.length > 0 || model.open_questions.length > 0) && (
+        <div className="mental-summary-meta">
+          <span>{model.assumptions.length} assumptions</span>
+          <span>{model.open_questions.length} open questions</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject }: {
+  relation: string;
+  score: number;
+  source: string;
+  explanation: string;
+  evidence?: string;
+  status: string;
+  onConfirm: () => void;
+  onReject: () => void;
+}) {
+  const relationColor = RELATION_COLORS[relation] || "var(--ink-4)";
+  const reviewed = status === "confirmed" || status === "rejected" || status === "relabeled";
+  return (
+    <article className={`match-card mental-link-card ${status}`}>
+      <div className="row1">
+        <span className="relation-pill" style={{ color: relationColor, borderColor: relationColor }}>{RELATION_LABELS[relation] || relation.replaceAll("_", " ")}</span>
+        <span className="sim">{Math.round(score * 100)}%</span>
+        <div className="sim-bar"><div className="fill" style={{ width: `${Math.max(0, Math.min(100, score * 100))}%` }} /></div>
+      </div>
+      <div className="connection-source">{source}</div>
+      <p className="connection-explanation">{explanation}</p>
+      {evidence && <details className="connection-evidence"><summary>View supporting passage</summary><p>{evidence}</p></details>}
+      <div className="foot">
+        {reviewed ? (
+          <span className={`review-state ${status}`}><Icon name={status === "rejected" ? "x" : "check"} size={11} /> {status}</span>
+        ) : (
+          <>
+            <button className="confirm" onClick={onConfirm}><Icon name="check" size={11} /> Confirm</button>
+            <button onClick={onReject}><Icon name="x" size={11} /> Reject</button>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function PanelEmpty({ message }: { message: string }) {
+  return <div className="panel-empty"><Icon name="link" size={18} /><span>{message}</span></div>;
 }

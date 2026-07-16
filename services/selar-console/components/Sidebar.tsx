@@ -15,8 +15,6 @@ interface SidebarDoc {
   authors: string;
   year: number;
   status: "ready" | "processing" | "failed";
-  chunks_count: number;
-  links_count: number;
   page_count: number;
   progress?: number;
 }
@@ -31,16 +29,28 @@ export function Sidebar({ currentId, onPick }: SidebarProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    clientFetch<SidebarDoc[]>("/api/documents")
-      .then((data) => {
+    let cancelled = false;
+    async function loadDocuments() {
+      try {
+        const data = await clientFetch<SidebarDoc[]>("/api/documents");
+        if (cancelled) return;
         setDocs(data || []);
-        // If currentId is falsy or 'backprop', auto-select the first real doc
         if (data && data.length > 0 && (!currentId || currentId === "backprop")) {
           onPick?.(data[0].id);
         }
-      })
-      .catch((err) => console.error("Failed to fetch sidebar docs:", err))
-      .finally(() => setLoading(false));
+      } catch (error) {
+        console.error("Failed to fetch sidebar docs:", error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadDocuments();
+    const interval = window.setInterval(loadDocuments, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [currentId, onPick]);
 
   return (
@@ -89,7 +99,7 @@ export function Sidebar({ currentId, onPick }: SidebarProps) {
               ? `processing`
               : d.status === "failed"
               ? "failed"
-              : `${d.links_count} links`;
+              : d.page_count > 0 ? `${d.page_count} pages` : "ready";
 
           return (
             <div

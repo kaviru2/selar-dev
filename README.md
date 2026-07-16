@@ -126,6 +126,7 @@ psql -d selar -c "CREATE EXTENSION IF NOT EXISTS vector;"
 psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql
 psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql
+psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental_model.sql
 ```
 
 On Windows, use `psql` from the PostgreSQL installation directory, or pgAdmin.

@@ -132,6 +132,7 @@ func TestLinkSuggestionJSON(t *testing.T) {
 	s := model.LinkSuggestion{
 		ID:         "link-1",
 		UserID:     "user-1",
+		SrcPage:    3,
 		Similarity: 0.85,
 		Relation:   model.RelationPrerequisiteOf,
 		Status:     model.SuggestionPending,
@@ -151,6 +152,9 @@ func TestLinkSuggestionJSON(t *testing.T) {
 
 	if decoded.Similarity != 0.85 {
 		t.Errorf("Similarity: got %f, want 0.85", decoded.Similarity)
+	}
+	if decoded.SrcPage != 3 {
+		t.Errorf("SrcPage: got %d, want 3", decoded.SrcPage)
 	}
 	if decoded.Relation != model.RelationPrerequisiteOf {
 		t.Errorf("Relation: got %q, want %q", decoded.Relation, model.RelationPrerequisiteOf)
@@ -185,6 +189,45 @@ func TestSuggestionResponseJSON(t *testing.T) {
 	}
 	if decoded.TimeToRespondMs != 1500 {
 		t.Errorf("TimeToRespondMs: got %d, want 1500", decoded.TimeToRespondMs)
+	}
+}
+
+func TestMentalLinkTypeConstants(t *testing.T) {
+	relations := []model.MentalLinkType{
+		model.MentalLinkConceptOverlap,
+		model.MentalLinkClaimExtension,
+		model.MentalLinkAssumptionConflict,
+		model.MentalLinkQuestionResolution,
+	}
+	expected := []string{"concept_overlap", "claim_extension", "assumption_conflict", "question_resolution"}
+	for index, relation := range relations {
+		if string(relation) != expected[index] {
+			t.Errorf("MentalLinkType[%d]: got %q, want %q", index, relation, expected[index])
+		}
+	}
+}
+
+func TestDocumentMentalModelJSON(t *testing.T) {
+	mentalModel := model.DocumentMentalModel{
+		ID:            "model-1",
+		DocumentID:    "doc-1",
+		MainClaim:     "Retrieval practice improves delayed recall.",
+		KeyConcepts:   []string{"retrieval practice", "delayed recall"},
+		Assumptions:   []string{"Effortful recall strengthens memory."},
+		OpenQuestions: []string{"How long does the effect persist?"},
+		Domain:        "learning science",
+		Status:        model.MentalModelReady,
+	}
+	data, err := json.Marshal(mentalModel)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	var decoded model.DocumentMentalModel
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if decoded.MainClaim != mentalModel.MainClaim || len(decoded.KeyConcepts) != 2 {
+		t.Fatalf("Mental model did not survive JSON round-trip: %#v", decoded)
 	}
 }
 

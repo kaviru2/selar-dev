@@ -64,6 +64,114 @@ def test_safe_parse_json_array():
     assert result[0]["index"] == 1
 
 
+def test_normalize_mental_model_structured_fields():
+    """Mental models retain only the stable research schema."""
+    from main import normalize_mental_model
+
+    result = normalize_mental_model({
+        "main_claim": "Active recall improves retention.",
+        "key_concepts": [
+            {"name": "Active recall", "description": "Effortful retrieval", "evidence_chunk_index": 2},
+            "Spacing effect",
+        ],
+        "assumptions": [{"text": "Recall is effortful"}],
+        "open_questions": ["How should intervals adapt?"],
+        "domain": "Learning science",
+    })
+
+    assert result["main_claim"] == "Active recall improves retention."
+    assert [concept["name"] for concept in result["key_concepts"]] == ["Active recall", "Spacing effect"]
+    assert result["assumptions"] == ["Recall is effortful"]
+    assert result["open_questions"] == ["How should intervals adapt?"]
+
+
+def test_normalize_mental_model_rejects_layout_and_reference_noise():
+    from main import normalize_mental_model
+
+    result = normalize_mental_model({
+        "main_claim": "5 return record.result; Algorithm shows pseudocode // rollback_report ← RCM.Rollback();",
+        "key_concepts": ["Https Arxiv", "May26 Sanjose", "Recovery policy"],
+        "domain": "https arxiv",
+    })
+
+    assert result["main_claim"] == ""
+    assert [concept["name"] for concept in result["key_concepts"]] == ["Recovery policy"]
+    assert result["domain"] == ""
+
+
+def test_clean_extracted_text_repairs_pdf_hyphenation():
+    from main import clean_extracted_text
+
+    assert clean_extracted_text("log-based recov- ery   paradigm") == "log-based recovery paradigm"
+
+
+def test_deterministic_mental_model_supplies_grounded_fallback():
+    from main import deterministic_mental_model
+
+    chunks = [
+        "Abstract. We introduce deterministic compensation logging to improve reliable agent execution. "
+        "Deterministic compensation logging records every external side effect.",
+        "The compensation manager uses deterministic compensation logging during agent recovery.",
+        "Reliable agent execution requires recovery policies and transaction logging.",
+    ]
+    result = deterministic_mental_model(chunks, {"domain": "Agent systems"})
+
+    assert result["main_claim"].startswith("We introduce deterministic compensation logging")
+    assert len(result["key_concepts"]) >= 5
+    assert result["domain"] == "Agent systems"
+    assert all(0 <= concept["evidence_chunk_index"] < len(chunks) for concept in result["key_concepts"])
+
+
+def test_deterministic_mental_model_preserves_valid_llm_fields():
+    from main import deterministic_mental_model
+
+    partial = {
+        "main_claim": "A grounded claim.",
+        "key_concepts": [{"name": "Known concept", "evidence_chunk_index": 0}],
+        "assumptions": ["A known assumption"],
+    }
+    result = deterministic_mental_model(["Known concept supports deterministic recovery behavior."], partial)
+
+    assert result["main_claim"] == "A grounded claim."
+    assert result["assumptions"] == ["A known assumption"]
+    assert result["key_concepts"][0]["name"] == "Known concept"
+
+
+def test_merge_word_bboxes_preserves_lines():
+    from main import merge_word_bboxes
+
+    words = [
+        {"x0": 10, "x1": 30, "top": 10, "bottom": 20},
+        {"x0": 32, "x1": 50, "top": 10, "bottom": 20},
+        {"x0": 10, "x1": 35, "top": 30, "bottom": 40},
+    ]
+    boxes = merge_word_bboxes(words, 100, 100)
+
+    assert len(boxes) == 2
+    assert boxes[0] == {"x": 0.1, "y": 0.1, "w": 0.4, "h": 0.1}
+
+
+def test_deterministic_model_link_finds_concept_overlap():
+    from main import deterministic_model_link
+
+    source = {
+        "main_claim": "Deterministic compensation improves reliable agents.",
+        "key_concepts": [{"name": "Compensation-based recovery"}],
+        "assumptions": [],
+        "open_questions": [],
+    }
+    target = {
+        "main_claim": "Recovery policies improve agent reliability.",
+        "key_concepts": ["Compensation recovery"],
+        "assumptions": [],
+        "open_questions": [],
+    }
+
+    result = deterministic_model_link(source, target, 0.8)
+    assert result is not None
+    assert result["link_type"] == "concept_overlap"
+
+
 def test_health_endpoint():
     """Test the /health endpoint returns ok."""
     from main import app

@@ -17,18 +17,18 @@ const (
 
 // Document represents an uploaded PDF document.
 type Document struct {
-	ID            string     `json:"id"`
-	UserID        string     `json:"user_id"`
-	Title         string     `json:"title"`
-	Authors       string     `json:"authors,omitempty"`
-	Year          int        `json:"year,omitempty"`
-	PageCount     int        `json:"page_count,omitempty"`
-	Status        DocStatus  `json:"status"`
-	Progress      float64    `json:"progress,omitempty"`
-	FilePath      string     `json:"-"`
-	GDriveFileID  string     `json:"-"`
-	AddedAt       time.Time  `json:"added_at"`
-	ProcessedAt   *time.Time `json:"processed_at,omitempty"`
+	ID           string     `json:"id"`
+	UserID       string     `json:"user_id"`
+	Title        string     `json:"title"`
+	Authors      string     `json:"authors,omitempty"`
+	Year         int        `json:"year,omitempty"`
+	PageCount    int        `json:"page_count,omitempty"`
+	Status       DocStatus  `json:"status"`
+	Progress     float64    `json:"progress,omitempty"`
+	FilePath     string     `json:"-"`
+	GDriveFileID string     `json:"-"`
+	AddedAt      time.Time  `json:"added_at"`
+	ProcessedAt  *time.Time `json:"processed_at,omitempty"`
 }
 
 // DocumentStats holds aggregate stats for a user's library.

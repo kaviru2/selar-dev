@@ -49,7 +49,7 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	docID := uuid.New()
-	
+
 	// Create upload folder
 	uploadDir := "/tmp/selar_uploads"
 	err = os.MkdirAll(uploadDir, 0755)
@@ -74,12 +74,12 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Insert Document into Database
 	doc := model.Document{
-		ID:        docID.String(),
-		UserID:    userID.String(),
-		Title:     header.Filename,
-		Status:    "processing",
-		Progress:  0.01, // Mock progress to trigger pipeline visualization
-		AddedAt:   time.Now(),
+		ID:       docID.String(),
+		UserID:   userID.String(),
+		Title:    header.Filename,
+		Status:   "processing",
+		Progress: 0.01, // Mock progress to trigger pipeline visualization
+		AddedAt:  time.Now(),
 	}
 
 	err = h.store.CreateDocument(r.Context(), &doc)
@@ -102,9 +102,9 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		if workerURL == "" {
 			workerURL = "http://localhost:8000"
 		}
-		
+
 		payload := fmt.Sprintf(`{"doc_id": "%s", "file_path": "%s"}`, doc.ID, newOutPath)
-		resp, err := http.Post(workerURL + "/process", "application/json", strings.NewReader(payload))
+		resp, err := http.Post(workerURL+"/process", "application/json", strings.NewReader(payload))
 		if err != nil {
 			fmt.Printf("Worker connection failed: %v\n", err)
 			return
@@ -134,8 +134,10 @@ func (h *Handler) ServeDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In a real implementation we would fetch the doc and assert doc.UserID == userID
-	_ = userIdStr 
+	if _, err := h.store.GetDocument(r.Context(), docID.String(), userIdStr); err != nil {
+		http.Error(w, `{"error": "document not found"}`, http.StatusNotFound)
+		return
+	}
 
 	filePath := filepath.Join("/tmp/selar_uploads", docID.String()+".pdf")
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {

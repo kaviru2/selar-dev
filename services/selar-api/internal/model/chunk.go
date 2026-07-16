@@ -22,16 +22,16 @@ type BBox struct {
 
 // Chunk represents a text chunk extracted from a document.
 type Chunk struct {
-	ID          string          `json:"id"`
-	DocumentID  string          `json:"document_id"`
-	UserID      string          `json:"user_id"`
-	ChunkIndex  int             `json:"chunk_index"`
-	PageStart   int             `json:"page_start"`
-	PageEnd     int             `json:"page_end"`
-	Content     string          `json:"content"`
-	TokenCount  int             `json:"token_count"`
-	BBoxes      json.RawMessage `json:"bboxes"`
-	CreatedAt   time.Time       `json:"created_at"`
+	ID         string          `json:"id"`
+	DocumentID string          `json:"document_id"`
+	UserID     string          `json:"user_id"`
+	ChunkIndex int             `json:"chunk_index"`
+	PageStart  int             `json:"page_start"`
+	PageEnd    int             `json:"page_end"`
+	Content    string          `json:"content"`
+	TokenCount int             `json:"token_count"`
+	BBoxes     json.RawMessage `json:"bboxes"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // AnnotationType represents the kind of annotation.

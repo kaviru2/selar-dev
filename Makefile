@@ -26,6 +26,8 @@ build:
 # Run database migration manually
 migrate:
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/001_init.sql
+	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/002_add_summary.sql
+	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/003_runtime_mental_model.sql
 
 # Run only the Go API locally (requires local Postgres)
 api-dev:
