@@ -46,14 +46,16 @@ type LinkSuggestion struct {
 	RespondedAt     *time.Time       `json:"responded_at,omitempty"`
 
 	// Joined fields for API responses
-	SrcText   string          `json:"src_text,omitempty"`
-	TgtText   string          `json:"tgt_text,omitempty"`
-	SrcDoc    string          `json:"src_doc,omitempty"`
-	TgtDoc    string          `json:"tgt_doc,omitempty"`
-	SrcPage   int             `json:"src_page,omitempty"`
-	TgtPage   int             `json:"tgt_page,omitempty"`
-	Summary   string          `json:"summary,omitempty"`
-	SrcBBoxes json.RawMessage `json:"src_bboxes,omitempty"`
+	SrcText       string          `json:"src_text,omitempty"`
+	TgtText       string          `json:"tgt_text,omitempty"`
+	SrcDocumentID string          `json:"src_document_id,omitempty"`
+	TgtDocumentID string          `json:"tgt_document_id,omitempty"`
+	SrcDoc        string          `json:"src_doc,omitempty"`
+	TgtDoc        string          `json:"tgt_doc,omitempty"`
+	SrcPage       int             `json:"src_page,omitempty"`
+	TgtPage       int             `json:"tgt_page,omitempty"`
+	Summary       string          `json:"summary,omitempty"`
+	SrcBBoxes     json.RawMessage `json:"src_bboxes,omitempty"`
 }
 
 // SuggestionResponse is the payload for confirming/rejecting a suggestion.

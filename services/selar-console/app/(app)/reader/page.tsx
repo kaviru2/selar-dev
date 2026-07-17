@@ -55,6 +55,7 @@ export default function ReaderPage() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
   const [suggestionError, setSuggestionError] = useState("");
+  const [suggestionActionError, setSuggestionActionError] = useState("");
   const [panelMode, setPanelMode] = useState<PanelMode>("argument");
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
@@ -90,16 +91,19 @@ export default function ReaderPage() {
     };
   }, [docId]);
 
-  const selectDocument = useCallback((id: string) => {
+  const openDocument = useCallback((id: string, page = 1) => {
     setLoading(true);
     setSuggestionError("");
-    setPageNumber(1);
+    setSuggestionActionError("");
+    setPageNumber(Math.max(1, page));
     setSuggestions([]);
     setMentalLinks([]);
     setMentalModel(null);
     setAnnotations([]);
     setDocId(id);
   }, []);
+
+  const selectDocument = useCallback((id: string) => openDocument(id, 1), [openDocument]);
 
   const pendingCount = panelMode === "argument"
     ? mentalLinks.filter((item) => item.status === "candidate").length
@@ -143,8 +147,9 @@ export default function ReaderPage() {
     setAnnotations((current) => [...current, annotation]);
   }
 
-  async function respondToPassage(id: string, action: "confirmed" | "rejected") {
+  async function respondToPassage(id: string, action: "confirmed" | "rejected"): Promise<boolean> {
     const previous = suggestions;
+    setSuggestionActionError("");
     setSuggestions((current) => current.map((item) => item.id === id ? { ...item, status: action } : item));
     try {
       await clientFetch(`/api/suggestions/${id}/respond`, {
@@ -152,9 +157,14 @@ export default function ReaderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, time_to_respond_ms: 1500 }),
       });
+      const persisted = await clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`);
+      setSuggestions(persisted);
+      return true;
     } catch (error) {
       setSuggestions(previous);
+      setSuggestionActionError(error instanceof Error ? error.message : "Unable to save suggestion response");
       console.error("Failed to save passage response", error);
+      return false;
     }
   }
 
@@ -219,6 +229,10 @@ export default function ReaderPage() {
               annotations={annotations}
               onCreateAnnotation={createAnnotation}
               onPageLoad={setNumPages}
+              onRespondSuggestion={respondToPassage}
+              onOpenSuggestionTarget={(suggestion) => {
+                if (suggestion.tgt_document_id) openDocument(suggestion.tgt_document_id, suggestion.tgt_page);
+              }}
             />
           ) : (
             <div className="reader-empty">
@@ -268,6 +282,7 @@ export default function ReaderPage() {
           ) : (
             <>
               <div className="match-group-lbl">Passage-level matches · {loading ? "…" : suggestions.length}</div>
+              {suggestionActionError && <div className="reader-action-error">Could not save response: {suggestionActionError}</div>}
               {!loading && suggestionError && <PanelEmpty message={`Suggested passages could not be loaded: ${suggestionError}`} />}
               {!loading && !suggestionError && suggestions.length === 0 && <PanelEmpty message="No passage matches were generated for this document." />}
               {suggestions.map((suggestion) => (

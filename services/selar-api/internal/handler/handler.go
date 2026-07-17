@@ -6,6 +6,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -260,6 +261,7 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.RespondToSuggestion(r.Context(), userID, id, status, req.Label, req.TimeToRespondMs); err != nil {
+		log.Printf("failed to respond to suggestion %s: %v", id, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to respond"})
 		return
 	}

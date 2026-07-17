@@ -72,6 +72,8 @@ export interface LinkSuggestion {
   user_label: string | null;
   src_text: string;
   tgt_text: string;
+  src_document_id: string;
+  tgt_document_id: string;
   src_doc: string;
   tgt_doc: string;
   src_page: number;

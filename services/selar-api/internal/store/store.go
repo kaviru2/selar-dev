@@ -176,6 +176,8 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 		          ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
 		          CASE WHEN sc.document_id = $2 THEN sc.content ELSE tc.content END AS src_text,
 		          CASE WHEN sc.document_id = $2 THEN tc.content ELSE sc.content END AS tgt_text,
+		          CASE WHEN sc.document_id = $2 THEN sd.id ELSE td.id END AS src_document_id,
+		          CASE WHEN sc.document_id = $2 THEN td.id ELSE sd.id END AS tgt_document_id,
 		          CASE WHEN sc.document_id = $2 THEN sd.title ELSE td.title END AS src_doc,
 		          CASE WHEN sc.document_id = $2 THEN td.title ELSE sd.title END AS tgt_doc,
 		          CASE WHEN sc.document_id = $2 THEN sc.page_start ELSE tc.page_start END AS src_page,
@@ -200,7 +202,8 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 		 SELECT id, user_id, source_chunk_id, target_chunk_id,
 		        similarity, relation, status, user_label,
 		        time_to_respond_ms, suggested_at, responded_at,
-		        src_text, tgt_text, src_doc, tgt_doc, src_page, tgt_page,
+		        src_text, tgt_text, src_document_id, tgt_document_id,
+		        src_doc, tgt_doc, src_page, tgt_page,
 		        summary, src_bboxes
 		 FROM oriented
 		 WHERE duplicate_rank = 1 AND ($3 = 0 OR src_page = $3)
@@ -219,7 +222,8 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 			&sg.ID, &sg.UserID, &sg.SourceChunkID, &sg.TargetChunkID,
 			&sg.Similarity, &sg.Relation, &sg.Status, &sg.UserLabel,
 			&sg.TimeToRespondMs, &sg.SuggestedAt, &sg.RespondedAt,
-			&sg.SrcText, &sg.TgtText, &sg.SrcDoc, &sg.TgtDoc, &sg.SrcPage, &sg.TgtPage,
+			&sg.SrcText, &sg.TgtText, &sg.SrcDocumentID, &sg.TgtDocumentID,
+			&sg.SrcDoc, &sg.TgtDoc, &sg.SrcPage, &sg.TgtPage,
 			&sg.Summary, &srcBBoxes,
 		); err != nil {
 			return nil, err
@@ -241,15 +245,22 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 	defer tx.Rollback(ctx)
 
 	command, err := tx.Exec(ctx,
-		`UPDATE link_suggestions
+		`WITH selected AS (
+		   SELECT source_chunk_id, target_chunk_id, relation
+		   FROM link_suggestions WHERE id = $5 AND user_id = $6
+		 )
+		 UPDATE link_suggestions ls
 		 SET status = $1,
-		     user_label = COALESCE(NULLIF($2, ''), user_label),
+		     user_label = COALESCE(NULLIF($2, ''), ls.user_label),
 		     responded_at = $3,
 		     time_to_respond_ms = $4
-		 WHERE id = $5 AND user_id = $6`,
+		 FROM selected s
+		 WHERE ls.user_id = $6 AND ls.relation = s.relation
+		   AND ((ls.source_chunk_id = s.source_chunk_id AND ls.target_chunk_id = s.target_chunk_id)
+		     OR (ls.source_chunk_id = s.target_chunk_id AND ls.target_chunk_id = s.source_chunk_id))`,
 		action, label, now, timeMs, id, userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("update suggestion state: %w", err)
 	}
 	if command.RowsAffected() == 0 {
 		return fmt.Errorf("suggestion not found")
@@ -262,7 +273,7 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 		 ON CONFLICT (user_id, idempotency_key) DO NOTHING`,
 		userID, "suggestion_"+string(action), id, payload, "suggestion:"+id+":"+string(action))
 	if err != nil {
-		return err
+		return fmt.Errorf("record suggestion learning event: %w", err)
 	}
 	if action == model.SuggestionConfirmed || action == model.SuggestionRelabeled {
 		_, err = tx.Exec(ctx,
@@ -270,10 +281,10 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 			    user_id, concept_id, mastery_estimate, half_life_seconds,
 			    last_retrieved_at, success_count, evidence_count, uncertainty
 			 )
-				 SELECT DISTINCT $1, cc.concept_id, 0.35, 129600, $3, 1, 1, 0.85
+				 SELECT DISTINCT $1::uuid, cc.concept_id, 0.35, 129600, $3::timestamptz, 1, 1, 0.85
 			 FROM link_suggestions ls
 			 JOIN chunk_concepts cc ON cc.chunk_id IN (ls.source_chunk_id, ls.target_chunk_id)
-			 WHERE ls.id = $2 AND ls.user_id = $1
+				 WHERE ls.id = $2::uuid AND ls.user_id = $1::uuid
 			 ON CONFLICT (user_id, concept_id) DO UPDATE SET
 			    mastery_estimate = LEAST(0.99, learner_concept_state.mastery_estimate + 0.08),
 			    half_life_seconds = LEAST(31536000, learner_concept_state.half_life_seconds * 1.5),
@@ -283,7 +294,63 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 			    uncertainty = GREATEST(0.05, learner_concept_state.uncertainty * 0.9),
 			    updated_at = $3`, userID, id, now)
 		if err != nil {
-			return err
+			return fmt.Errorf("update learner projection from suggestion: %w", err)
+		}
+
+		_, err = tx.Exec(ctx, `
+			WITH suggestion AS (
+			  SELECT ls.user_id, ls.id, ls.relation,
+			         ls.source_chunk_id, ls.target_chunk_id,
+			         sc.document_id AS source_document_id,
+			         tc.document_id AS target_document_id
+			  FROM link_suggestions ls
+			  JOIN chunks sc ON sc.id = ls.source_chunk_id
+			  JOIN chunks tc ON tc.id = ls.target_chunk_id
+			  WHERE ls.id = $2::uuid AND ls.user_id = $1::uuid
+			), concept_pairs AS (
+			  SELECT DISTINCT s.user_id, s.id AS suggestion_id, s.relation,
+			    CASE WHEN s.relation = 'related_to' AND source_cc.concept_id::text > target_cc.concept_id::text
+			      THEN target_cc.concept_id ELSE source_cc.concept_id END AS source_concept_id,
+			    CASE WHEN s.relation = 'related_to' AND source_cc.concept_id::text > target_cc.concept_id::text
+			      THEN source_cc.concept_id ELSE target_cc.concept_id END AS target_concept_id,
+			    CASE WHEN s.source_document_id = s.target_document_id THEN 1 ELSE 2 END AS document_count
+			  FROM suggestion s
+			  JOIN chunk_concepts source_cc ON source_cc.chunk_id = s.source_chunk_id
+			  JOIN chunk_concepts target_cc ON target_cc.chunk_id = s.target_chunk_id
+			  WHERE source_cc.concept_id <> target_cc.concept_id
+			), reinforced AS (
+			  INSERT INTO concept_edges (
+			    user_id, source_concept_id, target_concept_id, relation,
+			    created_via, state, confidence, confirmed_at,
+			    base_confidence, evidence_confidence, support_count, document_count,
+			    last_adapted_at, valid_from, observed_at
+			  )
+			  SELECT user_id, source_concept_id, target_concept_id, relation,
+			         'user_confirmed', 'confirmed', 0.90, $3::timestamptz,
+			         0.90, 0.90, 1, document_count,
+			         $3::timestamptz, $3::timestamptz, $3::timestamptz
+			  FROM concept_pairs
+			  ON CONFLICT (source_concept_id, target_concept_id, relation) DO UPDATE SET
+			    created_via = 'user_confirmed', state = 'confirmed',
+			    confidence = GREATEST(concept_edges.confidence, 0.90),
+			    base_confidence = GREATEST(concept_edges.base_confidence, 0.90),
+			    evidence_confidence = GREATEST(concept_edges.evidence_confidence, 0.90),
+			    support_count = concept_edges.support_count + 1,
+			    document_count = GREATEST(concept_edges.document_count, EXCLUDED.document_count),
+			    confirmed_at = $3::timestamptz, last_adapted_at = $3::timestamptz,
+			    valid_to = NULL, observed_at = $3::timestamptz
+			  RETURNING id
+			)
+			INSERT INTO learning_events (
+			  user_id, event_type, suggestion_id, concept_edge_id, payload, source, idempotency_key
+			)
+			SELECT $1::uuid, 'suggestion_graph_confirmed', $2::uuid, id,
+			       jsonb_build_object('confidence', 0.90), 'deterministic_reducer',
+			       'suggestion-graph:' || $2::text || ':' || id::text
+			FROM reinforced
+			ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, id, now)
+		if err != nil {
+			return fmt.Errorf("reinforce graph from suggestion: %w", err)
 		}
 	}
 	return tx.Commit(ctx)
