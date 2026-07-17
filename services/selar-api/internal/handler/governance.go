@@ -54,6 +54,10 @@ func (h *Handler) RecordChatFeedback(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "correction must contain 1 to 2000 characters"})
 		return
 	}
+	if request.Action != "correction" && len(request.CorrectionText) > 2000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "feedback comment must be at most 2000 characters"})
+		return
+	}
 	feedback, err := h.store.RecordChatFeedback(r.Context(), middleware.GetUserID(r.Context()), chi.URLParam(r, "id"), request)
 	if err == pgx.ErrNoRows {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "message not found"})

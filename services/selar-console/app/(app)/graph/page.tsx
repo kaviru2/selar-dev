@@ -46,6 +46,10 @@ function endpointId(endpoint: GraphLink["source"]): string | undefined {
   return value === undefined ? undefined : String(value);
 }
 
+function isInteractionLink(link: GraphLinkMetadata): boolean {
+  return ["deterministic_chat", "user_confirmed", "user_created"].includes(link.created_via);
+}
+
 const REL_COLORS: Record<string, string> = {
   prerequisite_of: "#c96442",
   related_to: "#9a938a",
@@ -79,10 +83,46 @@ export default function GraphPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isPhysicsPaused, setIsPhysicsPaused] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  const [showPdfKnowledge, setShowPdfKnowledge] = useState(true);
+  const [showInteractionChanges, setShowInteractionChanges] = useState(true);
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLinkMetadata> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
+  const visibleLinks = useMemo(() => links.filter((link) => (
+    isInteractionLink(link)
+      ? showInteractionChanges
+      : showPdfKnowledge
+  )), [links, showInteractionChanges, showPdfKnowledge]);
+
+  const visibleNodes = useMemo(() => {
+    if (showPdfKnowledge) return nodes;
+    if (!showInteractionChanges) return [];
+    const connected = new Set<string>();
+    for (const link of visibleLinks) {
+      const source = endpointId(link.source);
+      const target = endpointId(link.target);
+      if (source) connected.add(source);
+      if (target) connected.add(target);
+    }
+    return nodes.filter((node) => connected.has(node.id));
+  }, [nodes, showInteractionChanges, showPdfKnowledge, visibleLinks]);
+
+  const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks }), [visibleNodes, visibleLinks]);
+  const provenanceCounts = useMemo(() => ({
+    pdf: links.filter((link) => !isInteractionLink(link)).length,
+    interaction: links.filter(isInteractionLink).length,
+  }), [links]);
+  const interactionNodeImpact = useMemo(() => {
+    const impact = new Map<string, "active" | "rolled-back">();
+    for (const link of links.filter(isInteractionLink)) {
+      const linkImpact = ["rejected", "archived", "superseded"].includes(link.state) ? "rolled-back" : "active";
+      for (const id of [endpointId(link.source), endpointId(link.target)]) {
+        if (!id) continue;
+        if (linkImpact === "active" || !impact.has(id)) impact.set(id, linkImpact);
+      }
+    }
+    return impact;
+  }, [links]);
 
   // Measure container dimensions dynamically to prevent canvas overflow
   useEffect(() => {
@@ -190,29 +230,29 @@ export default function GraphPage() {
     }
   }, [nodes, loading]);
 
-  const selectedNode = useMemo(() => nodes.find((n) => n.id === selId), [nodes, selId]);
+  const selectedNode = useMemo(() => visibleNodes.find((n) => n.id === selId), [visibleNodes, selId]);
 
-  const selectedLinks = useMemo(() => links.filter(
+  const selectedLinks = useMemo(() => visibleLinks.filter(
     (l) => {
       const src = endpointId(l.source);
       const tgt = endpointId(l.target);
       return src === selId || tgt === selId;
     }
-  ), [links, selId]);
+  ), [visibleLinks, selId]);
 
   // Compute connected nodes for highlighting
   const connectedNodes = useMemo(() => {
     const set = new Set<string>();
     if (!hoverNode) return set;
     set.add(hoverNode);
-    for (const l of links) {
+    for (const l of visibleLinks) {
       const srcId = endpointId(l.source);
       const tgtId = endpointId(l.target);
       if (srcId === hoverNode && tgtId) set.add(tgtId);
       if (tgtId === hoverNode && srcId) set.add(srcId);
     }
     return set;
-  }, [links, hoverNode]);
+  }, [visibleLinks, hoverNode]);
 
   const handleNodeClick = useCallback((node: RenderNode) => {
     setSelId(node.id);
@@ -262,6 +302,7 @@ export default function GraphPage() {
     const isSel = node.id === selId;
     const isHovered = node.id === hoverNode;
     const isDimmed = hoverNode !== null && !connectedNodes.has(node.id);
+    const interactionImpact = interactionNodeImpact.get(node.id);
 
     const r = Math.sqrt(node.val || 1) * 4.2;
     const fontSize = Math.max(10 / globalScale, 4.5);
@@ -270,6 +311,18 @@ export default function GraphPage() {
 
     // Dimmed effect for highlighting path context
     ctx.globalAlpha = isDimmed ? 0.20 : 1.0;
+
+    // A colored ring makes concepts touched by chat/reactions visible without
+    // replacing their semantic node-type color.
+    if (showInteractionChanges && interactionImpact) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 3.5, 0, 2 * Math.PI);
+      ctx.strokeStyle = interactionImpact === "active" ? "#7a8c5c" : "#b35b43";
+      ctx.lineWidth = 1.4 / globalScale;
+      ctx.setLineDash([3 / globalScale, 2 / globalScale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Outer Glow / Ring
     if (isSel || isHovered) {
@@ -319,7 +372,7 @@ export default function GraphPage() {
     }
 
     ctx.restore();
-  }, [selId, hoverNode, connectedNodes]);
+  }, [selId, hoverNode, connectedNodes, interactionNodeImpact, showInteractionChanges]);
 
 
   const linkCanvasObject = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -336,22 +389,27 @@ export default function GraphPage() {
     const isHoveredPath = hoverNode !== null && (srcId === hoverNode || tgtId === hoverNode);
     const isDimmed = hoverNode !== null && !isHoveredPath;
     const isInactive = ["rejected", "archived", "superseded"].includes(link.state);
+    const isInteraction = isInteractionLink(link);
 
     ctx.save();
 
     ctx.beginPath();
     ctx.moveTo(src.x, src.y);
     ctx.lineTo(tgt.x, tgt.y);
-    ctx.setLineDash(isInactive || link.state === "candidate" ? [4 / globalScale, 4 / globalScale] : []);
+    ctx.setLineDash(isInactive || link.state === "candidate" || isInteraction ? [4 / globalScale, 4 / globalScale] : []);
 
     if (isInactive) {
-      ctx.strokeStyle = "#b9b1a8";
-      ctx.globalAlpha = 0.16;
-      ctx.lineWidth = 0.6 / globalScale;
+      ctx.strokeStyle = isInteraction ? "#b35b43" : "#b9b1a8";
+      ctx.globalAlpha = isInteraction ? 0.65 : 0.16;
+      ctx.lineWidth = (isInteraction ? 1.4 : 0.6) / globalScale;
     } else if (isDimmed) {
       ctx.strokeStyle = "#ded9d2";
       ctx.globalAlpha = 0.08;
       ctx.lineWidth = 0.5 / globalScale;
+    } else if (isInteraction) {
+      ctx.strokeStyle = "#7a8c5c";
+      ctx.globalAlpha = isSelectedPath || isHoveredPath ? 1 : 0.8;
+      ctx.lineWidth = (isSelectedPath || isHoveredPath ? 2.4 : 1.5) / globalScale;
     } else if (isSelectedPath || isHoveredPath) {
       ctx.strokeStyle = REL_COLORS[link.relation] || "#c96442";
       ctx.globalAlpha = 0.95;
@@ -380,7 +438,7 @@ export default function GraphPage() {
       ctx.fillStyle = "rgba(250, 249, 247, 0.9)";
       ctx.fillRect(midX - labelWidth / 2 - 2, midY - fontSize / 2 - 1, labelWidth + 4, fontSize + 2);
 
-      ctx.fillStyle = REL_COLORS[link.relation] || "#c96442";
+      ctx.fillStyle = isInteraction ? (isInactive ? "#b35b43" : "#7a8c5c") : (REL_COLORS[link.relation] || "#c96442");
       ctx.fillText(labelText, midX, midY);
     }
 
@@ -390,8 +448,8 @@ export default function GraphPage() {
   // Filter nodes matching search query
   const filteredNodes = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    return nodes.filter(n => n.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [nodes, searchQuery]);
+    return visibleNodes.filter(n => n.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [visibleNodes, searchQuery]);
 
   const handleSearchSelect = (node: GraphNode) => {
     setSearchQuery("");
@@ -506,6 +564,26 @@ export default function GraphPage() {
             {reconciling ? "syncing…" : "reconcile"}
           </button>
         </div>
+
+        <div className="graph-layer-toggle" aria-label="Graph knowledge layers">
+          <label>
+            <input type="checkbox" checked={showPdfKnowledge} onChange={(event) => {
+              setShowPdfKnowledge(event.target.checked);
+              setSelId(null);
+            }} />
+            <span className="graph-layer-dot pdf" />
+            PDF knowledge <small>{provenanceCounts.pdf}</small>
+          </label>
+          <label>
+            <input type="checkbox" checked={showInteractionChanges} onChange={(event) => {
+              setShowInteractionChanges(event.target.checked);
+              setSelId(null);
+            }} />
+            <span className="graph-layer-dot interaction" />
+            Your changes <small>{provenanceCounts.interaction}</small>
+          </label>
+          <span className="graph-layer-key"><i className="active" /> added <i className="rolled-back" /> rolled back</span>
+        </div>
       </div>
 
       {/* Main Graph Viewport */}
@@ -525,19 +603,23 @@ export default function GraphPage() {
           </div>
         )}
 
-        {!loading && nodes.length === 0 && (
+        {!loading && visibleNodes.length === 0 && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 5 }}>
             <div style={{ textAlign: "center", maxWidth: 280, padding: 24 }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>🕸️</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>No mental models mapped yet</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
+                {nodes.length === 0 ? "No mental models mapped yet" : "No graph layer selected"}
+              </div>
               <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                Process documents to create evidence-backed claims, concepts, assumptions, and open questions.
+                {nodes.length === 0
+                  ? "Process documents to create evidence-backed claims, concepts, assumptions, and open questions."
+                  : "Turn on PDF knowledge or Your changes to inspect that layer."}
               </div>
             </div>
           </div>
         )}
 
-        {!loading && nodes.length > 0 && (
+        {!loading && visibleNodes.length > 0 && (
           <ForceGraph2D<GraphNode, GraphLinkMetadata>
             ref={fgRef}
             width={dimensions.width}
@@ -566,7 +648,7 @@ export default function GraphPage() {
               const tgtId = endpointId(link.target);
               return (srcId === selId || tgtId === selId) ? 2.2 : 1.2;
             }}
-            linkDirectionalParticleColor={(link) => REL_COLORS[link.relation] || "var(--accent)"}
+            linkDirectionalParticleColor={(link) => isInteractionLink(link) ? "#7a8c5c" : (REL_COLORS[link.relation] || "var(--accent)")}
           />
         )}
 
@@ -730,6 +812,11 @@ export default function GraphPage() {
                     {l.created_via === "deterministic_chat" && (
                       <span style={{ color: "#7a8c5c", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         Adapted from grounded chat · {Math.round((l.confidence || 0) * 100)}% confidence
+                      </span>
+                    )}
+                    {l.created_via !== "deterministic_chat" && (
+                      <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
+                        PDF-derived knowledge · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>
                     )}
                     {l.explanation && (

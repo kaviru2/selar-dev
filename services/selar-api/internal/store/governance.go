@@ -165,11 +165,20 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 		&feedback.CorrectionText, &feedback.CreatedAt)
 	inserted := err == nil
 	if err == pgx.ErrNoRows {
-		err = tx.QueryRow(ctx, `
-			SELECT id, message_id, action, correction_text, created_at
-			FROM chat_message_feedback WHERE user_id = $1 AND message_id = $2 AND action = $3`,
-			userID, messageID, request.Action).Scan(&feedback.ID, &feedback.MessageID, &feedback.Action,
-			&feedback.CorrectionText, &feedback.CreatedAt)
+		if request.CorrectionText != "" {
+			err = tx.QueryRow(ctx, `
+				UPDATE chat_message_feedback SET correction_text = $4
+				WHERE user_id = $1 AND message_id = $2 AND action = $3
+				RETURNING id, message_id, action, correction_text, created_at`,
+				userID, messageID, request.Action, request.CorrectionText).Scan(&feedback.ID, &feedback.MessageID,
+				&feedback.Action, &feedback.CorrectionText, &feedback.CreatedAt)
+		} else {
+			err = tx.QueryRow(ctx, `
+				SELECT id, message_id, action, correction_text, created_at
+				FROM chat_message_feedback WHERE user_id = $1 AND message_id = $2 AND action = $3`,
+				userID, messageID, request.Action).Scan(&feedback.ID, &feedback.MessageID, &feedback.Action,
+				&feedback.CorrectionText, &feedback.CreatedAt)
+		}
 	}
 	if err != nil {
 		return nil, err
