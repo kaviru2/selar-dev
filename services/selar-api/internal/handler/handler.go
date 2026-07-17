@@ -5,6 +5,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -378,10 +379,14 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	for _, edge := range edges {
+		explanation := ""
+		if edge.SupportCount > 0 {
+			explanation = fmt.Sprintf("Adapted deterministically from %d grounded chat answer(s) across %d document(s).", edge.SupportCount, edge.DocumentCount)
+		}
 		graphEdges = append(graphEdges, model.GraphEdge{
 			ID: edge.ID, Source: edge.SourceConceptID, Target: edge.TargetConceptID,
 			Relation: string(edge.Relation), State: edge.State, Confidence: edge.Confidence,
-			CreatedVia: string(edge.CreatedVia),
+			CreatedVia: string(edge.CreatedVia), Explanation: explanation,
 		})
 	}
 	for _, mentalModel := range mentalModels {

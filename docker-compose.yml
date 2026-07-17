@@ -18,6 +18,8 @@ services:
       - ./services/selar-api/internal/store/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
       - ./services/selar-api/internal/store/migrations/002_add_summary.sql:/docker-entrypoint-initdb.d/002_add_summary.sql
       - ./services/selar-api/internal/store/migrations/003_runtime_mental_model.sql:/docker-entrypoint-initdb.d/003_runtime_mental_model.sql
+      - ./services/selar-api/internal/store/migrations/004_adaptive_chat.sql:/docker-entrypoint-initdb.d/004_adaptive_chat.sql
+      - ./services/selar-api/internal/store/migrations/005_chat_graph_reducer.sql:/docker-entrypoint-initdb.d/005_chat_graph_reducer.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-selar}"]
       interval: 5s
@@ -37,9 +39,12 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      WORKER_URL: http://selar-worker:8000
     depends_on:
       postgres:
         condition: service_healthy
+      selar-worker:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
       interval: 10s
@@ -59,6 +64,21 @@ services:
       API_INTERNAL_URL: http://selar-api:8080
     depends_on:
       selar-api:
+        condition: service_healthy
+
+  selar-worker:
+    container_name: selar-worker
+    build:
+      context: ./services/selar-worker
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      postgres:
         condition: service_healthy
 
 volumes:

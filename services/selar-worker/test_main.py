@@ -199,3 +199,28 @@ def test_process_endpoint_validation():
     client = TestClient(app)
     response = client.post("/process", json={})
     assert response.status_code == 422  # Pydantic validation error
+
+
+def test_reciprocal_rank_fusion_is_deterministic_and_bounded():
+    from main import reciprocal_rank_fusion
+
+    vector = [
+        {"chunk_id": "a", "score": 0.9, "content": "A"},
+        {"chunk_id": "b", "score": 0.8, "content": "B"},
+    ]
+    lexical = [
+        {"chunk_id": "b", "score": 0.7, "content": "B"},
+        {"chunk_id": "c", "score": 0.6, "content": "C"},
+    ]
+    first = reciprocal_rank_fusion({"vector": vector, "lexical": lexical}, limit=2)
+    second = reciprocal_rank_fusion({"vector": vector, "lexical": lexical}, limit=2)
+
+    assert first == second
+    assert [item["chunk_id"] for item in first] == ["b", "a"]
+    assert set(first[0]["signals"]) == {"vector", "lexical"}
+
+
+def test_referenced_citation_ranks_filters_invalid_and_duplicate_labels():
+    from main import referenced_citation_ranks
+
+    assert referenced_citation_ranks("Supported by [S2], [s2], and [S7].", 4) == {2}

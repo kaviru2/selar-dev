@@ -199,6 +199,48 @@ export interface LearnerConceptState {
   updated_at: string;
 }
 
+// --- Grounded chat types ---
+
+export interface ChatThread {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatCitation {
+  id?: string;
+  message_id?: string;
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  page: number;
+  rank: number;
+  score: number;
+  quote: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  thread_id: string;
+  user_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  status: "pending" | "complete" | "failed";
+  model_version?: string;
+  created_at: string;
+  citations: ChatCitation[];
+  graph_update?: ChatGraphUpdate;
+}
+
+export interface ChatGraphUpdate {
+  concepts_reinforced: number;
+  links_observed: number;
+  links_promoted: number;
+  reducer_version: string;
+}
+
 // --- Annotation types ---
 
 export interface Annotation {

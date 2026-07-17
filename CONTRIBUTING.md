@@ -70,6 +70,8 @@ psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql
 psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql
 psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental_model.sql
+psql -d selar -f services/selar-api/internal/store/migrations/004_adaptive_chat.sql
+psql -d selar -f services/selar-api/internal/store/migrations/005_chat_graph_reducer.sql
 
 # 3. Install dependencies
 cd services/selar-console && pnpm install && cd ../..

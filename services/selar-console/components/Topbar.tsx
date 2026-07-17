@@ -11,6 +11,7 @@ import { useSelar } from "@/lib/context";
 const NAV_ITEMS = [
   { key: "library", label: "Library", href: "/library" },
   { key: "reader", label: "Reader", href: "/reader" },
+  { key: "chat", label: "Chat", href: "/chat" },
   { key: "graph", label: "Graph", href: "/graph" },
   { key: "quiz", label: "Quiz", href: "/quiz" },
   { key: "settings", label: "Settings", href: "/settings" },
