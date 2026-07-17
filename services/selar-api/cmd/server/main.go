@@ -83,11 +83,20 @@ func main() {
 		// Documents
 		r.Get("/documents", h.ListDocuments)
 		r.Post("/documents", h.CreateDocument)
+		r.Post("/documents/add", h.AddContent)
 		r.Post("/documents/upload", h.UploadDocument)
 		r.Get("/documents/stats", h.GetDocumentStats)
 		r.Get("/documents/{id}", h.GetDocument)
+		r.Get("/documents/{id}/content", h.GetDocumentContent)
+		r.Get("/documents/{id}/assets/{assetId}", h.ServeAsset)
 		r.Get("/documents/{docId}/pdf", h.ServeDocument)
 		r.Delete("/documents/{id}", h.DeleteDocument)
+
+		// Managed source origins and auditable ingestion runs
+		r.Get("/sources", h.ListSources)
+		r.Post("/sources/{id}/refresh", h.RefreshSource)
+		r.Get("/sources/{id}/runs", h.ListIngestionRuns)
+		r.Delete("/sources/{id}", h.ArchiveSource)
 
 		// Suggestions (per document)
 		r.Get("/documents/{id}/suggestions", h.ListSuggestions)
@@ -104,6 +113,7 @@ func main() {
 		r.Post("/graph/replay", h.ReplayAdaptiveGraph)
 		r.Post("/graph/lifecycle", h.ApplyGraphLifecycle)
 		r.Post("/graph/edges/{id}/respond", h.RespondToConceptEdge)
+		r.Post("/graph/concepts/{id}/respond", h.RespondToConcept)
 		r.Get("/documents/{id}/mental-model", h.GetDocumentMentalModel)
 		r.Get("/mental-model-links", h.ListMentalModelLinks)
 		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)

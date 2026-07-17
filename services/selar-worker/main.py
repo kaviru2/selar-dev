@@ -9,9 +9,10 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 import asyncpg
-import pdfplumber
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
+from ingestion import extract_source
 
 # Load root .env.development
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env.development'))
@@ -26,13 +27,22 @@ if not api_key:
 client = genai.Client(api_key=api_key) if api_key else None
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable")
-EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")
+EMBEDDING_MODEL = os.getenv("GEMINI_MULTIMODAL_EMBEDDING_MODEL", "gemini-embedding-2")
+EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "3072"))
 TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "models/gemini-3-flash-preview")
 CHUNK_WORD_LIMIT = int(os.getenv("CHUNK_WORD_LIMIT", "120"))
+INGESTION_CONCURRENCY = max(1, int(os.getenv("INGESTION_CONCURRENCY", "1")))
+ingestion_semaphore = asyncio.Semaphore(INGESTION_CONCURRENCY)
 
 class ProcessRequest(BaseModel):
     doc_id: str
-    file_path: str
+    source_id: str = ""
+    run_id: str = ""
+    source_type: str = "pdf"
+    file_path: str = ""
+    source_url: str = ""
+    raw_text: str = ""
+    title: str = ""
 
 
 class ChatHistoryItem(BaseModel):
@@ -371,78 +381,135 @@ def deterministic_model_link(source: Dict[str, Any], target: Dict[str, Any], sim
     return None
 
 
-async def process_document_task(doc_id: str, file_path: str):
+def embed_text_documents(contents: List[str], title: str = "") -> List[List[float]]:
+    """Embed separate retrieval objects in Gemini Embedding 2's shared space."""
+    if not client:
+        raise RuntimeError("Gemini client is not configured")
+    embeddings: List[List[float]] = []
+    batch_size = 100
+    for offset in range(0, len(contents), batch_size):
+        batch = [
+            types.Content(parts=[types.Part.from_text(
+                text=f"title: {title or 'none'} | text: {content}"
+            )])
+            for content in contents[offset:offset + batch_size]
+        ]
+        result = client.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=batch,
+            config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIMENSION),
+        )
+        embeddings.extend(embedding.values for embedding in result.embeddings)
+    return embeddings
+
+
+def embed_query_text(query: str) -> List[float]:
+    result = client.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=f"task: question answering | query: {query}",
+        config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIMENSION),
+    )
+    return result.embeddings[0].values
+
+
+def embed_visual_asset(asset: Dict[str, Any]) -> List[float]:
+    parts = []
+    context = clean_extracted_text(" ".join(filter(None, [
+        asset.get("caption", ""), asset.get("alt_text", ""), asset.get("description", "")
+    ]))) or "Source visual evidence"
+    parts.append(types.Part.from_text(text=f"title: visual evidence | text: {context}"))
+    with open(asset["storage_path"], "rb") as image_file:
+        parts.append(types.Part.from_bytes(data=image_file.read(), mime_type=asset["mime_type"]))
+    result = client.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=types.Content(parts=parts),
+        config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIMENSION),
+    )
+    return result.embeddings[0].values
+
+
+async def process_document_task(
+    doc_id: str,
+    file_path: str = "",
+    source_id: str = "",
+    run_id: str = "",
+    source_type: str = "pdf",
+    source_url: str = "",
+    raw_text: str = "",
+    title: str = "",
+):
     """
     Background job: Parses PDF, chunks texts with bboxes, embeddings, semantic links,
     relation classification, and knowledge graph extraction.
     """
     conn = None
     try:
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File {file_path} not found.")
-
-        # ── Phase 1: Parse PDF ──
-        chunks_data = []
-
-        with pdfplumber.open(file_path) as pdf:
-            page_count = len(pdf.pages)
-            for page_num, page in enumerate(pdf.pages, start=1):
-                # Follow the PDF's content stream so multi-column papers are not
-                # interleaved line-by-line. A tighter x tolerance restores spaces
-                # in densely typeset conference PDFs.
-                words = page.extract_words(use_text_flow=True, x_tolerance=1, y_tolerance=3)
-                if not words:
-                    continue
-
-                width, height = page.width, page.height
-
-                current_chunk_words = []
-                current_chunk_geometry = []
-
-                for word in words:
-                    current_chunk_words.append(word['text'])
-                    current_chunk_geometry.append(word)
-
-                    if len(current_chunk_words) >= CHUNK_WORD_LIMIT:
-                        chunk_text = clean_extracted_text(" ".join(current_chunk_words))
-                        chunks_data.append({
-                            "text": chunk_text,
-                            "page": page_num,
-                            "bboxes": merge_word_bboxes(current_chunk_geometry, width, height),
-                        })
-                        current_chunk_words = []
-                        current_chunk_geometry = []
-
-                if current_chunk_words:
-                    chunks_data.append({
-                        "text": clean_extracted_text(" ".join(current_chunk_words)),
-                        "page": page_num,
-                        "bboxes": merge_word_bboxes(current_chunk_geometry, width, height),
-                    })
+        # ── Phase 1: Normalize source ──
+        if run_id:
+            conn = await asyncpg.connect(DATABASE_URL)
+            await conn.execute(
+                "UPDATE ingestion_runs SET status = 'fetching', started_at = now() WHERE id = $1",
+                run_id,
+            )
+            await conn.close()
+            conn = None
+        normalized = await extract_source(
+            source_type=source_type,
+            doc_id=doc_id,
+            word_limit=CHUNK_WORD_LIMIT,
+            merge_bboxes=merge_word_bboxes,
+            file_path=file_path,
+            source_url=source_url,
+            raw_text=raw_text,
+            title=title,
+        )
+        # Adapters may encounter the same bytes through responsive-image URLs.
+        # Keep one visual representation per source snapshot so embedding and
+        # persistence remain deterministic.
+        deduplicated_assets = []
+        seen_asset_hashes = set()
+        for asset in normalized.assets:
+            asset_hash = asset.get("content_hash", "")
+            if asset_hash and asset_hash in seen_asset_hashes:
+                continue
+            if asset_hash:
+                seen_asset_hashes.add(asset_hash)
+            deduplicated_assets.append(asset)
+        normalized.assets = deduplicated_assets
+        chunks_data = normalized.chunks
+        page_count = normalized.page_count
+        if not chunks_data:
+            raise ValueError("source did not produce any retrievable chunks")
 
         # ── Phase 2: Embed chunks ──
         print(f"Extracted {len(chunks_data)} chunks. Generating embeddings...")
 
         contents = [chunk["text"] for chunk in chunks_data]
 
-        batch_size = 100
-        embeddings = []
-        for i in range(0, len(contents), batch_size):
-            batch = contents[i:i+batch_size]
-            result = client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=batch,
-                config={"task_type": "RETRIEVAL_DOCUMENT"}
-            )
-            for emb in result.embeddings:
-                embeddings.append(emb.values)
+        embeddings = await asyncio.to_thread(embed_text_documents, contents, normalized.title)
+        for asset in normalized.assets:
+            visual_embedding = await asyncio.to_thread(embed_visual_asset, asset)
+            asset["embedding"] = visual_embedding
+            asset["chunk_index"] = len(chunks_data)
+            visual_text = clean_extracted_text(" ".join(filter(None, [
+                asset.get("caption", ""), asset.get("alt_text", ""), asset.get("description", "")
+            ]))) or "Source visual evidence"
+            chunks_data.append({
+                "text": visual_text,
+                "page": int(asset.get("locator", {}).get("page", 1)),
+                "bboxes": [],
+                "locator": asset.get("locator", {}),
+                "modality": "mixed",
+            })
+            contents.append(visual_text)
+            embeddings.append(visual_embedding)
 
         print(f"Generated {len(embeddings)} embeddings. Inserting into Postgres...")
 
         # ── Phase 3: Database Insertion ──
         conn = await asyncpg.connect(DATABASE_URL)
 
-        row = await conn.fetchrow("SELECT user_id FROM documents WHERE id = $1", doc_id)
+        row = await conn.fetchrow("SELECT user_id, title, source_id FROM documents WHERE id = $1", doc_id)
         if not row:
             raise Exception(f"Document {doc_id} not found in DB")
         user_id = row['user_id']
@@ -451,22 +518,65 @@ async def process_document_task(doc_id: str, file_path: str):
         # The connection-scoped lock is released automatically on close/failure.
         await conn.execute("SELECT pg_advisory_lock(hashtextextended($1, 0))", doc_id)
         await conn.execute("DELETE FROM chunks WHERE document_id = $1", doc_id)
+        await conn.execute("DELETE FROM content_blocks WHERE document_id = $1", doc_id)
+        await conn.execute("DELETE FROM assets WHERE document_id = $1", doc_id)
+        for block in normalized.blocks:
+            await conn.execute("""
+                INSERT INTO content_blocks (document_id, user_id, block_index, kind, text, locator, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """, doc_id, user_id, block["block_index"], block["kind"], block.get("text", ""),
+                json.dumps(block.get("locator", {})), json.dumps(block.get("metadata", {})))
         await conn.execute(
-            "UPDATE documents SET progress = 0.30, page_count = $2 WHERE id = $1",
-            doc_id, page_count
+            """UPDATE documents SET progress = 0.30, page_count = $2, title = $3,
+                   authors = $4, year = $5, canonical_url = $6, content_hash = $7,
+                   mime_type = $8, metadata = $9, fetched_at = now()
+               WHERE id = $1""",
+            doc_id, page_count, normalized.title or row["title"], normalized.authors,
+            normalized.year, normalized.canonical_url, normalized.content_hash,
+            normalized.mime_type, json.dumps(normalized.metadata),
         )
+        if run_id:
+            await conn.execute("""
+                UPDATE ingestion_runs SET status = 'embedding', extractor = $2,
+                    extractor_version = $3, embedding_model = $4, embedding_dimension = $5
+                WHERE id = $1
+            """, run_id, normalized.extractor, normalized.extractor_version,
+                EMBEDDING_MODEL, EMBEDDING_DIMENSION)
 
         chunk_ids = []
         for i, chunk in enumerate(chunks_data):
-            bboxes_json = json.dumps(chunk['bboxes'])
+            bboxes_json = json.dumps(chunk.get('bboxes', []))
+            locator_json = json.dumps(chunk.get('locator', {}))
             vec = str(embeddings[i])
 
             chunk_id = await conn.fetchval("""
-                INSERT INTO chunks (document_id, user_id, chunk_index, page_start, page_end, content, bboxes, embedding)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO chunks (
+                    document_id, user_id, chunk_index, page_start, page_end, content,
+                    bboxes, locator, modality, embedding, embedding_model, embedding_version
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'v1')
                 RETURNING id
-            """, doc_id, user_id, i, chunk['page'], chunk['page'], chunk['text'], bboxes_json, vec)
+            """, doc_id, user_id, i, chunk.get('page', 1), chunk.get('page', 1),
+                chunk['text'], bboxes_json, locator_json, chunk.get('modality', 'text'), vec, EMBEDDING_MODEL)
             chunk_ids.append(chunk_id)
+        for asset in normalized.assets:
+            asset_id = await conn.fetchval("""
+                INSERT INTO assets (
+                    document_id, user_id, block_index, kind, storage_path, source_url,
+                    mime_type, width, height, content_hash, caption, alt_text, description,
+                    locator, embedding, embedding_model, embedding_version
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'v1')
+                ON CONFLICT (document_id, content_hash) DO UPDATE
+                    SET content_hash = EXCLUDED.content_hash
+                RETURNING id
+            """, doc_id, user_id, asset.get("block_index"), asset["kind"], asset["storage_path"],
+                asset.get("source_url", ""), asset["mime_type"], asset["width"], asset["height"],
+                asset["content_hash"], asset.get("caption", ""), asset.get("alt_text", ""),
+                asset.get("description", ""), json.dumps(asset.get("locator", {})),
+                str(asset["embedding"]), EMBEDDING_MODEL)
+            await conn.execute("""
+                INSERT INTO chunk_assets (chunk_id, asset_id, relation)
+                VALUES ($1, $2, 'contains') ON CONFLICT DO NOTHING
+            """, chunk_ids[asset["chunk_index"]], asset_id)
         await conn.execute("UPDATE documents SET progress = 0.45 WHERE id = $1", doc_id)
 
         # ── Phase 4: Semantic Link Generation (wider threshold + LIMIT) ──
@@ -564,13 +674,11 @@ Rules:
             ])
             concepts = mental_model["key_concepts"]
             concept_texts = [f"{c['name']}: {c.get('description', '')}" for c in concepts]
-            model_embedding_result = client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=[model_embedding_text, *concept_texts],
-                config={"task_type": "RETRIEVAL_DOCUMENT"}
+            model_embeddings = await asyncio.to_thread(
+                embed_text_documents, [model_embedding_text, *concept_texts], normalized.title
             )
-            model_vector = str(model_embedding_result.embeddings[0].values)
-            concept_embeddings = [embedding.values for embedding in model_embedding_result.embeddings[1:]]
+            model_vector = str(model_embeddings[0])
+            concept_embeddings = model_embeddings[1:]
             mental_model_id = await conn.fetchval("""
                 INSERT INTO document_mental_models (
                     document_id, user_id, version, main_claim, key_concepts, assumptions,
@@ -756,6 +864,23 @@ Rules:
         await conn.execute("""
             UPDATE documents SET status = 'ready', progress = 1, processed_at = NOW() WHERE id = $1
         """, doc_id)
+        if source_id:
+            await conn.execute("""
+                UPDATE content_sources SET title = $2, canonical_uri = CASE WHEN $3 = '' THEN canonical_uri ELSE $3 END,
+                    last_content_hash = $4, last_fetched_at = now(), last_error = '', status = 'active', updated_at = now()
+                WHERE id = $1
+            """, source_id, normalized.title, normalized.canonical_url, normalized.content_hash)
+        if run_id:
+            await conn.execute("""
+                UPDATE ingestion_runs SET status = 'ready', completed_at = now(),
+                    metrics = $2
+                WHERE id = $1
+            """, run_id, json.dumps({
+                "blocks": len(normalized.blocks),
+                "chunks": len(chunks_data),
+                "assets": len(normalized.assets),
+                "source_type": source_type,
+            }))
 
         await conn.close()
         print(f"Successfully processed {doc_id}")
@@ -766,14 +891,45 @@ Rules:
             if conn:
                 await conn.close()
             conn = await asyncpg.connect(DATABASE_URL)
+            # A failed snapshot must not leak partially indexed chunks into
+            # retrieval. Cascades also remove derived links and asset joins.
+            await conn.execute("DELETE FROM chunks WHERE document_id = $1", doc_id)
+            await conn.execute("DELETE FROM content_blocks WHERE document_id = $1", doc_id)
+            await conn.execute("DELETE FROM assets WHERE document_id = $1", doc_id)
             await conn.execute("UPDATE documents SET status = 'failed', progress = 0 WHERE id = $1", doc_id)
+            if source_id:
+                await conn.execute("""
+                    UPDATE content_sources SET status = 'failed', last_error = $2, updated_at = now()
+                    WHERE id = $1
+                """, source_id, str(e)[:1000])
+            if run_id:
+                await conn.execute("""
+                    UPDATE ingestion_runs SET status = 'failed', error = $2, completed_at = now()
+                    WHERE id = $1
+                """, run_id, str(e)[:2000])
             await conn.close()
         except:
             pass
 
+async def process_document_with_limit(**kwargs):
+    """Keep expensive PDF extraction and embedding within a memory-safe bound."""
+    async with ingestion_semaphore:
+        await process_document_task(**kwargs)
+
+
 @app.post("/process")
 async def process_document(req: ProcessRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(process_document_task, req.doc_id, req.file_path)
+    background_tasks.add_task(
+        process_document_with_limit,
+        doc_id=req.doc_id,
+        file_path=req.file_path,
+        source_id=req.source_id,
+        run_id=req.run_id,
+        source_type=req.source_type,
+        source_url=req.source_url,
+        raw_text=req.raw_text,
+        title=req.title,
+    )
     return {"message": "Processing started in background", "doc_id": req.doc_id}
 
 
@@ -787,14 +943,9 @@ async def grounded_chat(req: ChatRequest):
         raise HTTPException(status_code=503, detail="Gemini client is not configured")
 
     embedding_started = time.perf_counter()
-    query_embedding = await asyncio.to_thread(
-        client.models.embed_content,
-        model=EMBEDDING_MODEL,
-        contents=[question],
-        config={"task_type": "RETRIEVAL_QUERY"},
-    )
+    query_values = await asyncio.to_thread(embed_query_text, question)
     embedding_ms = (time.perf_counter() - embedding_started) * 1000
-    query_vector = str(query_embedding.embeddings[0].values)
+    query_vector = str(query_values)
     retrieval_started = time.perf_counter()
     conn = await asyncpg.connect(DATABASE_URL)
     try:

@@ -98,6 +98,33 @@ func (h *Handler) RespondToConceptEdge(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": request.Action})
 }
 
+func (h *Handler) RespondToConcept(w http.ResponseWriter, r *http.Request) {
+	var request model.EdgeActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	request.Action = strings.TrimSpace(request.Action)
+	request.Reason = strings.TrimSpace(request.Reason)
+	if request.Action != "confirm" && request.Action != "reject" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be confirm or reject"})
+		return
+	}
+	if len(request.Reason) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason must be at most 500 characters"})
+		return
+	}
+	if err := h.store.RespondToConcept(r.Context(), middleware.GetUserID(r.Context()), chi.URLParam(r, "id"), request); err != nil {
+		if err == pgx.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "candidate concept not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update concept"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": request.Action})
+}
+
 func (h *Handler) RecordLearnerSignal(w http.ResponseWriter, r *http.Request) {
 	var request model.LearnerSignalRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {

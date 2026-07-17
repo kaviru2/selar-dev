@@ -1,9 +1,115 @@
 package store
 
 import (
+	"context"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestGroundedConceptExtractionRequiresQuestionAndCitationMatch(t *testing.T) {
+	term, ok := conceptTermFromQuery("What is realmbench?")
+	if !ok || term != "realmbench" {
+		t.Fatalf("unexpected extracted term: %q, %v", term, ok)
+	}
+	surface, ok := groundedSurface("We evaluate the agent on REALM-Bench and other tasks.", term)
+	if !ok || surface != "REALM-Bench" {
+		t.Fatalf("separator-insensitive grounding failed: %q, %v", surface, ok)
+	}
+	if _, ok := groundedSurface("This passage discusses unrelated scheduling tasks.", term); ok {
+		t.Fatal("a concept absent from cited evidence must not be grounded")
+	}
+	if _, ok := conceptTermFromQuery("Compare several benchmark design tradeoffs"); ok {
+		t.Fatal("open-ended questions must not manufacture a concept candidate")
+	}
+}
+
+func TestGroundedConceptPairsPreferNewCandidateAndAreBounded(t *testing.T) {
+	evidence := []chatConceptEvidence{
+		{conceptID: "realm", chunkID: "chunk-1"},
+		{conceptID: "rac", chunkID: "chunk-2"},
+		{conceptID: "failure", chunkID: "chunk-3"},
+		{conceptID: "agent", chunkID: "chunk-4"},
+		{conceptID: "extra", chunkID: "chunk-5"},
+	}
+	pairs := boundedChatEvidencePairs(evidence, map[string]bool{"realm": true}, 3)
+	if len(pairs) != 3 {
+		t.Fatalf("got %d candidate relationships, want 3", len(pairs))
+	}
+	for _, pair := range pairs {
+		if pair[0].conceptID != "realm" && pair[1].conceptID != "realm" {
+			t.Fatalf("relationship did not include the grounded candidate: %#v", pair)
+		}
+	}
+}
+
+func TestGroundedChatConceptDiscoveryIntegration(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+
+	var userID, documentID, chunkID, threadID, messageID string
+	if err = tx.QueryRow(ctx, `INSERT INTO users (email, password_hash) VALUES ($1, 'test') RETURNING id`,
+		"grounded-chat-"+time.Now().Format("20060102150405.000000000")+"@example.test").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.QueryRow(ctx, `INSERT INTO documents (user_id, title, status) VALUES ($1, 'Evidence', 'ready') RETURNING id`, userID).Scan(&documentID); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.QueryRow(ctx, `
+		INSERT INTO chunks (document_id, user_id, chunk_index, content)
+		VALUES ($1, $2, 0, 'REALM-Bench evaluates agents on scheduling and logistics tasks.') RETURNING id`,
+		documentID, userID).Scan(&chunkID); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.QueryRow(ctx, `INSERT INTO chat_threads (user_id) VALUES ($1) RETURNING id`, userID).Scan(&threadID); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.QueryRow(ctx, `
+		INSERT INTO chat_messages (thread_id, user_id, role, content)
+		VALUES ($1, $2, 'assistant', 'A grounded answer.') RETURNING id`, threadID, userID).Scan(&messageID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, `
+		INSERT INTO message_citations (message_id, chunk_id, rank, score, quote)
+		VALUES ($1, $2, 1, 1, 'REALM-Bench evaluates agents.')`, messageID, chunkID); err != nil {
+		t.Fatal(err)
+	}
+
+	update, err := reduceChatGraph(ctx, tx, userID, messageID, "What is realmbench?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update.ConceptsCreated != 1 || update.ConceptsReinforced != 0 {
+		t.Fatalf("unexpected graph update: %#v", update)
+	}
+	var name, state, promptVersion, bindingMethod string
+	if err = tx.QueryRow(ctx, `
+		SELECT c.name, c.state, c.prompt_version, cce.binding_method
+		FROM concepts c
+		JOIN chat_concept_evidence cce ON cce.concept_id = c.id
+		WHERE c.user_id = $1 AND cce.message_id = $2`, userID, messageID).
+		Scan(&name, &state, &promptVersion, &bindingMethod); err != nil {
+		t.Fatal(err)
+	}
+	if name != "REALM-Bench" || state != "candidate" || promptVersion != "grounded-chat-concept-v1" || bindingMethod != "grounded_query_exact" {
+		t.Fatalf("unexpected grounded concept: %q %q %q %q", name, state, promptVersion, bindingMethod)
+	}
+}
 
 func TestAdaptiveEdgeStateRequiresRepeatedOrIndependentEvidence(t *testing.T) {
 	tests := []struct {

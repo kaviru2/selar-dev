@@ -372,9 +372,14 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to connect mental models to concepts"})
 		return
 	}
+	reviewedSuggestionEdges, err := h.store.ListReviewedSuggestionEdges(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to project reviewed passage links"})
+		return
+	}
 
 	graphNodes := make([]model.GraphNode, 0, len(concepts)+len(mentalModels)*4)
-	graphEdges := make([]model.GraphEdge, 0, len(edges)+len(mentalLinks)+len(documentConceptEdges)+len(mentalModels)*4)
+	graphEdges := make([]model.GraphEdge, 0, len(edges)+len(mentalLinks)+len(documentConceptEdges)+len(reviewedSuggestionEdges)+len(mentalModels)*4)
 	for _, concept := range concepts {
 		graphNodes = append(graphNodes, model.GraphNode{
 			ID: concept.ID, Name: concept.Name, Description: concept.Description,
@@ -433,6 +438,7 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	graphEdges = append(graphEdges, documentConceptEdges...)
+	graphEdges = append(graphEdges, reviewedSuggestionEdges...)
 
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": graphNodes, "edges": graphEdges})
 }

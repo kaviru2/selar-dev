@@ -400,6 +400,51 @@ func (s *Store) RespondToConceptEdge(ctx context.Context, userID, edgeID string,
 	return tx.Commit(ctx)
 }
 
+func (s *Store) RespondToConcept(ctx context.Context, userID, conceptID string, request model.EdgeActionRequest) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	state := "confirmed"
+	if request.Action == "reject" {
+		state = "rejected"
+	}
+	result, err := tx.Exec(ctx, `
+		UPDATE concepts SET state = $3
+		WHERE id = $1 AND user_id = $2 AND state IN ('candidate', 'supported')`, conceptID, userID, state)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	if state == "rejected" {
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO graph_edge_actions (user_id, edge_id, action, reason)
+			SELECT $1, id, 'rejected', $3 FROM concept_edges
+			WHERE user_id = $1 AND (source_concept_id = $2 OR target_concept_id = $2)
+			  AND state <> 'rejected'`, userID, conceptID, "Parent concept rejected: "+request.Reason); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `
+			UPDATE concept_edges SET state = 'rejected', valid_to = now()
+			WHERE user_id = $1 AND (source_concept_id = $2 OR target_concept_id = $2)
+			  AND state <> 'rejected'`, userID, conceptID); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO learning_events (user_id, event_type, concept_id, payload, source, idempotency_key)
+		VALUES ($1, $2, $3, jsonb_build_object('reason', $4::text), 'user', $5)`, userID,
+		"graph_concept_"+state, conceptID, request.Reason,
+		fmt.Sprintf("concept-action:%s:%s:%d", conceptID, state, time.Now().UnixNano()))
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) RecordLearnerSignal(ctx context.Context, userID string, request model.LearnerSignalRequest) error {
 	var success, failure int
 	switch request.Signal {

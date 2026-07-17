@@ -5,7 +5,8 @@ import { Icon } from "@/components/ui/Icon";
 import { getDocuments, getDocumentStats, type Document } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import Link from "next/link";
-import { UploadButton } from "@/components/UploadButton";
+import { AddContentButton } from "@/components/AddContentButton";
+import { SourcesPanel } from "@/components/SourcesPanel";
 import { DeleteDocButton } from "@/components/DeleteDocButton";
 import { ProcessingRefresh } from "@/components/ProcessingRefresh";
 
@@ -52,7 +53,7 @@ export default async function LibraryPage() {
         <button className="btn">
           <Icon name="drive" size={12} /> From Drive
         </button>
-        <UploadButton />
+        <AddContentButton />
       </div>
 
       <div className="stats">
@@ -80,7 +81,7 @@ export default async function LibraryPage() {
         
         {docs.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px", color: "var(--ink-4)" }}>
-            Your library is empty. Upload a PDF or connect Google Drive to begin.
+            Your library is empty. Add an article, paste research notes, or upload a PDF to begin.
           </div>
         ) : docs.map((d) => (
           <Link key={d.id} href={`/reader?docId=${d.id}`} style={{ textDecoration: "none", color: "inherit", display: "contents" }}>
@@ -89,7 +90,7 @@ export default async function LibraryPage() {
               <span className="title">{d.title}</span>
               <span className="authors">{d.authors || "Unknown"}</span>
               <span className="mono">{d.year || "—"}</span>
-              <span className="mono">{d.page_count}p</span>
+              <span className="mono">{d.source_type === "pdf" && d.page_count ? `${d.page_count}p` : "—"}</span>
               <span>
                 {d.status === "ready" ? (
                   <span className="mono" style={{ color: "var(--accent-2)" }}>ready</span>
@@ -109,6 +110,7 @@ export default async function LibraryPage() {
           </Link>
         ))}
       </div>
+      <SourcesPanel />
     </div>
   );
 }

@@ -42,6 +42,7 @@ type ChatMessage struct {
 
 // ChatGraphUpdate summarizes deterministic graph changes caused by grounded evidence.
 type ChatGraphUpdate struct {
+	ConceptsCreated    int    `json:"concepts_created"`
 	ConceptsReinforced int    `json:"concepts_reinforced"`
 	LinksObserved      int    `json:"links_observed"`
 	LinksPromoted      int    `json:"links_promoted"`

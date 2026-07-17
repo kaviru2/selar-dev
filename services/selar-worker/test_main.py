@@ -201,6 +201,30 @@ def test_process_endpoint_validation():
     assert response.status_code == 422  # Pydantic validation error
 
 
+def test_document_processing_respects_concurrency_limit(monkeypatch):
+    import asyncio
+    import main
+
+    active = 0
+    peak = 0
+
+    async def fake_process_document_task(**_kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+
+    monkeypatch.setattr(main, "process_document_task", fake_process_document_task)
+    monkeypatch.setattr(main, "ingestion_semaphore", asyncio.Semaphore(1))
+
+    async def run_batch():
+        await asyncio.gather(*(main.process_document_with_limit(doc_id=str(index)) for index in range(3)))
+
+    asyncio.run(run_batch())
+    assert peak == 1
+
+
 def test_reciprocal_rank_fusion_is_deterministic_and_bounded():
     from main import reciprocal_rank_fusion
 

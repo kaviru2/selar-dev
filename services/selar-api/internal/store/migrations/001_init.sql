@@ -1,5 +1,5 @@
 -- SELAR Schema v2 — Postgres 16 + pgvector
--- Full schema from implementation spec. gemini-embedding-001 = 3072 dimensions.
+-- Full schema from implementation spec. Embedding vectors use 3072 dimensions.
 -- All coordinates stored in PDF points (1/72 inch), never screen pixels.
 -- IMPORTANT: Run this migration with a fresh database or drop existing tables first.
 

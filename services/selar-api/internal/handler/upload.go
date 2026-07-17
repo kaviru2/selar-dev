@@ -1,20 +1,23 @@
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
+)
+
+const (
+	maxPDFSize       int64 = 50 << 20
+	maxMultipartBody int64 = maxPDFSize + (1 << 20)
+	multipartMemory  int64 = 8 << 20
 )
 
 // UploadDocument accepts a multipart/form-data PDF upload
@@ -24,17 +27,19 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
-	userID, err := uuid.Parse(userIdStr)
-	if err != nil {
+	if _, err := uuid.Parse(userIdStr); err != nil {
 		http.Error(w, `{"error": "bad token"}`, http.StatusUnauthorized)
 		return
 	}
 
-	// Max 50 MB
-	if err := r.ParseMultipartForm(50 << 20); err != nil {
+	// Cap the entire request, while letting PDFs larger than 8 MB spill to a
+	// temporary file instead of retaining the whole upload in process memory.
+	r.Body = http.MaxBytesReader(w, r.Body, maxMultipartBody)
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		http.Error(w, `{"error": "file too large"}`, http.StatusBadRequest)
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -47,8 +52,10 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "only PDF allowed"}`, http.StatusBadRequest)
 		return
 	}
-
-	docID := uuid.New()
+	if header.Size > maxPDFSize {
+		http.Error(w, `{"error": "file too large"}`, http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	// Create upload folder
 	uploadDir := "/tmp/selar_uploads"
@@ -58,64 +65,53 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outPath := filepath.Join(uploadDir, docID.String()+".pdf")
+	source := &model.ContentSource{
+		UserID: userIdStr, Kind: "pdf", URI: header.Filename, Title: header.Filename,
+		RefreshPolicy: "never",
+	}
+	if err := h.store.CreateSource(r.Context(), source); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create PDF source"})
+		return
+	}
+	doc := &model.Document{
+		UserID: userIdStr, Title: header.Filename, Status: model.DocStatusProcessing,
+		Progress: 0.01, SourceID: &source.ID, SourceType: "pdf", MimeType: "application/pdf",
+	}
+	if err := h.store.CreateDocument(r.Context(), doc); err != nil {
+		_ = h.store.ArchiveSource(r.Context(), source.ID, userIdStr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create PDF snapshot"})
+		return
+	}
+	outPath := filepath.Join(uploadDir, doc.ID+".pdf")
 	outFile, err := os.Create(outPath)
 	if err != nil {
-		http.Error(w, `{"error": "failed to write file"}`, http.StatusInternalServerError)
+		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to write PDF"})
 		return
 	}
-	defer outFile.Close()
-
-	_, err = io.Copy(outFile, file)
-	if err != nil {
-		http.Error(w, `{"error": "failed to save file"}`, http.StatusInternalServerError)
+	_, copyErr := io.Copy(outFile, file)
+	closeErr := outFile.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(outPath)
+		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save PDF"})
 		return
 	}
-
-	// Insert Document into Database
-	doc := model.Document{
-		ID:       docID.String(),
-		UserID:   userID.String(),
-		Title:    header.Filename,
-		Status:   "processing",
-		Progress: 0.01, // Mock progress to trigger pipeline visualization
-		AddedAt:  time.Now(),
+	run := &model.IngestionRun{
+		SourceID: source.ID, DocumentID: doc.ID,
+		EmbeddingModel: "gemini-embedding-2", EmbeddingDimension: 3072,
 	}
-
-	err = h.store.CreateDocument(r.Context(), &doc)
-	if err != nil {
-		// Clean up on failure
-		os.Remove(outPath)
-		http.Error(w, `{"error": "failed to insert document metadata"}`, http.StatusInternalServerError)
+	if err := h.store.CreateIngestionRun(r.Context(), run, userIdStr); err != nil {
+		_ = os.Remove(outPath)
+		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to queue PDF ingestion"})
 		return
 	}
-
-	// Rename the file to precisely match the auto-generated database UUID
-	newOutPath := filepath.Join("/tmp/selar_uploads", doc.ID+".pdf")
-	if doc.ID != docID.String() {
-		os.Rename(outPath, newOutPath)
-	}
-
-	// Trigger async parsing logic in Python Worker
-	go func() {
-		workerURL := os.Getenv("WORKER_URL")
-		if workerURL == "" {
-			workerURL = "http://localhost:8000"
-		}
-
-		payload := fmt.Sprintf(`{"doc_id": "%s", "file_path": "%s"}`, doc.ID, newOutPath)
-		resp, err := http.Post(workerURL+"/process", "application/json", strings.NewReader(payload))
-		if err != nil {
-			fmt.Printf("Worker connection failed: %v\n", err)
-			return
-		}
-		defer resp.Body.Close()
-		fmt.Printf("Worker triggered for %s: Status %d\n", docID, resp.StatusCode)
-	}()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(doc)
+	go triggerWorker(workerProcessRequest{
+		DocumentID: doc.ID, SourceID: source.ID, RunID: run.ID,
+		SourceType: "pdf", FilePath: outPath, Title: source.Title,
+	})
+	writeJSON(w, http.StatusAccepted, map[string]any{"source": source, "document": doc, "run": run})
 }
 
 // ServeDocument streams the raw PDF binary back securely to the user's React-PDF component
