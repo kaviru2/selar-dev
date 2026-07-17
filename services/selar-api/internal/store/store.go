@@ -168,22 +168,43 @@ func (s *Store) GetDocumentStats(ctx context.Context, userID string) (*model.Doc
 
 func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page int) ([]model.LinkSuggestion, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT ls.id, ls.user_id, ls.source_chunk_id, ls.target_chunk_id,
-		        ls.similarity, ls.relation, ls.status, ls.user_label,
-		        ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
-		        sc.content AS src_text, tc.content AS tgt_text,
-		        sd.title AS src_doc, td.title AS tgt_doc,
-		        sc.page_start AS src_page, tc.page_start AS tgt_page,
-		        ls.summary, sc.bboxes AS src_bboxes
-		 FROM link_suggestions ls
-		 JOIN chunks sc ON ls.source_chunk_id = sc.id
-		 JOIN chunks tc ON ls.target_chunk_id = tc.id
-		 JOIN documents sd ON sc.document_id = sd.id
-		 JOIN documents td ON tc.document_id = td.id
-		 WHERE ls.user_id = $1
-		   AND sc.document_id = $2
-		   AND ($3 = 0 OR sc.page_start = $3)
-		 ORDER BY ls.similarity DESC`,
+		`WITH oriented AS (
+		   SELECT ls.id, ls.user_id,
+		          CASE WHEN sc.document_id = $2 THEN sc.id ELSE tc.id END AS source_chunk_id,
+		          CASE WHEN sc.document_id = $2 THEN tc.id ELSE sc.id END AS target_chunk_id,
+		          ls.similarity, ls.relation, ls.status, ls.user_label,
+		          ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
+		          CASE WHEN sc.document_id = $2 THEN sc.content ELSE tc.content END AS src_text,
+		          CASE WHEN sc.document_id = $2 THEN tc.content ELSE sc.content END AS tgt_text,
+		          CASE WHEN sc.document_id = $2 THEN sd.title ELSE td.title END AS src_doc,
+		          CASE WHEN sc.document_id = $2 THEN td.title ELSE sd.title END AS tgt_doc,
+		          CASE WHEN sc.document_id = $2 THEN sc.page_start ELSE tc.page_start END AS src_page,
+		          CASE WHEN sc.document_id = $2 THEN tc.page_start ELSE sc.page_start END AS tgt_page,
+		          ls.summary,
+		          CASE WHEN sc.document_id = $2 THEN sc.bboxes ELSE tc.bboxes END AS src_bboxes,
+		          row_number() OVER (
+		            PARTITION BY LEAST(sc.id::text, tc.id::text), GREATEST(sc.id::text, tc.id::text), ls.relation
+		            ORDER BY CASE ls.status
+		              WHEN 'confirmed' THEN 0 WHEN 'relabeled' THEN 1 WHEN 'rejected' THEN 2
+		              WHEN 'pending' THEN 3 ELSE 4 END,
+		              ls.similarity DESC, ls.suggested_at DESC
+		          ) AS duplicate_rank
+		   FROM link_suggestions ls
+		   JOIN chunks sc ON ls.source_chunk_id = sc.id
+		   JOIN chunks tc ON ls.target_chunk_id = tc.id
+		   JOIN documents sd ON sc.document_id = sd.id
+		   JOIN documents td ON tc.document_id = td.id
+		   WHERE ls.user_id = $1
+		     AND (sc.document_id = $2 OR tc.document_id = $2)
+		 )
+		 SELECT id, user_id, source_chunk_id, target_chunk_id,
+		        similarity, relation, status, user_label,
+		        time_to_respond_ms, suggested_at, responded_at,
+		        src_text, tgt_text, src_doc, tgt_doc, src_page, tgt_page,
+		        summary, src_bboxes
+		 FROM oriented
+		 WHERE duplicate_rank = 1 AND ($3 = 0 OR src_page = $3)
+		 ORDER BY similarity DESC`,
 		userID, docID, page)
 	if err != nil {
 		return nil, err

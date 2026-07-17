@@ -493,27 +493,9 @@ async def process_document_task(doc_id: str, file_path: str):
             LIMIT 8
         """, doc_id, user_id)
 
-        # Existing → New (limit 20 best matches)
-        res2 = await conn.execute("""
-            INSERT INTO link_suggestions (user_id, source_chunk_id, target_chunk_id, similarity, relation, status)
-            SELECT $2, match.id, new_chunk.id, 1 - match.distance, 'related_to', 'pending'
-            FROM chunks new_chunk
-            CROSS JOIN LATERAL (
-                SELECT existing.id,
-                       existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072) AS distance
-                FROM chunks existing
-                WHERE existing.document_id != $1 AND existing.user_id = $2
-                  AND existing.embedding IS NOT NULL
-                ORDER BY existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072)
-                LIMIT 2
-            ) match
-            WHERE new_chunk.document_id = $1
-              AND new_chunk.embedding IS NOT NULL AND match.distance < 0.35
-            ORDER BY match.distance ASC
-            LIMIT 8
-        """, doc_id, user_id)
-
-        print(f"Link Generation results - Outbound: {res1}, Inbound: {res2}")
+        # The Reader orients this one stored relationship to whichever document
+        # is open, avoiding mirrored duplicate rows and duplicated highlights.
+        print(f"Link Generation results - New relationships: {res1}")
         await conn.execute("UPDATE documents SET progress = 0.55 WHERE id = $1", doc_id)
 
         # ── Phase 5: Structured Mental Model + Evidence Graph ──

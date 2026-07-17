@@ -26,6 +26,7 @@ interface PdfCanvasProps {
   zoom: number;
   pageNumber: number;
   annotationsOn: boolean;
+  suggestionsOn: boolean;
   suggestions: LinkSuggestion[];
   annotations?: Annotation[];
   onCreateAnnotation?: (
@@ -57,6 +58,7 @@ export default function PdfCanvas({
   zoom,
   pageNumber,
   annotationsOn,
+  suggestionsOn,
   suggestions,
   annotations = [],
   onCreateAnnotation,
@@ -135,9 +137,9 @@ export default function PdfCanvas({
             renderAnnotationLayer
           />
 
-          {annotationsOn && (
+          {(annotationsOn || suggestionsOn) && (
             <div className="pdf-overlay" aria-label="Document annotations">
-              {pageAnnotations.flatMap((annotation) =>
+              {annotationsOn && pageAnnotations.flatMap((annotation) =>
                 parseBBoxes(annotation.bbox).map((bbox, index) => (
                   <div
                     key={`annotation-${annotation.id}-${index}`}
@@ -153,7 +155,7 @@ export default function PdfCanvas({
                 ))
               )}
 
-              {suggestions.flatMap((suggestion) => {
+              {suggestionsOn && suggestions.flatMap((suggestion) => {
                 if (suggestion.status === "rejected" || suggestion.src_page !== pageNumber) return [];
                 return parseBBoxes(suggestion.src_bboxes)
                   .filter((bbox) => bbox.w * bbox.h <= 0.20)
