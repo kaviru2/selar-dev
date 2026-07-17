@@ -402,8 +402,9 @@ func (s *Store) ListConcepts(ctx context.Context, userID string) ([]model.Concep
 func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.ConceptEdge, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, user_id, source_concept_id, target_concept_id, relation, created_via,
-		        state, confidence, support_count, document_count, confirmed_at, created_at
-		 FROM concept_edges e WHERE user_id = $1 AND state NOT IN ('rejected', 'archived')
+		        state, confidence, support_count, document_count, base_confidence, evidence_confidence,
+		        confirmed_at, valid_from, valid_to, observed_at, COALESCE(superseded_by::text, ''), created_at
+		 FROM concept_edges e WHERE user_id = $1
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.source_concept_id)
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.target_concept_id)
 		 ORDER BY created_at`, userID)
@@ -415,7 +416,10 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 	var edges []model.ConceptEdge
 	for rows.Next() {
 		var e model.ConceptEdge
-		if err := rows.Scan(&e.ID, &e.UserID, &e.SourceConceptID, &e.TargetConceptID, &e.Relation, &e.CreatedVia, &e.State, &e.Confidence, &e.SupportCount, &e.DocumentCount, &e.ConfirmedAt, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.UserID, &e.SourceConceptID, &e.TargetConceptID, &e.Relation,
+			&e.CreatedVia, &e.State, &e.Confidence, &e.SupportCount, &e.DocumentCount,
+			&e.BaseConfidence, &e.EvidenceConfidence, &e.ConfirmedAt, &e.ValidFrom, &e.ValidTo,
+			&e.ObservedAt, &e.SupersededBy, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		edges = append(edges, e)

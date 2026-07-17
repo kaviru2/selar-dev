@@ -1,6 +1,7 @@
 package store
 
 import "testing"
+import "time"
 
 func TestAdaptiveEdgeStateRequiresRepeatedOrIndependentEvidence(t *testing.T) {
 	tests := []struct {
@@ -17,6 +18,24 @@ func TestAdaptiveEdgeStateRequiresRepeatedOrIndependentEvidence(t *testing.T) {
 		if got := adaptiveEdgeState(test.messages, test.documents); got != test.want {
 			t.Errorf("adaptiveEdgeState(%d, %d) = %q, want %q", test.messages, test.documents, got, test.want)
 		}
+	}
+}
+
+func TestProjectedEdgeLifecycle(t *testing.T) {
+	asOf := time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC)
+	recent := asOf.Add(-24 * time.Hour)
+	state, confidence, validTo := projectedEdgeLifecycle("deterministic_chat", "candidate", 2, 2, &recent, asOf)
+	if state != "supported" || confidence <= 0 || validTo != nil {
+		t.Fatalf("recent independent evidence should remain supported: state=%s confidence=%v validTo=%v", state, confidence, validTo)
+	}
+	stale := asOf.Add(-91 * 24 * time.Hour)
+	state, _, validTo = projectedEdgeLifecycle("deterministic_chat", "supported", 3, 2, &stale, asOf)
+	if state != "archived" || validTo == nil {
+		t.Fatalf("stale chat-only edge should archive: state=%s validTo=%v", state, validTo)
+	}
+	state, _, _ = projectedEdgeLifecycle("deterministic_chat", "confirmed", 0, 0, nil, asOf)
+	if state != "confirmed" {
+		t.Fatalf("human-confirmed edge must be preserved, got %s", state)
 	}
 }
 

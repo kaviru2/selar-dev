@@ -101,6 +101,9 @@ func main() {
 		// Concepts & Graph
 		r.Get("/concepts", h.ListConcepts)
 		r.Get("/graph", h.GetGraph)
+		r.Post("/graph/replay", h.ReplayAdaptiveGraph)
+		r.Post("/graph/lifecycle", h.ApplyGraphLifecycle)
+		r.Post("/graph/edges/{id}/respond", h.RespondToConceptEdge)
 		r.Get("/documents/{id}/mental-model", h.GetDocumentMentalModel)
 		r.Get("/mental-model-links", h.ListMentalModelLinks)
 		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)
@@ -111,6 +114,13 @@ func main() {
 		r.Post("/chat/threads", h.CreateChatThread)
 		r.Get("/chat/threads/{id}/messages", h.ListChatMessages)
 		r.Post("/chat/threads/{id}/messages", h.CreateChatMessage)
+		r.Delete("/chat/threads/{id}", h.DeleteChatThread)
+		r.Post("/chat/messages/{id}/feedback", h.RecordChatFeedback)
+		r.Post("/chat/citations/{id}/open", h.RecordCitationOpen)
+
+		// Deterministic learner signals and local evaluation metrics
+		r.Post("/learner-signals", h.RecordLearnerSignal)
+		r.Get("/evaluation/metrics", h.GetEvaluationMetrics)
 
 		// Reading Sessions
 		r.Post("/sessions/start", h.StartSession)

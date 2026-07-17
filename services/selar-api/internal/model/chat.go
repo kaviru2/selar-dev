@@ -26,16 +26,18 @@ type ChatCitation struct {
 
 // ChatMessage is an immutable conversation episode.
 type ChatMessage struct {
-	ID           string           `json:"id"`
-	ThreadID     string           `json:"thread_id"`
-	UserID       string           `json:"user_id"`
-	Role         string           `json:"role"`
-	Content      string           `json:"content"`
-	Status       string           `json:"status"`
-	ModelVersion string           `json:"model_version,omitempty"`
-	CreatedAt    time.Time        `json:"created_at"`
-	Citations    []ChatCitation   `json:"citations"`
-	GraphUpdate  *ChatGraphUpdate `json:"graph_update,omitempty"`
+	ID                  string           `json:"id"`
+	ThreadID            string           `json:"thread_id"`
+	UserID              string           `json:"user_id"`
+	Role                string           `json:"role"`
+	Content             string           `json:"content"`
+	Status              string           `json:"status"`
+	ModelVersion        string           `json:"model_version,omitempty"`
+	CreatedAt           time.Time        `json:"created_at"`
+	Citations           []ChatCitation   `json:"citations"`
+	GraphUpdate         *ChatGraphUpdate `json:"graph_update,omitempty"`
+	Feedback            []ChatFeedback   `json:"feedback,omitempty"`
+	SupersedesMessageID string           `json:"supersedes_message_id,omitempty"`
 }
 
 // ChatGraphUpdate summarizes deterministic graph changes caused by grounded evidence.
@@ -53,6 +55,7 @@ type ChatAnswer struct {
 	RankingPolicy string         `json:"ranking_policy"`
 	Citations     []ChatCitation `json:"citations"`
 	Candidates    []any          `json:"candidates"`
+	Metrics       ChatMetrics    `json:"metrics"`
 }
 
 // ChatMessageRequest creates a new user episode.

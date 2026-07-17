@@ -6,6 +6,8 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { useSelar, type Theme, type Density } from "@/lib/context";
+import { useEffect, useState } from "react";
+import { clientFetch, type MetricsSummary } from "@/lib/api";
 
 const THEMES: { id: Theme; label: string }[] = [
   { id: "paper", label: "Paper" },
@@ -22,6 +24,11 @@ const DENSITIES: { id: Density; label: string }[] = [
 
 export default function SettingsPage() {
   const { user, theme, density, setTheme, setDensity } = useSelar();
+  const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
+
+  useEffect(() => {
+    clientFetch<MetricsSummary>("/api/evaluation/metrics").then(setMetrics).catch(() => undefined);
+  }, []);
 
   return (
     <div className="settings-wrap">
@@ -121,6 +128,25 @@ export default function SettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Local evaluation */}
+        <div className="settings-group">
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--ink-4)", textTransform: "uppercase", marginBottom: 6 }}>
+            Local evaluation
+          </div>
+          <div className="settings-row">
+            <div className="k">Grounded chat<span className="sub">stored locally; no third-party analytics</span></div>
+            <div className="v" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-2)" }}>
+              {metrics ? `${metrics.chat_turns} turns · ${Math.round(metrics.average_retrieval_ms)}ms retrieval · ${metrics.average_citations.toFixed(1)} citations/answer` : "No measurements yet"}
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="k">Governance actions<span className="sub">citation use, feedback, and graph review</span></div>
+            <div className="v" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-2)" }}>
+              {metrics ? `${metrics.citation_opens} opens · ${metrics.helpful_answers} helpful · ${metrics.corrections} corrections · ${metrics.confirmed_edges}/${metrics.rejected_edges} confirmed/rejected` : "—"}
             </div>
           </div>
         </div>

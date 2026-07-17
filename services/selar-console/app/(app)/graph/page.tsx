@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { clientFetch, type GraphData, type GraphNodeType } from "@/lib/api";
+import { clientFetch, type GraphData, type GraphNodeType, type ReplayReport } from "@/lib/api";
 import dynamic from "next/dynamic";
 import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
 
@@ -32,6 +32,10 @@ interface GraphLinkMetadata {
   state: string;
   confidence?: number;
   explanation?: string;
+  valid_from?: string;
+  valid_to?: string;
+  observed_at?: string;
+  superseded_by?: string;
 }
 
 type RenderNode = NodeObject<GraphNode>;
@@ -74,6 +78,7 @@ export default function GraphPage() {
   const [hoverNode, setHoverNode] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isPhysicsPaused, setIsPhysicsPaused] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLinkMetadata> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -92,8 +97,16 @@ export default function GraphPage() {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    clientFetch<GraphData>("/api/graph")
+  const loadGraph = useCallback(async (applyLifecycle = false) => {
+    if (applyLifecycle) {
+      try {
+        await clientFetch<ReplayReport>("/api/graph/lifecycle", { method: "POST" });
+      } catch (err) {
+        // Keep the existing graph usable while a pre-migration API process is restarting.
+        console.warn("Graph lifecycle reconciliation was skipped", err);
+      }
+    }
+    return clientFetch<GraphData>("/api/graph")
       .then((data) => {
         const connCount: Record<string, number> = {};
         for (const e of data.edges) {
@@ -122,6 +135,10 @@ export default function GraphPage() {
           state: e.state,
           confidence: e.confidence,
           explanation: e.explanation,
+          valid_from: e.valid_from,
+          valid_to: e.valid_to,
+          observed_at: e.observed_at,
+          superseded_by: e.superseded_by,
         }));
 
         setNodes(gNodes);
@@ -130,6 +147,28 @@ export default function GraphPage() {
       .catch((err) => console.error("Failed to fetch graph", err))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadGraph(true);
+  }, [loadGraph]);
+
+  const reconcileGraph = useCallback(async () => {
+    setReconciling(true);
+    try {
+      await loadGraph(true);
+    } finally {
+      setReconciling(false);
+    }
+  }, [loadGraph]);
+
+  const respondToEdge = useCallback(async (edgeId: string, action: "confirm" | "reject") => {
+    await clientFetch(`/api/graph/edges/${edgeId}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason: "Reviewed in graph workspace" }),
+    });
+    await loadGraph(false);
+  }, [loadGraph]);
 
   // Adjust simulation forces once nodes are loaded
   useEffect(() => {
@@ -296,14 +335,20 @@ export default function GraphPage() {
     const isSelectedPath = srcId === selId || tgtId === selId;
     const isHoveredPath = hoverNode !== null && (srcId === hoverNode || tgtId === hoverNode);
     const isDimmed = hoverNode !== null && !isHoveredPath;
+    const isInactive = ["rejected", "archived", "superseded"].includes(link.state);
 
     ctx.save();
 
     ctx.beginPath();
     ctx.moveTo(src.x, src.y);
     ctx.lineTo(tgt.x, tgt.y);
+    ctx.setLineDash(isInactive || link.state === "candidate" ? [4 / globalScale, 4 / globalScale] : []);
 
-    if (isDimmed) {
+    if (isInactive) {
+      ctx.strokeStyle = "#b9b1a8";
+      ctx.globalAlpha = 0.16;
+      ctx.lineWidth = 0.6 / globalScale;
+    } else if (isDimmed) {
       ctx.strokeStyle = "#ded9d2";
       ctx.globalAlpha = 0.08;
       ctx.lineWidth = 0.5 / globalScale;
@@ -453,6 +498,13 @@ export default function GraphPage() {
           }} className="hover-bg-2">
             <Icon name="bolt" size={13} />
           </button>
+          <button onClick={reconcileGraph} disabled={reconciling} title="Reconcile deterministic projections" style={{
+            background: "none", border: "none", padding: "6px 8px", cursor: reconciling ? "wait" : "pointer",
+            borderRadius: "var(--r-sm)", color: reconciling ? "var(--accent)" : "var(--ink-2)",
+            fontFamily: "var(--font-mono)", fontSize: 9
+          }} className="hover-bg-2">
+            {reconciling ? "syncing…" : "reconcile"}
+          </button>
         </div>
       </div>
 
@@ -505,6 +557,7 @@ export default function GraphPage() {
               const srcId = endpointId(link.source);
               const tgtId = endpointId(link.target);
               const isDirectPath = srcId === selId || tgtId === selId || srcId === hoverNode || tgtId === hoverNode;
+              if (["rejected", "archived", "superseded"].includes(link.state)) return 0;
               return isDirectPath ? 3 : 0.8;
             }}
             linkDirectionalParticleSpeed={0.006}
@@ -661,6 +714,12 @@ export default function GraphPage() {
                         {l.relation.replace(/_/g, " ")}
                       </span>
                       <span style={{ flex: 1 }} />
+                      <span style={{
+                        fontSize: 8, fontFamily: "var(--font-mono)", textTransform: "uppercase",
+                        color: ["rejected", "archived", "superseded"].includes(l.state) ? "#a33b32" : "#7a8c5c"
+                      }}>
+                        {l.state}
+                      </span>
                       <span style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--font-mono)" }}>
                         {isOutgoing ? "outgoing →" : "← incoming"}
                       </span>
@@ -677,6 +736,23 @@ export default function GraphPage() {
                       <span style={{ color: "var(--ink-4)", fontSize: 10, lineHeight: 1.45 }}>
                         {l.explanation}
                       </span>
+                    )}
+                    {l.valid_to && (
+                      <span style={{ color: "#a33b32", fontFamily: "var(--font-mono)", fontSize: 9 }}>
+                        No longer active since {new Date(l.valid_to).toLocaleDateString()}
+                      </span>
+                    )}
+                    {(l.state === "candidate" || l.state === "supported") && l.created_via === "deterministic_chat" && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={(event) => event.stopPropagation()}>
+                        <button onClick={() => respondToEdge(l.id, "confirm")} style={{
+                          border: "1px solid rgba(122,140,92,.4)", borderRadius: 4, background: "rgba(122,140,92,.08)",
+                          color: "#607044", padding: "4px 8px", cursor: "pointer", fontSize: 9
+                        }}>Confirm</button>
+                        <button onClick={() => respondToEdge(l.id, "reject")} style={{
+                          border: "1px solid rgba(163,59,50,.25)", borderRadius: 4, background: "transparent",
+                          color: "#a33b32", padding: "4px 8px", cursor: "pointer", fontSize: 9
+                        }}>Reject</button>
+                      </div>
                     )}
                   </div>
                 );
