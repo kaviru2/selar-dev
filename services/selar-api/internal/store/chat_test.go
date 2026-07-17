@@ -1,7 +1,9 @@
 package store
 
-import "testing"
-import "time"
+import (
+	"testing"
+	"time"
+)
 
 func TestAdaptiveEdgeStateRequiresRepeatedOrIndependentEvidence(t *testing.T) {
 	tests := []struct {
@@ -53,4 +55,54 @@ func TestAdaptiveEdgeConfidenceIsBoundedAndMonotonic(t *testing.T) {
 	if saturated > 0.95 {
 		t.Fatalf("confidence must be capped at 0.95, got %v", saturated)
 	}
+}
+
+func TestReplayProjectionHashIsDeterministic(t *testing.T) {
+	edges := []replayEdge{
+		{id: "edge-b", expectedState: "supported", support: 3, documents: 2, expectedEvidence: 0.72},
+		{id: "edge-a", expectedState: "candidate", support: 1, documents: 1, expectedEvidence: 0.35},
+	}
+	learners := []replayLearner{
+		{conceptID: "concept-b", exposure: 2, retrieval: 1, success: 1, interest: 0.28},
+		{conceptID: "concept-a", exposure: 4, retrieval: 2, failure: 1, interest: 0.35},
+	}
+
+	first := replayProjectionHash(edges, learners)
+	second := replayProjectionHash(
+		[]replayEdge{edges[1], edges[0]},
+		[]replayLearner{learners[1], learners[0]},
+	)
+	if first != second {
+		t.Fatalf("the same projection in a different query order produced different hashes: %s != %s", first, second)
+	}
+
+	changed := append([]replayEdge(nil), edges...)
+	changed[0].support++
+	if first == replayProjectionHash(changed, learners) {
+		t.Fatal("a changed projection produced the same replay hash")
+	}
+}
+
+func TestProjectedLifecycleReplayIsEquivalent(t *testing.T) {
+	asOf := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	observed := asOf.Add(-7 * 24 * time.Hour)
+
+	stateA, confidenceA, validToA := projectedEdgeLifecycle(
+		"deterministic_chat", "candidate", 3, 2, &observed, asOf,
+	)
+	stateB, confidenceB, validToB := projectedEdgeLifecycle(
+		"deterministic_chat", "candidate", 3, 2, &observed, asOf,
+	)
+
+	if stateA != stateB || confidenceA != confidenceB || !sameOptionalTime(validToA, validToB) {
+		t.Fatalf("identical retained evidence did not replay equivalently: (%s, %v, %v) != (%s, %v, %v)",
+			stateA, confidenceA, validToA, stateB, confidenceB, validToB)
+	}
+}
+
+func sameOptionalTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
 }

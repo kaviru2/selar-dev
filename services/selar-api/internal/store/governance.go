@@ -466,6 +466,21 @@ type replayLearner struct {
 	lastExposed                           *time.Time
 }
 
+func replayProjectionHash(edges []replayEdge, learners []replayLearner) string {
+	parts := make([]string, 0, len(edges)+len(learners))
+	for _, edge := range edges {
+		parts = append(parts, fmt.Sprintf("e:%s:%s:%d:%d:%.6f", edge.id, edge.expectedState,
+			edge.support, edge.documents, edge.expectedEvidence))
+	}
+	for _, learner := range learners {
+		parts = append(parts, fmt.Sprintf("l:%s:%d:%d:%d:%d:%.6f", learner.conceptID,
+			learner.exposure, learner.retrieval, learner.success, learner.failure, learner.interest))
+	}
+	sort.Strings(parts)
+	hashBytes := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(hashBytes[:])
+}
+
 func (s *Store) ReplayAdaptiveGraph(ctx context.Context, userID string, apply bool, asOf time.Time) (*model.ReplayReport, error) {
 	asOf = asOf.UTC().Truncate(time.Second)
 	tx, err := s.pool.Begin(ctx)
@@ -614,20 +629,9 @@ func (s *Store) ReplayAdaptiveGraph(ctx context.Context, userID string, apply bo
 		}
 	}
 
-	parts := make([]string, 0, len(edges)+len(learners))
-	for _, edge := range edges {
-		parts = append(parts, fmt.Sprintf("e:%s:%s:%d:%d:%.6f", edge.id, edge.expectedState,
-			edge.support, edge.documents, edge.expectedEvidence))
-	}
-	for _, learner := range learners {
-		parts = append(parts, fmt.Sprintf("l:%s:%d:%d:%d:%d:%.6f", learner.conceptID,
-			learner.exposure, learner.retrieval, learner.success, learner.failure, learner.interest))
-	}
-	sort.Strings(parts)
-	hashBytes := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	report := &model.ReplayReport{
 		ReducerVersion: "adaptive-replay-v1", AsOf: asOf, Applied: apply,
-		Differences: differences, ProjectionHash: hex.EncodeToString(hashBytes[:]),
+		Differences: differences, ProjectionHash: replayProjectionHash(edges, learners),
 		EdgeCount: len(edges), LearnerCount: len(learners), Equivalent: differences == 0,
 	}
 	_, err = tx.Exec(ctx, `
