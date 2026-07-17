@@ -5,6 +5,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -475,7 +476,12 @@ func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.store.RespondToMentalModelLink(r.Context(), userID, chi.URLParam(r, "id"), response); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})
+		if errors.Is(err, store.ErrMentalModelLinkNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})
+			return
+		}
+		log.Printf("failed to respond to mental-model link %s: %v", chi.URLParam(r, "id"), err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save mental-model response"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
