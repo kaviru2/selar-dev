@@ -3,6 +3,7 @@ import re
 import json
 import asyncio
 import unicodedata
+import time
 from collections import Counter
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -48,7 +49,14 @@ class ChatRequest(BaseModel):
 
 def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: int = 6) -> List[Dict[str, Any]]:
     """Fuse independently ranked retrieval signals with fixed, replayable weights."""
-    weights = {"vector": 0.50, "lexical": 0.30, "graph": 0.20}
+    weights = {
+        "vector": 0.40,
+        "lexical": 0.25,
+        "graph": 0.15,
+        "learner": 0.10,
+        "evidence": 0.07,
+        "recency": 0.03,
+    }
     fused: Dict[str, Dict[str, Any]] = {}
     for signal, results in result_sets.items():
         for rank, candidate in enumerate(results, start=1):
@@ -485,27 +493,9 @@ async def process_document_task(doc_id: str, file_path: str):
             LIMIT 8
         """, doc_id, user_id)
 
-        # Existing → New (limit 20 best matches)
-        res2 = await conn.execute("""
-            INSERT INTO link_suggestions (user_id, source_chunk_id, target_chunk_id, similarity, relation, status)
-            SELECT $2, match.id, new_chunk.id, 1 - match.distance, 'related_to', 'pending'
-            FROM chunks new_chunk
-            CROSS JOIN LATERAL (
-                SELECT existing.id,
-                       existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072) AS distance
-                FROM chunks existing
-                WHERE existing.document_id != $1 AND existing.user_id = $2
-                  AND existing.embedding IS NOT NULL
-                ORDER BY existing.embedding::halfvec(3072) <=> new_chunk.embedding::halfvec(3072)
-                LIMIT 2
-            ) match
-            WHERE new_chunk.document_id = $1
-              AND new_chunk.embedding IS NOT NULL AND match.distance < 0.35
-            ORDER BY match.distance ASC
-            LIMIT 8
-        """, doc_id, user_id)
-
-        print(f"Link Generation results - Outbound: {res1}, Inbound: {res2}")
+        # The Reader orients this one stored relationship to whichever document
+        # is open, avoiding mirrored duplicate rows and duplicated highlights.
+        print(f"Link Generation results - New relationships: {res1}")
         await conn.execute("UPDATE documents SET progress = 0.55 WHERE id = $1", doc_id)
 
         # ── Phase 5: Structured Mental Model + Evidence Graph ──
@@ -645,9 +635,10 @@ Rules:
                         await conn.execute("""
                             INSERT INTO concept_edges (
                                 user_id, source_concept_id, target_concept_id, relation,
-                                created_via, state, confidence
+                                created_via, state, confidence, base_confidence
                             )
                             SELECT $1, $2, existing.id, 'related_to', 'ai_suggested', 'candidate',
+                                   1 - (existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072)),
                                    1 - (existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072))
                             FROM concepts existing
                             WHERE existing.user_id = $1 AND existing.id != $2
@@ -671,9 +662,9 @@ Rules:
                         await conn.execute("""
                             INSERT INTO concept_edges (
                                 user_id, source_concept_id, target_concept_id, relation,
-                                created_via, state, confidence
+                                created_via, state, confidence, base_confidence
                             )
-                            VALUES ($1, $2, $3, $4, 'ai_suggested', 'supported', 0.75)
+                            VALUES ($1, $2, $3, $4, 'ai_suggested', 'supported', 0.75, 0.75)
                             ON CONFLICT (source_concept_id, target_concept_id, relation) DO NOTHING
                         """, user_id, src_id, tgt_id, rel)
                         edge_count += 1
@@ -788,19 +779,23 @@ async def process_document(req: ProcessRequest, background_tasks: BackgroundTask
 
 @app.post("/chat")
 async def grounded_chat(req: ChatRequest):
+    total_started = time.perf_counter()
     question = req.question.strip()
     if not question or len(question) > 4000:
         raise HTTPException(status_code=400, detail="question must contain 1 to 4000 characters")
     if not client:
         raise HTTPException(status_code=503, detail="Gemini client is not configured")
 
+    embedding_started = time.perf_counter()
     query_embedding = await asyncio.to_thread(
         client.models.embed_content,
         model=EMBEDDING_MODEL,
         contents=[question],
         config={"task_type": "RETRIEVAL_QUERY"},
     )
+    embedding_ms = (time.perf_counter() - embedding_started) * 1000
     query_vector = str(query_embedding.embeddings[0].values)
+    retrieval_started = time.perf_counter()
     conn = await asyncpg.connect(DATABASE_URL)
     try:
         vector_rows = await conn.fetch("""
@@ -830,12 +825,20 @@ async def grounded_chat(req: ChatRequest):
                   AND state NOT IN ('rejected', 'archived')
                 ORDER BY embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)
                 LIMIT 8
+            ), expanded_concepts AS (
+                SELECT id, concept_score FROM nearest_concepts
+                UNION
+                SELECT CASE WHEN e.source_concept_id = nc.id THEN e.target_concept_id ELSE e.source_concept_id END,
+                       nc.concept_score * 0.85 * GREATEST(e.confidence, 0.25)
+                FROM nearest_concepts nc
+                JOIN concept_edges e ON (e.source_concept_id = nc.id OR e.target_concept_id = nc.id)
+                WHERE e.user_id = $1 AND e.state IN ('supported', 'confirmed') AND e.valid_to IS NULL
             )
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
                    c.page_start AS page, c.content,
-                   MAX(nc.concept_score * cc.confidence) AS score
-            FROM nearest_concepts nc
-            JOIN chunk_concepts cc ON cc.concept_id = nc.id
+                   MAX(ec.concept_score * cc.confidence) AS score
+            FROM expanded_concepts ec
+            JOIN chunk_concepts cc ON cc.concept_id = ec.id
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
             WHERE d.status = 'ready'
@@ -843,6 +846,43 @@ async def grounded_chat(req: ChatRequest):
             ORDER BY score DESC, c.id
             LIMIT 20
         """, req.user_id, query_vector)
+        learner_rows = await conn.fetch("""
+            SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
+                   c.page_start AS page, c.content,
+                   MAX(lp.interest_score * cc.confidence) AS score
+            FROM chat_learner_projection lp
+            JOIN chunk_concepts cc ON cc.concept_id = lp.concept_id
+            JOIN chunks c ON c.id = cc.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE lp.user_id = $1 AND lp.interest_score > 0 AND d.status = 'ready'
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            ORDER BY score DESC, c.id LIMIT 20
+        """, req.user_id)
+        evidence_rows = await conn.fetch("""
+            SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
+                   c.page_start AS page, c.content, MAX(cc.confidence) AS score
+            FROM chunk_concepts cc
+            JOIN chunks c ON c.id = cc.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            JOIN concepts concept ON concept.id = cc.concept_id
+            WHERE c.user_id = $1 AND d.status = 'ready'
+              AND concept.state IN ('supported', 'confirmed')
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            ORDER BY score DESC, c.id LIMIT 20
+        """, req.user_id)
+        recency_rows = await conn.fetch("""
+            SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
+                   c.page_start AS page, c.content,
+                   MAX(1.0 / (1.0 + EXTRACT(EPOCH FROM (now() - mc.created_at)) / 2592000.0)
+                       + LEAST(mc.open_count, 5) * 0.05) AS score
+            FROM message_citations mc
+            JOIN chat_messages m ON m.id = mc.message_id
+            JOIN chunks c ON c.id = mc.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE m.user_id = $1 AND d.status = 'ready' AND m.status <> 'superseded'
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            ORDER BY score DESC, c.id LIMIT 20
+        """, req.user_id)
     finally:
         await conn.close()
 
@@ -860,7 +900,11 @@ async def grounded_chat(req: ChatRequest):
         "vector": serialize(vector_rows),
         "lexical": serialize(lexical_rows),
         "graph": serialize(graph_rows),
+        "learner": serialize(learner_rows),
+        "evidence": serialize(evidence_rows),
+        "recency": serialize(recency_rows),
     })
+    retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
     if not ranked:
         return {
             "answer": "I could not find evidence for that question in your processed library.",
@@ -868,6 +912,14 @@ async def grounded_chat(req: ChatRequest):
             "ranking_policy": "hybrid-rrf-v1",
             "citations": [],
             "candidates": [],
+            "metrics": {
+                "embedding_ms": embedding_ms,
+                "retrieval_ms": retrieval_ms,
+                "generation_ms": 0,
+                "total_ms": (time.perf_counter() - total_started) * 1000,
+                "candidate_count": 0,
+                "model_calls": 1,
+            },
         }
 
     sources = []
@@ -903,11 +955,13 @@ QUESTION:
 EVIDENCE:
 {chr(10).join(sources)}
 """
+    generation_started = time.perf_counter()
     response = await asyncio.to_thread(
         client.models.generate_content,
         model=TEXT_MODEL,
         contents=prompt,
     )
+    generation_ms = (time.perf_counter() - generation_started) * 1000
     answer_text = (response.text or "").strip()
     if not answer_text:
         raise HTTPException(status_code=502, detail="answer model returned no text")
@@ -928,6 +982,14 @@ EVIDENCE:
         "ranking_policy": "hybrid-rrf-v1",
         "citations": citations,
         "candidates": candidates,
+        "metrics": {
+            "embedding_ms": embedding_ms,
+            "retrieval_ms": retrieval_ms,
+            "generation_ms": generation_ms,
+            "total_ms": (time.perf_counter() - total_started) * 1000,
+            "candidate_count": len(candidates),
+            "model_calls": 2,
+        },
     }
 
 @app.get("/health")

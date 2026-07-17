@@ -1,7 +1,7 @@
 # SELAR — Development Makefile
 # Convenience targets for local development with Docker Compose.
 
-.PHONY: dev down logs build migrate clean api-dev console-dev
+.PHONY: dev down logs build migrate replay clean api-dev console-dev
 
 # Start all services in development mode
 dev:
@@ -30,6 +30,11 @@ migrate:
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/003_runtime_mental_model.sql
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/004_adaptive_chat.sql
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/005_chat_graph_reducer.sql
+	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/006_graph_governance.sql
+
+# Verify deterministic projections. Use APPLY=1 to rebuild them.
+replay:
+	cd services/selar-api && go run ./cmd/replay -user $(USER_ID) $(if $(APPLY),-apply,)
 
 # Run only the Go API locally (requires local Postgres)
 api-dev:

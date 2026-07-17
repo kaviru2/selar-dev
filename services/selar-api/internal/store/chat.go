@@ -26,7 +26,7 @@ func (s *Store) CreateChatThread(ctx context.Context, userID, title string) (*mo
 func (s *Store) ListChatThreads(ctx context.Context, userID string) ([]model.ChatThread, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, user_id, title, created_at, updated_at
-		 FROM chat_threads WHERE user_id = $1 ORDER BY updated_at DESC`, userID)
+		 FROM chat_threads WHERE user_id = $1 AND deleted_at IS NULL ORDER BY updated_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -48,11 +48,12 @@ func (s *Store) CreateChatMessage(ctx context.Context, userID, threadID, role, c
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO chat_messages (thread_id, user_id, role, content, status, model_version)
 		 SELECT t.id, $1, $3, $4, $5, $6 FROM chat_threads t
-		 WHERE t.id = $2 AND t.user_id = $1
-		 RETURNING id, thread_id, user_id, role, content, status, model_version, created_at`,
+		 WHERE t.id = $2 AND t.user_id = $1 AND t.deleted_at IS NULL
+		 RETURNING id, thread_id, user_id, role, content, status, model_version, created_at,
+		           COALESCE(supersedes_message_id::text, '')`,
 		userID, threadID, role, content, status, modelVersion).Scan(
 		&message.ID, &message.ThreadID, &message.UserID, &message.Role, &message.Content,
-		&message.Status, &message.ModelVersion, &message.CreatedAt,
+		&message.Status, &message.ModelVersion, &message.CreatedAt, &message.SupersedesMessageID,
 	)
 	return message, err
 }
@@ -60,9 +61,10 @@ func (s *Store) CreateChatMessage(ctx context.Context, userID, threadID, role, c
 // ListChatMessages returns a thread with citations while enforcing ownership.
 func (s *Store) ListChatMessages(ctx context.Context, userID, threadID string) ([]model.ChatMessage, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT m.id, m.thread_id, m.user_id, m.role, m.content, m.status, m.model_version, m.created_at
+		`SELECT m.id, m.thread_id, m.user_id, m.role, m.content, m.status, m.model_version, m.created_at,
+		        COALESCE(m.supersedes_message_id::text, '')
 		 FROM chat_messages m JOIN chat_threads t ON t.id = m.thread_id
-		 WHERE t.user_id = $1 AND m.thread_id = $2 ORDER BY m.created_at`, userID, threadID)
+		 WHERE t.user_id = $1 AND t.deleted_at IS NULL AND m.thread_id = $2 ORDER BY m.created_at`, userID, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,8 @@ func (s *Store) ListChatMessages(ctx context.Context, userID, threadID string) (
 		var message model.ChatMessage
 		message.Citations = []model.ChatCitation{}
 		if err := rows.Scan(&message.ID, &message.ThreadID, &message.UserID, &message.Role,
-			&message.Content, &message.Status, &message.ModelVersion, &message.CreatedAt); err != nil {
+			&message.Content, &message.Status, &message.ModelVersion, &message.CreatedAt,
+			&message.SupersedesMessageID); err != nil {
 			return nil, err
 		}
 		messages = append(messages, message)
@@ -91,6 +94,11 @@ func (s *Store) ListChatMessages(ctx context.Context, userID, threadID string) (
 			return nil, err
 		}
 		messages[index].GraphUpdate = graphUpdate
+		feedback, err := s.listMessageFeedback(ctx, userID, messages[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		messages[index].Feedback = feedback
 	}
 	return messages, nil
 }
@@ -132,15 +140,15 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 	err = tx.QueryRow(ctx,
 		`INSERT INTO chat_messages (thread_id, user_id, role, content, status, model_version)
 		 SELECT t.id, $1, 'assistant', $3, 'complete', $4 FROM chat_threads t
-		 WHERE t.id = $2 AND t.user_id = $1
-		 RETURNING id, thread_id, user_id, role, content, status, model_version, created_at`,
+		 WHERE t.id = $2 AND t.user_id = $1 AND t.deleted_at IS NULL
+		 RETURNING id, thread_id, user_id, role, content, status, model_version, created_at,
+		           COALESCE(supersedes_message_id::text, '')`,
 		userID, threadID, answer.Answer, answer.ModelVersion).Scan(
 		&message.ID, &message.ThreadID, &message.UserID, &message.Role, &message.Content,
-		&message.Status, &message.ModelVersion, &message.CreatedAt)
+		&message.Status, &message.ModelVersion, &message.CreatedAt, &message.SupersedesMessageID)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, citation := range answer.Citations {
 		var saved model.ChatCitation
 		err = tx.QueryRow(ctx,
@@ -156,6 +164,21 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		saved.DocumentTitle = citation.DocumentTitle
 		saved.Page = citation.Page
 		message.Citations = append(message.Citations, saved)
+	}
+	metrics, err := json.Marshal(map[string]any{
+		"embedding_ms": answer.Metrics.EmbeddingMS, "retrieval_ms": answer.Metrics.RetrievalMS,
+		"generation_ms": answer.Metrics.GenerationMS, "total_ms": answer.Metrics.TotalMS,
+		"candidate_count": answer.Metrics.CandidateCount, "citation_count": len(message.Citations),
+		"model_calls": answer.Metrics.ModelCalls,
+	})
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO evaluation_metrics (user_id, chat_message_id, metric_type, values)
+		 VALUES ($1, $2, 'chat_turn', $3)`, userID, message.ID, metrics)
+	if err != nil {
+		return nil, err
 	}
 
 	graphUpdate, err := reduceChatGraph(ctx, tx, userID, message.ID)
@@ -339,6 +362,17 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID string) (
 		if err != nil {
 			return nil, err
 		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO chat_learner_projection (
+				user_id, concept_id, exposure_count, interest_score, last_exposed_at, updated_at
+			) VALUES ($1, $2, 1, 0.05, now(), now())
+			ON CONFLICT (user_id, concept_id) DO UPDATE SET
+				exposure_count = chat_learner_projection.exposure_count + 1,
+				interest_score = LEAST(1, chat_learner_projection.interest_score + 0.05),
+				last_exposed_at = now(), updated_at = now()`, userID, item.conceptID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	for sourceIndex := 0; sourceIndex < len(evidence); sourceIndex++ {
@@ -355,14 +389,15 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID string) (
 				WHERE user_id = $1 AND relation = 'related_to'
 				  AND ((source_concept_id = $2 AND target_concept_id = $3)
 				    OR (source_concept_id = $3 AND target_concept_id = $2))
-				  AND state NOT IN ('rejected', 'archived')
+				  AND state <> 'rejected'
 				ORDER BY created_at LIMIT 1`, userID, source.conceptID, target.conceptID).Scan(&edgeID, &oldState)
 			if err == pgx.ErrNoRows {
 				err = tx.QueryRow(ctx, `
 					INSERT INTO concept_edges (
 						user_id, source_concept_id, target_concept_id, relation,
-						created_via, state, confidence, last_adapted_at
-					) VALUES ($1, $2, $3, 'related_to', 'deterministic_chat', 'candidate', 0.35, now())
+						created_via, state, confidence, last_adapted_at,
+						base_confidence, evidence_confidence, observed_at
+					) VALUES ($1, $2, $3, 'related_to', 'deterministic_chat', 'candidate', 0.35, now(), 0, 0.35, now())
 					RETURNING id, state`, userID, source.conceptID, target.conceptID).Scan(&edgeID, &oldState)
 			}
 			if err != nil {
@@ -388,11 +423,11 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID string) (
 			err = tx.QueryRow(ctx, `
 				SELECT count(*)::int,
 				       (SELECT count(DISTINCT document_id)::int FROM (
-				          SELECT source_document_id AS document_id FROM adaptive_edge_evidence WHERE edge_id = $1
+				          SELECT source_document_id AS document_id FROM adaptive_edge_evidence WHERE edge_id = $1 AND active
 				          UNION ALL
-				          SELECT target_document_id FROM adaptive_edge_evidence WHERE edge_id = $1
+				          SELECT target_document_id FROM adaptive_edge_evidence WHERE edge_id = $1 AND active
 				       ) documents)
-				FROM adaptive_edge_evidence WHERE edge_id = $1`, edgeID).Scan(&messageCount, &documentCount)
+				FROM adaptive_edge_evidence WHERE edge_id = $1 AND active`, edgeID).Scan(&messageCount, &documentCount)
 			if err != nil {
 				return nil, err
 			}
@@ -402,9 +437,10 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID string) (
 			err = tx.QueryRow(ctx, `
 				UPDATE concept_edges SET
 					support_count = $2, document_count = $3,
-					confidence = GREATEST(confidence, $4),
+					evidence_confidence = $4,
+					confidence = GREATEST(base_confidence, $4),
 					state = CASE WHEN state IN ('confirmed', 'supported') THEN state ELSE $5 END,
-					last_adapted_at = now()
+					last_adapted_at = now(), observed_at = now(), valid_to = NULL
 				WHERE id = $1 RETURNING state`, edgeID, messageCount, documentCount,
 				confidence, newState).Scan(&savedState)
 			if err != nil {

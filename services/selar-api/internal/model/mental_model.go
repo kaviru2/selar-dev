@@ -137,12 +137,16 @@ type GraphNode struct {
 
 // GraphEdge is a unified projection across semantic and argument-level links.
 type GraphEdge struct {
-	ID          string  `json:"id"`
-	Source      string  `json:"source"`
-	Target      string  `json:"target"`
-	Relation    string  `json:"relation"`
-	State       string  `json:"state"`
-	Confidence  float32 `json:"confidence,omitempty"`
-	CreatedVia  string  `json:"created_via"`
-	Explanation string  `json:"explanation,omitempty"`
+	ID           string     `json:"id"`
+	Source       string     `json:"source"`
+	Target       string     `json:"target"`
+	Relation     string     `json:"relation"`
+	State        string     `json:"state"`
+	Confidence   float32    `json:"confidence,omitempty"`
+	CreatedVia   string     `json:"created_via"`
+	Explanation  string     `json:"explanation,omitempty"`
+	ValidFrom    *time.Time `json:"valid_from,omitempty"`
+	ValidTo      *time.Time `json:"valid_to,omitempty"`
+	ObservedAt   *time.Time `json:"observed_at,omitempty"`
+	SupersededBy string     `json:"superseded_by,omitempty"`
 }

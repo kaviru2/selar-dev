@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/selar-dev/selar-api/internal/model"
 )
+
+var ErrMentalModelLinkNotFound = errors.New("mental-model link not found")
 
 // Store wraps the database connection pool and provides data access methods.
 type Store struct {
@@ -168,22 +171,46 @@ func (s *Store) GetDocumentStats(ctx context.Context, userID string) (*model.Doc
 
 func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page int) ([]model.LinkSuggestion, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT ls.id, ls.user_id, ls.source_chunk_id, ls.target_chunk_id,
-		        ls.similarity, ls.relation, ls.status, ls.user_label,
-		        ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
-		        sc.content AS src_text, tc.content AS tgt_text,
-		        sd.title AS src_doc, td.title AS tgt_doc,
-		        sc.page_start AS src_page, tc.page_start AS tgt_page,
-		        ls.summary, sc.bboxes AS src_bboxes
-		 FROM link_suggestions ls
-		 JOIN chunks sc ON ls.source_chunk_id = sc.id
-		 JOIN chunks tc ON ls.target_chunk_id = tc.id
-		 JOIN documents sd ON sc.document_id = sd.id
-		 JOIN documents td ON tc.document_id = td.id
-		 WHERE ls.user_id = $1
-		   AND sc.document_id = $2
-		   AND ($3 = 0 OR sc.page_start = $3)
-		 ORDER BY ls.similarity DESC`,
+		`WITH oriented AS (
+		   SELECT ls.id, ls.user_id,
+		          CASE WHEN sc.document_id = $2 THEN sc.id ELSE tc.id END AS source_chunk_id,
+		          CASE WHEN sc.document_id = $2 THEN tc.id ELSE sc.id END AS target_chunk_id,
+		          ls.similarity, ls.relation, ls.status, ls.user_label,
+		          ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
+		          CASE WHEN sc.document_id = $2 THEN sc.content ELSE tc.content END AS src_text,
+		          CASE WHEN sc.document_id = $2 THEN tc.content ELSE sc.content END AS tgt_text,
+		          CASE WHEN sc.document_id = $2 THEN sd.id ELSE td.id END AS src_document_id,
+		          CASE WHEN sc.document_id = $2 THEN td.id ELSE sd.id END AS tgt_document_id,
+		          CASE WHEN sc.document_id = $2 THEN sd.title ELSE td.title END AS src_doc,
+		          CASE WHEN sc.document_id = $2 THEN td.title ELSE sd.title END AS tgt_doc,
+		          CASE WHEN sc.document_id = $2 THEN sc.page_start ELSE tc.page_start END AS src_page,
+		          CASE WHEN sc.document_id = $2 THEN tc.page_start ELSE sc.page_start END AS tgt_page,
+		          ls.summary,
+		          CASE WHEN sc.document_id = $2 THEN sc.bboxes ELSE tc.bboxes END AS src_bboxes,
+		          row_number() OVER (
+		            PARTITION BY LEAST(sc.id::text, tc.id::text), GREATEST(sc.id::text, tc.id::text), ls.relation
+		            ORDER BY CASE ls.status
+		              WHEN 'confirmed' THEN 0 WHEN 'relabeled' THEN 1 WHEN 'rejected' THEN 2
+		              WHEN 'pending' THEN 3 ELSE 4 END,
+		              ls.similarity DESC, ls.suggested_at DESC
+		          ) AS duplicate_rank
+		   FROM link_suggestions ls
+		   JOIN chunks sc ON ls.source_chunk_id = sc.id
+		   JOIN chunks tc ON ls.target_chunk_id = tc.id
+		   JOIN documents sd ON sc.document_id = sd.id
+		   JOIN documents td ON tc.document_id = td.id
+		   WHERE ls.user_id = $1
+		     AND (sc.document_id = $2 OR tc.document_id = $2)
+		 )
+		 SELECT id, user_id, source_chunk_id, target_chunk_id,
+		        similarity, relation, status, user_label,
+		        time_to_respond_ms, suggested_at, responded_at,
+		        src_text, tgt_text, src_document_id, tgt_document_id,
+		        src_doc, tgt_doc, src_page, tgt_page,
+		        summary, src_bboxes
+		 FROM oriented
+		 WHERE duplicate_rank = 1 AND ($3 = 0 OR src_page = $3)
+		 ORDER BY similarity DESC`,
 		userID, docID, page)
 	if err != nil {
 		return nil, err
@@ -198,7 +225,8 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 			&sg.ID, &sg.UserID, &sg.SourceChunkID, &sg.TargetChunkID,
 			&sg.Similarity, &sg.Relation, &sg.Status, &sg.UserLabel,
 			&sg.TimeToRespondMs, &sg.SuggestedAt, &sg.RespondedAt,
-			&sg.SrcText, &sg.TgtText, &sg.SrcDoc, &sg.TgtDoc, &sg.SrcPage, &sg.TgtPage,
+			&sg.SrcText, &sg.TgtText, &sg.SrcDocumentID, &sg.TgtDocumentID,
+			&sg.SrcDoc, &sg.TgtDoc, &sg.SrcPage, &sg.TgtPage,
 			&sg.Summary, &srcBBoxes,
 		); err != nil {
 			return nil, err
@@ -220,15 +248,22 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 	defer tx.Rollback(ctx)
 
 	command, err := tx.Exec(ctx,
-		`UPDATE link_suggestions
+		`WITH selected AS (
+		   SELECT source_chunk_id, target_chunk_id, relation
+		   FROM link_suggestions WHERE id = $5 AND user_id = $6
+		 )
+		 UPDATE link_suggestions ls
 		 SET status = $1,
-		     user_label = COALESCE(NULLIF($2, ''), user_label),
+		     user_label = COALESCE(NULLIF($2, ''), ls.user_label),
 		     responded_at = $3,
 		     time_to_respond_ms = $4
-		 WHERE id = $5 AND user_id = $6`,
+		 FROM selected s
+		 WHERE ls.user_id = $6 AND ls.relation = s.relation
+		   AND ((ls.source_chunk_id = s.source_chunk_id AND ls.target_chunk_id = s.target_chunk_id)
+		     OR (ls.source_chunk_id = s.target_chunk_id AND ls.target_chunk_id = s.source_chunk_id))`,
 		action, label, now, timeMs, id, userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("update suggestion state: %w", err)
 	}
 	if command.RowsAffected() == 0 {
 		return fmt.Errorf("suggestion not found")
@@ -241,7 +276,7 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 		 ON CONFLICT (user_id, idempotency_key) DO NOTHING`,
 		userID, "suggestion_"+string(action), id, payload, "suggestion:"+id+":"+string(action))
 	if err != nil {
-		return err
+		return fmt.Errorf("record suggestion learning event: %w", err)
 	}
 	if action == model.SuggestionConfirmed || action == model.SuggestionRelabeled {
 		_, err = tx.Exec(ctx,
@@ -249,10 +284,10 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 			    user_id, concept_id, mastery_estimate, half_life_seconds,
 			    last_retrieved_at, success_count, evidence_count, uncertainty
 			 )
-				 SELECT DISTINCT $1, cc.concept_id, 0.35, 129600, $3, 1, 1, 0.85
+				 SELECT DISTINCT $1::uuid, cc.concept_id, 0.35, 129600, $3::timestamptz, 1, 1, 0.85
 			 FROM link_suggestions ls
 			 JOIN chunk_concepts cc ON cc.chunk_id IN (ls.source_chunk_id, ls.target_chunk_id)
-			 WHERE ls.id = $2 AND ls.user_id = $1
+				 WHERE ls.id = $2::uuid AND ls.user_id = $1::uuid
 			 ON CONFLICT (user_id, concept_id) DO UPDATE SET
 			    mastery_estimate = LEAST(0.99, learner_concept_state.mastery_estimate + 0.08),
 			    half_life_seconds = LEAST(31536000, learner_concept_state.half_life_seconds * 1.5),
@@ -262,7 +297,63 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 			    uncertainty = GREATEST(0.05, learner_concept_state.uncertainty * 0.9),
 			    updated_at = $3`, userID, id, now)
 		if err != nil {
-			return err
+			return fmt.Errorf("update learner projection from suggestion: %w", err)
+		}
+
+		_, err = tx.Exec(ctx, `
+			WITH suggestion AS (
+			  SELECT ls.user_id, ls.id, ls.relation,
+			         ls.source_chunk_id, ls.target_chunk_id,
+			         sc.document_id AS source_document_id,
+			         tc.document_id AS target_document_id
+			  FROM link_suggestions ls
+			  JOIN chunks sc ON sc.id = ls.source_chunk_id
+			  JOIN chunks tc ON tc.id = ls.target_chunk_id
+			  WHERE ls.id = $2::uuid AND ls.user_id = $1::uuid
+			), concept_pairs AS (
+			  SELECT DISTINCT s.user_id, s.id AS suggestion_id, s.relation,
+			    CASE WHEN s.relation = 'related_to' AND source_cc.concept_id::text > target_cc.concept_id::text
+			      THEN target_cc.concept_id ELSE source_cc.concept_id END AS source_concept_id,
+			    CASE WHEN s.relation = 'related_to' AND source_cc.concept_id::text > target_cc.concept_id::text
+			      THEN source_cc.concept_id ELSE target_cc.concept_id END AS target_concept_id,
+			    CASE WHEN s.source_document_id = s.target_document_id THEN 1 ELSE 2 END AS document_count
+			  FROM suggestion s
+			  JOIN chunk_concepts source_cc ON source_cc.chunk_id = s.source_chunk_id
+			  JOIN chunk_concepts target_cc ON target_cc.chunk_id = s.target_chunk_id
+			  WHERE source_cc.concept_id <> target_cc.concept_id
+			), reinforced AS (
+			  INSERT INTO concept_edges (
+			    user_id, source_concept_id, target_concept_id, relation,
+			    created_via, state, confidence, confirmed_at,
+			    base_confidence, evidence_confidence, support_count, document_count,
+			    last_adapted_at, valid_from, observed_at
+			  )
+			  SELECT user_id, source_concept_id, target_concept_id, relation,
+			         'user_confirmed', 'confirmed', 0.90, $3::timestamptz,
+			         0.90, 0.90, 1, document_count,
+			         $3::timestamptz, $3::timestamptz, $3::timestamptz
+			  FROM concept_pairs
+			  ON CONFLICT (source_concept_id, target_concept_id, relation) DO UPDATE SET
+			    created_via = 'user_confirmed', state = 'confirmed',
+			    confidence = GREATEST(concept_edges.confidence, 0.90),
+			    base_confidence = GREATEST(concept_edges.base_confidence, 0.90),
+			    evidence_confidence = GREATEST(concept_edges.evidence_confidence, 0.90),
+			    support_count = concept_edges.support_count + 1,
+			    document_count = GREATEST(concept_edges.document_count, EXCLUDED.document_count),
+			    confirmed_at = $3::timestamptz, last_adapted_at = $3::timestamptz,
+			    valid_to = NULL, observed_at = $3::timestamptz
+			  RETURNING id
+			)
+			INSERT INTO learning_events (
+			  user_id, event_type, suggestion_id, concept_edge_id, payload, source, idempotency_key
+			)
+			SELECT $1::uuid, 'suggestion_graph_confirmed', $2::uuid, id,
+			       jsonb_build_object('confidence', 0.90), 'deterministic_reducer',
+			       'suggestion-graph:' || $2::text || ':' || id::text
+			FROM reinforced
+			ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, id, now)
+		if err != nil {
+			return fmt.Errorf("reinforce graph from suggestion: %w", err)
 		}
 	}
 	return tx.Commit(ctx)
@@ -402,8 +493,9 @@ func (s *Store) ListConcepts(ctx context.Context, userID string) ([]model.Concep
 func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.ConceptEdge, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, user_id, source_concept_id, target_concept_id, relation, created_via,
-		        state, confidence, support_count, document_count, confirmed_at, created_at
-		 FROM concept_edges e WHERE user_id = $1 AND state NOT IN ('rejected', 'archived')
+		        state, confidence, support_count, document_count, base_confidence, evidence_confidence,
+		        confirmed_at, valid_from, valid_to, observed_at, COALESCE(superseded_by::text, ''), created_at
+		 FROM concept_edges e WHERE user_id = $1
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.source_concept_id)
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.target_concept_id)
 		 ORDER BY created_at`, userID)
@@ -415,7 +507,10 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 	var edges []model.ConceptEdge
 	for rows.Next() {
 		var e model.ConceptEdge
-		if err := rows.Scan(&e.ID, &e.UserID, &e.SourceConceptID, &e.TargetConceptID, &e.Relation, &e.CreatedVia, &e.State, &e.Confidence, &e.SupportCount, &e.DocumentCount, &e.ConfirmedAt, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.UserID, &e.SourceConceptID, &e.TargetConceptID, &e.Relation,
+			&e.CreatedVia, &e.State, &e.Confidence, &e.SupportCount, &e.DocumentCount,
+			&e.BaseConfidence, &e.EvidenceConfidence, &e.ConfirmedAt, &e.ValidFrom, &e.ValidTo,
+			&e.ObservedAt, &e.SupersededBy, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		edges = append(edges, e)
@@ -602,10 +697,10 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, userID, id string,
 		 WHERE id = $4 AND user_id = $5`,
 		response.Action, response.Label, createdVia, id, userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("update mental-model link: %w", err)
 	}
 	if command.RowsAffected() == 0 {
-		return fmt.Errorf("mental-model link not found")
+		return ErrMentalModelLinkNotFound
 	}
 
 	payload, _ := json.Marshal(map[string]any{"action": response.Action, "label": response.Label})
@@ -616,7 +711,7 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, userID, id string,
 		userID, "mental_link_"+string(response.Action), id, payload,
 		"mental-link:"+id+":"+string(response.Action))
 	if err != nil {
-		return err
+		return fmt.Errorf("record mental-model response: %w", err)
 	}
 	if response.Action == model.MentalLinkConfirmed || response.Action == model.MentalLinkRelabeled {
 		_, err = tx.Exec(ctx,
@@ -624,10 +719,10 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, userID, id string,
 			    user_id, concept_id, mastery_estimate, half_life_seconds,
 			    last_retrieved_at, success_count, evidence_count, uncertainty
 			 )
-				 SELECT DISTINCT $1, cc.concept_id, 0.38, 172800, now(), 1, 1, 0.8
+				 SELECT DISTINCT $1::uuid, cc.concept_id, 0.38, 172800, now(), 1, 1, 0.8
 			 FROM mental_model_links ml
 			 JOIN chunk_concepts cc ON cc.chunk_id IN (ml.source_evidence_chunk_id, ml.target_evidence_chunk_id)
-			 WHERE ml.id = $2 AND ml.user_id = $1
+			 WHERE ml.id = $2::uuid AND ml.user_id = $1::uuid
 			 ON CONFLICT (user_id, concept_id) DO UPDATE SET
 			    mastery_estimate = LEAST(0.99, learner_concept_state.mastery_estimate + 0.1),
 			    half_life_seconds = LEAST(31536000, learner_concept_state.half_life_seconds * 1.7),
@@ -637,7 +732,68 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, userID, id string,
 			    uncertainty = GREATEST(0.05, learner_concept_state.uncertainty * 0.85),
 			    updated_at = now()`, userID, id)
 		if err != nil {
-			return err
+			return fmt.Errorf("update learner projection from mental-model link: %w", err)
+		}
+
+		_, err = tx.Exec(ctx, `
+			WITH mental_link AS (
+			  SELECT ml.user_id, ml.id,
+			         CASE ml.link_type
+			           WHEN 'claim_extension' THEN 'extends'
+			           WHEN 'assumption_conflict' THEN 'contradicts'
+			           ELSE 'related_to'
+			         END AS relation,
+			         ml.source_evidence_chunk_id, ml.target_evidence_chunk_id,
+			         sc.document_id AS source_document_id,
+			         tc.document_id AS target_document_id
+			  FROM mental_model_links ml
+			  JOIN chunks sc ON sc.id = ml.source_evidence_chunk_id
+			  JOIN chunks tc ON tc.id = ml.target_evidence_chunk_id
+			  WHERE ml.id = $2::uuid AND ml.user_id = $1::uuid
+			), concept_pairs AS (
+			  SELECT DISTINCT link.user_id, link.id AS mental_link_id, link.relation,
+			    CASE WHEN link.relation IN ('related_to', 'contradicts')
+			              AND source_cc.concept_id::text > target_cc.concept_id::text
+			      THEN target_cc.concept_id ELSE source_cc.concept_id END AS source_concept_id,
+			    CASE WHEN link.relation IN ('related_to', 'contradicts')
+			              AND source_cc.concept_id::text > target_cc.concept_id::text
+			      THEN source_cc.concept_id ELSE target_cc.concept_id END AS target_concept_id,
+			    CASE WHEN link.source_document_id = link.target_document_id THEN 1 ELSE 2 END AS document_count
+			  FROM mental_link link
+			  JOIN chunk_concepts source_cc ON source_cc.chunk_id = link.source_evidence_chunk_id
+			  JOIN chunk_concepts target_cc ON target_cc.chunk_id = link.target_evidence_chunk_id
+			  WHERE source_cc.concept_id <> target_cc.concept_id
+			), reinforced AS (
+			  INSERT INTO concept_edges (
+			    user_id, source_concept_id, target_concept_id, relation,
+			    created_via, state, confidence, confirmed_at,
+			    base_confidence, evidence_confidence, support_count, document_count,
+			    last_adapted_at, valid_from, observed_at
+			  )
+			  SELECT user_id, source_concept_id, target_concept_id, relation,
+			         'user_confirmed', 'confirmed', 0.90, now(),
+			         0.90, 0.90, 1, document_count, now(), now(), now()
+			  FROM concept_pairs
+			  ON CONFLICT (source_concept_id, target_concept_id, relation) DO UPDATE SET
+			    created_via = 'user_confirmed', state = 'confirmed',
+			    confidence = GREATEST(concept_edges.confidence, 0.90),
+			    base_confidence = GREATEST(concept_edges.base_confidence, 0.90),
+			    evidence_confidence = GREATEST(concept_edges.evidence_confidence, 0.90),
+			    support_count = concept_edges.support_count + 1,
+			    document_count = GREATEST(concept_edges.document_count, EXCLUDED.document_count),
+			    confirmed_at = now(), last_adapted_at = now(), valid_to = NULL, observed_at = now()
+			  RETURNING id
+			)
+			INSERT INTO learning_events (
+			  user_id, event_type, mental_link_id, concept_edge_id, payload, source, idempotency_key
+			)
+			SELECT $1::uuid, 'mental_link_graph_confirmed', $2::uuid, id,
+			       jsonb_build_object('confidence', 0.90), 'deterministic_reducer',
+			       'mental-link-graph:' || $2::text || ':' || id::text
+			FROM reinforced
+			ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, id)
+		if err != nil {
+			return fmt.Errorf("reinforce graph from mental-model link: %w", err)
 		}
 	}
 	return tx.Commit(ctx)

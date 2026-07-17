@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { clientFetch, type ChatMessage, type ChatThread } from "@/lib/api";
 
 export default function ChatPage() {
@@ -11,6 +13,11 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [feedbackBusy, setFeedbackBusy] = useState("");
+  const [commentFor, setCommentFor] = useState("");
+  const [commentText, setCommentText] = useState("");
+  const [correctionFor, setCorrectionFor] = useState("");
+  const [correctionText, setCorrectionText] = useState("");
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +102,45 @@ export default function ChatPage() {
     }
   }
 
+  async function deleteThread(threadId: string) {
+    await clientFetch(`/api/chat/threads/${threadId}`, { method: "DELETE" });
+    const remaining = threads.filter((thread) => thread.id !== threadId);
+    setThreads(remaining);
+    if (activeThread === threadId) {
+      setActiveThread(remaining[0]?.id || "");
+      setMessages([]);
+    }
+  }
+
+  async function sendFeedback(messageId: string, action: "helpful" | "unhelpful" | "correction", note = "") {
+    setFeedbackBusy(`${messageId}:${action}`);
+    setError("");
+    try {
+      await clientFetch(`/api/chat/messages/${messageId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          correction_text: action === "correction" ? correctionText : note.trim(),
+        }),
+      });
+      await loadMessages(activeThread);
+      setCorrectionFor("");
+      setCorrectionText("");
+      setCommentFor("");
+      setCommentText("");
+    } catch (feedbackError) {
+      setError(feedbackError instanceof Error ? feedbackError.message : "Unable to record feedback");
+    } finally {
+      setFeedbackBusy("");
+    }
+  }
+
+  function recordCitationOpen(citationId?: string) {
+    if (!citationId) return;
+    clientFetch(`/api/chat/citations/${citationId}/open`, { method: "POST" }).catch(() => undefined);
+  }
+
   return (
     <div className="chat-layout">
       <aside className="chat-sidebar">
@@ -109,10 +155,13 @@ export default function ChatPage() {
           {loading && <span className="chat-muted">Loading conversations…</span>}
           {!loading && threads.length === 0 && <span className="chat-muted">Start a conversation with your processed library.</span>}
           {threads.map((thread) => (
-            <button key={thread.id} className={thread.id === activeThread ? "active" : ""} onClick={() => setActiveThread(thread.id)}>
-              <strong>{thread.title}</strong>
-              <span>{new Date(thread.updated_at).toLocaleDateString()}</span>
-            </button>
+            <div key={thread.id} className={`chat-thread-row ${thread.id === activeThread ? "active" : ""}`}>
+              <button className="chat-thread-open" onClick={() => setActiveThread(thread.id)}>
+                <strong>{thread.title}</strong>
+                <span>{new Date(thread.updated_at).toLocaleDateString()}</span>
+              </button>
+              <button className="chat-thread-delete" aria-label={`Delete ${thread.title}`} onClick={() => deleteThread(thread.id).catch(() => setError("Unable to delete conversation"))}>×</button>
+            </div>
           ))}
         </div>
         <div className="chat-policy-note">
@@ -145,13 +194,20 @@ export default function ChatPage() {
           )}
 
           {messages.map((message) => (
-            <article key={message.id} className={`chat-message ${message.role}`}>
-              <div className="chat-message-label">{message.role === "user" ? "You" : "SELAR"}</div>
-              <div className="chat-message-content">{message.content}</div>
+            <article key={message.id} className={`chat-message ${message.role} ${message.status === "superseded" ? "superseded" : ""}`}>
+              <div className="chat-message-label">
+                {message.role === "user" ? "You" : message.role === "system" ? "Recorded correction" : "SELAR"}
+                {message.status === "superseded" && <span> · superseded</span>}
+              </div>
+              <div className={`chat-message-content ${message.role === "assistant" ? "chat-markdown" : ""}`}>
+                {message.role === "assistant" ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                ) : message.content}
+              </div>
               {message.citations.length > 0 && (
                 <div className="chat-citations">
                   {message.citations.map((citation) => (
-                    <Link key={citation.chunk_id} href={`/reader?docId=${citation.document_id}&page=${citation.page}`}>
+                    <Link key={citation.chunk_id} href={`/reader?docId=${citation.document_id}&page=${citation.page}`} onClick={() => recordCitationOpen(citation.id)}>
                       <span>[S{citation.rank}]</span>
                       <strong>{citation.document_title}</strong>
                       <small>Page {citation.page} · {citation.quote.slice(0, 150)}…</small>
@@ -170,6 +226,72 @@ export default function ChatPage() {
                     </small>
                   </span>
                 </Link>
+              )}
+              {message.role === "assistant" && message.status !== "superseded" && (
+                <>
+                  <div className="chat-feedback">
+                    <span>Useful?</span>
+                    {(() => {
+                      const rating = message.feedback?.find((item) => item.action === "helpful" || item.action === "unhelpful");
+                      return (
+                        <>
+                          <button
+                            className={rating?.action === "helpful" ? "selected" : ""}
+                            aria-label="Thumbs up — helpful"
+                            title="Helpful"
+                            disabled={feedbackBusy !== "" || Boolean(rating)}
+                            onClick={() => sendFeedback(message.id, "helpful", commentFor === message.id ? commentText : "")}
+                          >👍</button>
+                          <button
+                            className={rating?.action === "unhelpful" ? "selected negative" : ""}
+                            aria-label="Thumbs down — not useful"
+                            title="Not useful"
+                            disabled={feedbackBusy !== "" || Boolean(rating)}
+                            onClick={() => sendFeedback(message.id, "unhelpful", commentFor === message.id ? commentText : "")}
+                          >👎</button>
+                          <button
+                            className="chat-comment-toggle"
+                            disabled={feedbackBusy !== ""}
+                            onClick={() => {
+                              setCommentFor(commentFor === message.id ? "" : message.id);
+                              setCommentText(rating?.correction_text || "");
+                            }}
+                          >{rating?.correction_text ? "Edit comment" : "Add comment"}</button>
+                          {rating && <span className="chat-feedback-saved">Saved</span>}
+                        </>
+                      );
+                    })()}
+                    <button disabled={feedbackBusy !== ""} onClick={() => setCorrectionFor(correctionFor === message.id ? "" : message.id)}>Correct answer</button>
+                  </div>
+                  {commentFor === message.id && (
+                    <div className="chat-feedback-comment">
+                      <textarea
+                        value={commentText}
+                        onChange={(event) => setCommentText(event.target.value)}
+                        maxLength={2000}
+                        rows={2}
+                        placeholder="Optional: what was useful or missing?"
+                      />
+                      {message.feedback?.some((item) => item.action === "helpful" || item.action === "unhelpful") ? (
+                        <button
+                          disabled={!commentText.trim() || feedbackBusy !== ""}
+                          onClick={() => {
+                            const rating = message.feedback?.find((item) => item.action === "helpful" || item.action === "unhelpful");
+                            if (rating?.action === "helpful" || rating?.action === "unhelpful") {
+                              sendFeedback(message.id, rating.action, commentText);
+                            }
+                          }}
+                        >Save comment</button>
+                      ) : <span>Your comment is sent with the thumb rating.</span>}
+                    </div>
+                  )}
+                </>
+              )}
+              {correctionFor === message.id && (
+                <div className="chat-correction">
+                  <textarea value={correctionText} onChange={(event) => setCorrectionText(event.target.value)} maxLength={2000} rows={3} placeholder="Describe what should replace or supersede this answer…" />
+                  <button disabled={!correctionText.trim() || feedbackBusy !== ""} onClick={() => sendFeedback(message.id, "correction")}>Record correction</button>
+                </div>
               )}
             </article>
           ))}

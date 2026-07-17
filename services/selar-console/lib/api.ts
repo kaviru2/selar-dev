@@ -72,6 +72,8 @@ export interface LinkSuggestion {
   user_label: string | null;
   src_text: string;
   tgt_text: string;
+  src_document_id: string;
+  tgt_document_id: string;
   src_doc: string;
   tgt_doc: string;
   src_page: number;
@@ -136,6 +138,10 @@ export interface GraphEdge {
   confidence?: number;
   created_via: string;
   explanation?: string;
+  valid_from?: string;
+  valid_to?: string;
+  observed_at?: string;
+  superseded_by?: string;
 }
 
 // --- Runtime mental-model types ---
@@ -227,11 +233,45 @@ export interface ChatMessage {
   user_id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  status: "pending" | "complete" | "failed";
+  status: "pending" | "complete" | "failed" | "superseded";
   model_version?: string;
   created_at: string;
   citations: ChatCitation[];
   graph_update?: ChatGraphUpdate;
+  feedback?: ChatFeedback[];
+  supersedes_message_id?: string;
+}
+
+export interface ChatFeedback {
+  id: string;
+  message_id: string;
+  action: "helpful" | "unhelpful" | "correction";
+  correction_text?: string;
+  created_at: string;
+}
+
+export interface ReplayReport {
+  reducer_version: string;
+  as_of: string;
+  applied: boolean;
+  differences: number;
+  projection_hash: string;
+  edge_count: number;
+  learner_count: number;
+  equivalent: boolean;
+}
+
+export interface MetricsSummary {
+  chat_turns: number;
+  average_total_ms: number;
+  average_retrieval_ms: number;
+  average_citations: number;
+  citation_opens: number;
+  helpful_answers: number;
+  unhelpful_answers: number;
+  corrections: number;
+  confirmed_edges: number;
+  rejected_edges: number;
 }
 
 export interface ChatGraphUpdate {

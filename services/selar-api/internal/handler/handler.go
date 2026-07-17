@@ -5,7 +5,9 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -260,6 +262,7 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.RespondToSuggestion(r.Context(), userID, id, status, req.Label, req.TimeToRespondMs); err != nil {
+		log.Printf("failed to respond to suggestion %s: %v", id, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to respond"})
 		return
 	}
@@ -383,10 +386,13 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		if edge.SupportCount > 0 {
 			explanation = fmt.Sprintf("Adapted deterministically from %d grounded chat answer(s) across %d document(s).", edge.SupportCount, edge.DocumentCount)
 		}
+		validFrom := edge.ValidFrom
+		observedAt := edge.ObservedAt
 		graphEdges = append(graphEdges, model.GraphEdge{
 			ID: edge.ID, Source: edge.SourceConceptID, Target: edge.TargetConceptID,
 			Relation: string(edge.Relation), State: edge.State, Confidence: edge.Confidence,
 			CreatedVia: string(edge.CreatedVia), Explanation: explanation,
+			ValidFrom: &validFrom, ValidTo: edge.ValidTo, ObservedAt: &observedAt, SupersededBy: edge.SupersededBy,
 		})
 	}
 	for _, mentalModel := range mentalModels {
@@ -470,7 +476,12 @@ func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.store.RespondToMentalModelLink(r.Context(), userID, chi.URLParam(r, "id"), response); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})
+		if errors.Is(err, store.ErrMentalModelLinkNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})
+			return
+		}
+		log.Printf("failed to respond to mental-model link %s: %v", chi.URLParam(r, "id"), err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save mental-model response"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

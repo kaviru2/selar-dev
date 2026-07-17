@@ -21,11 +21,18 @@ interface SelectionMenu {
   bboxes: NormalizedBBox[];
 }
 
+interface SuggestionMenu {
+  suggestionId: string;
+  x: number;
+  y: number;
+}
+
 interface PdfCanvasProps {
   docId: string;
   zoom: number;
   pageNumber: number;
   annotationsOn: boolean;
+  suggestionsOn: boolean;
   suggestions: LinkSuggestion[];
   annotations?: Annotation[];
   onCreateAnnotation?: (
@@ -36,6 +43,8 @@ interface PdfCanvasProps {
     comment?: string
   ) => void;
   onPageLoad: (numPages: number) => void;
+  onRespondSuggestion: (id: string, action: "confirmed" | "rejected") => Promise<boolean>;
+  onOpenSuggestionTarget: (suggestion: LinkSuggestion) => void;
 }
 
 function parseBBoxes(value: Annotation["bbox"] | LinkSuggestion["src_bboxes"]): NormalizedBBox[] {
@@ -57,14 +66,20 @@ export default function PdfCanvas({
   zoom,
   pageNumber,
   annotationsOn,
+  suggestionsOn,
   suggestions,
   annotations = [],
   onCreateAnnotation,
   onPageLoad,
+  onRespondSuggestion,
+  onOpenSuggestionTarget,
 }: PdfCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const [selectionMenu, setSelectionMenu] = useState<SelectionMenu | null>(null);
+  const [suggestionMenu, setSuggestionMenu] = useState<SuggestionMenu | null>(null);
+  const [suggestionBusy, setSuggestionBusy] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
 
   useEffect(() => {
     function handleSelection() {
@@ -116,7 +131,18 @@ export default function PdfCanvas({
   }
 
   const pageAnnotations = annotations.filter((annotation) => annotation.page === pageNumber);
+  const selectedSuggestion = suggestions.find((suggestion) => suggestion.id === suggestionMenu?.suggestionId);
   const renderedSuggestionBoxes = new Set<string>();
+
+  async function respondToSelectedSuggestion(action: "confirmed" | "rejected") {
+    if (!selectedSuggestion || suggestionBusy) return;
+    setSuggestionBusy(true);
+    setSuggestionError("");
+    const saved = await onRespondSuggestion(selectedSuggestion.id, action);
+    setSuggestionBusy(false);
+    if (saved) setSuggestionMenu(null);
+    else setSuggestionError("Could not save this response. Please retry.");
+  }
 
   return (
     <div ref={containerRef} className="pdf-canvas-shell">
@@ -135,9 +161,9 @@ export default function PdfCanvas({
             renderAnnotationLayer
           />
 
-          {annotationsOn && (
+          {(annotationsOn || suggestionsOn) && (
             <div className="pdf-overlay" aria-label="Document annotations">
-              {pageAnnotations.flatMap((annotation) =>
+              {annotationsOn && pageAnnotations.flatMap((annotation) =>
                 parseBBoxes(annotation.bbox).map((bbox, index) => (
                   <div
                     key={`annotation-${annotation.id}-${index}`}
@@ -153,7 +179,7 @@ export default function PdfCanvas({
                 ))
               )}
 
-              {suggestions.flatMap((suggestion) => {
+              {suggestionsOn && suggestions.flatMap((suggestion) => {
                 if (suggestion.status === "rejected" || suggestion.src_page !== pageNumber) return [];
                 return parseBBoxes(suggestion.src_bboxes)
                   .filter((bbox) => bbox.w * bbox.h <= 0.20)
@@ -172,6 +198,23 @@ export default function PdfCanvas({
                         height: `${bbox.h * 100}%`,
                       }}
                       title={`Connection to ${suggestion.tgt_doc}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Suggested ${suggestion.relation.replaceAll("_", " ")} connection to ${suggestion.tgt_doc}, page ${suggestion.tgt_page}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const bounds = containerRef.current?.getBoundingClientRect();
+                        if (!bounds) return;
+                        setSuggestionError("");
+                        setSuggestionMenu({
+                          suggestionId: suggestion.id,
+                          x: Math.min(Math.max(8, event.clientX - bounds.left + 8), Math.max(8, bounds.width - 292)),
+                          y: Math.max(8, event.clientY - bounds.top + 8),
+                        });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
+                      }}
                     />
                   );
                   });
@@ -185,6 +228,32 @@ export default function PdfCanvas({
         <div className="selection-menu" style={{ left: selectionMenu.x, top: selectionMenu.y }}>
           <button onClick={() => createSelection("highlight")}>Highlight</button>
           <button onClick={() => createSelection("note")}>Add note</button>
+        </div>
+      )}
+
+      {suggestionMenu && selectedSuggestion && (
+        <div className="suggestion-popover" style={{ left: suggestionMenu.x, top: suggestionMenu.y }} role="dialog" aria-label="Suggested connection">
+          <div className="suggestion-popover-head">
+            <span>{selectedSuggestion.relation.replaceAll("_", " ")}</span>
+            <strong>{Math.round(selectedSuggestion.similarity * 100)}%</strong>
+            <button aria-label="Close suggestion" onClick={() => setSuggestionMenu(null)}>×</button>
+          </div>
+          <h3>{selectedSuggestion.tgt_doc} · page {selectedSuggestion.tgt_page}</h3>
+          <p>{selectedSuggestion.summary || selectedSuggestion.tgt_text.slice(0, 220)}</p>
+          {suggestionError && <div className="suggestion-popover-error">{suggestionError}</div>}
+          <div className="suggestion-popover-actions">
+            <button
+              className="open-target"
+              disabled={!selectedSuggestion.tgt_document_id || suggestionBusy}
+              onClick={() => onOpenSuggestionTarget(selectedSuggestion)}
+            >Open connected passage</button>
+            {selectedSuggestion.status === "pending" ? (
+              <>
+                <button className="confirm" disabled={suggestionBusy} onClick={() => respondToSelectedSuggestion("confirmed")}>✓ Accept</button>
+                <button disabled={suggestionBusy} onClick={() => respondToSelectedSuggestion("rejected")}>× Reject</button>
+              </>
+            ) : <span className={`suggestion-popover-state ${selectedSuggestion.status}`}>{selectedSuggestion.status}</span>}
+          </div>
         </div>
       )}
     </div>

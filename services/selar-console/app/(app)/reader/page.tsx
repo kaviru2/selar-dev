@@ -54,9 +54,12 @@ export default function ReaderPage() {
   const [mentalModel, setMentalModel] = useState<DocumentMentalModel | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
+  const [suggestionError, setSuggestionError] = useState("");
+  const [suggestionActionError, setSuggestionActionError] = useState("");
   const [panelMode, setPanelMode] = useState<PanelMode>("argument");
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
+  const [suggestionsOn, setSuggestionsOn] = useState(true);
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(() => {
     const requestedPage = Number(searchParams.get("page") || "1");
@@ -67,7 +70,10 @@ export default function ReaderPage() {
     if (!docId) return;
     let cancelled = false;
     Promise.all([
-      clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`).catch(() => []),
+      clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`).catch((error) => {
+        if (!cancelled) setSuggestionError(error instanceof Error ? error.message : "Unable to load suggested passages");
+        return [];
+      }),
       clientFetch<Annotation[]>(`/api/documents/${docId}/annotations`).catch(() => []),
       clientFetch<DocumentMentalModel>(`/api/documents/${docId}/mental-model`).catch(() => null),
       clientFetch<MentalModelLink[]>(`/api/mental-model-links?document_id=${docId}`).catch(() => []),
@@ -85,11 +91,19 @@ export default function ReaderPage() {
     };
   }, [docId]);
 
-  const selectDocument = useCallback((id: string) => {
+  const openDocument = useCallback((id: string, page = 1) => {
     setLoading(true);
-    setPageNumber(1);
+    setSuggestionError("");
+    setSuggestionActionError("");
+    setPageNumber(Math.max(1, page));
+    setSuggestions([]);
+    setMentalLinks([]);
+    setMentalModel(null);
+    setAnnotations([]);
     setDocId(id);
   }, []);
+
+  const selectDocument = useCallback((id: string) => openDocument(id, 1), [openDocument]);
 
   const pendingCount = panelMode === "argument"
     ? mentalLinks.filter((item) => item.status === "candidate").length
@@ -97,6 +111,19 @@ export default function ReaderPage() {
   const confirmedCount = panelMode === "argument"
     ? mentalLinks.filter((item) => item.status === "confirmed").length
     : suggestions.filter((item) => item.status === "confirmed").length;
+  const visibleSuggestions = suggestions.filter((item) => item.status !== "rejected");
+  const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === pageNumber).length;
+
+  const goToNextSuggestion = useCallback(() => {
+    const pages = Array.from(new Set(
+      suggestions
+        .filter((item) => item.status !== "rejected" && item.src_page > 0)
+        .map((item) => item.src_page)
+    )).sort((left, right) => left - right);
+    if (!pages.length) return;
+    setSuggestionsOn(true);
+    setPageNumber(pages.find((page) => page > pageNumber) || pages[0]);
+  }, [pageNumber, suggestions]);
 
   async function createAnnotation(
     type: string,
@@ -120,8 +147,9 @@ export default function ReaderPage() {
     setAnnotations((current) => [...current, annotation]);
   }
 
-  async function respondToPassage(id: string, action: "confirmed" | "rejected") {
+  async function respondToPassage(id: string, action: "confirmed" | "rejected"): Promise<boolean> {
     const previous = suggestions;
+    setSuggestionActionError("");
     setSuggestions((current) => current.map((item) => item.id === id ? { ...item, status: action } : item));
     try {
       await clientFetch(`/api/suggestions/${id}/respond`, {
@@ -129,9 +157,14 @@ export default function ReaderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, time_to_respond_ms: 1500 }),
       });
+      const persisted = await clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`);
+      setSuggestions(persisted);
+      return true;
     } catch (error) {
       setSuggestions(previous);
+      setSuggestionActionError(error instanceof Error ? error.message : "Unable to save suggestion response");
       console.error("Failed to save passage response", error);
+      return false;
     }
   }
 
@@ -170,6 +203,15 @@ export default function ReaderPage() {
             <button className={annotationsOn ? "on" : ""} onClick={() => setAnnotationsOn((value) => !value)}>
               <Icon name="highlight" size={12} /> Marks
             </button>
+            <button className={suggestionsOn ? "on suggestion-toggle" : "suggestion-toggle"} onClick={() => setSuggestionsOn((value) => !value)}>
+              <Icon name="link" size={12} /> Suggestions {visibleSuggestions.length}
+            </button>
+            <button
+              aria-label="Go to next suggested passage"
+              disabled={visibleSuggestions.length === 0}
+              onClick={goToNextSuggestion}
+              title={currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} suggestion(s) on this page` : "Go to the next page with a suggestion"}
+            >{currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} highlighted · Next ›` : "Next match ›"}</button>
           </div>
           <div className="tool-spacer" />
           {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
@@ -182,10 +224,15 @@ export default function ReaderPage() {
               zoom={zoom}
               pageNumber={pageNumber}
               annotationsOn={annotationsOn}
-              suggestions={panelMode === "passages" ? suggestions : []}
+              suggestionsOn={suggestionsOn}
+              suggestions={suggestions}
               annotations={annotations}
               onCreateAnnotation={createAnnotation}
               onPageLoad={setNumPages}
+              onRespondSuggestion={respondToPassage}
+              onOpenSuggestionTarget={(suggestion) => {
+                if (suggestion.tgt_document_id) openDocument(suggestion.tgt_document_id, suggestion.tgt_page);
+              }}
             />
           ) : (
             <div className="reader-empty">
@@ -235,7 +282,9 @@ export default function ReaderPage() {
           ) : (
             <>
               <div className="match-group-lbl">Passage-level matches · {loading ? "…" : suggestions.length}</div>
-              {!loading && suggestions.length === 0 && <PanelEmpty message="No passage matches were generated for this document." />}
+              {suggestionActionError && <div className="reader-action-error">Could not save response: {suggestionActionError}</div>}
+              {!loading && suggestionError && <PanelEmpty message={`Suggested passages could not be loaded: ${suggestionError}`} />}
+              {!loading && !suggestionError && suggestions.length === 0 && <PanelEmpty message="No passage matches were generated for this document." />}
               {suggestions.map((suggestion) => (
                 <ConnectionCard
                   key={suggestion.id}
@@ -246,6 +295,10 @@ export default function ReaderPage() {
                   status={suggestion.status}
                   onConfirm={() => respondToPassage(suggestion.id, "confirmed")}
                   onReject={() => respondToPassage(suggestion.id, "rejected")}
+                  onReveal={() => {
+                    setSuggestionsOn(true);
+                    setPageNumber(suggestion.src_page);
+                  }}
                 />
               ))}
             </>
@@ -274,7 +327,7 @@ function MentalModelSummary({ model }: { model: DocumentMentalModel }) {
   );
 }
 
-function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject }: {
+function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject, onReveal }: {
   relation: string;
   score: number;
   source: string;
@@ -283,6 +336,7 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
   status: string;
   onConfirm: () => void;
   onReject: () => void;
+  onReveal?: () => void;
 }) {
   const relationColor = RELATION_COLORS[relation] || "var(--ink-4)";
   const reviewed = status === "confirmed" || status === "rejected" || status === "relabeled";
@@ -297,6 +351,7 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
       <p className="connection-explanation">{explanation}</p>
       {evidence && <details className="connection-evidence"><summary>View supporting passage</summary><p>{evidence}</p></details>}
       <div className="foot">
+        {onReveal && <button className="reveal" onClick={onReveal}><Icon name="eye" size={11} /> Show highlight</button>}
         {reviewed ? (
           <span className={`review-state ${status}`}><Icon name={status === "rejected" ? "x" : "check"} size={11} /> {status}</span>
         ) : (

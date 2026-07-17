@@ -66,6 +66,13 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load conversation context"})
 		return
 	}
+	activeHistory := make([]model.ChatMessage, 0, len(history))
+	for _, item := range history {
+		if item.Status != "superseded" {
+			activeHistory = append(activeHistory, item)
+		}
+	}
+	history = activeHistory
 	if len(history) > 8 {
 		history = history[len(history)-8:]
 	}
