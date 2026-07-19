@@ -45,6 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_adaptive_edge_evidence_message
 
 CREATE TABLE IF NOT EXISTS chat_graph_updates (
     message_id          UUID PRIMARY KEY REFERENCES chat_messages(id) ON DELETE CASCADE,
+    concepts_created    INT NOT NULL DEFAULT 0,
     concepts_reinforced INT NOT NULL DEFAULT 0,
     links_observed      INT NOT NULL DEFAULT 0,
     links_promoted      INT NOT NULL DEFAULT 0,

@@ -1,6 +1,11 @@
 fastapi
 uvicorn[standard]
 pdfplumber
+PyMuPDF
+Pillow
+beautifulsoup4
+httpx
+trafilatura
 google-genai
 python-dotenv
 asyncpg

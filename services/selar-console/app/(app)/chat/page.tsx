@@ -215,13 +215,14 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
-              {message.graph_update && message.graph_update.concepts_reinforced > 0 && (
+              {message.graph_update && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
                 <Link className="chat-graph-update" href="/graph">
                   <span className="chat-graph-update-mark">↗</span>
                   <span>
-                    <strong>Knowledge graph adapted</strong>
+                    <strong>{message.graph_update.concepts_created > 0 ? "Grounded concept candidate added" : "Existing graph evidence reinforced"}</strong>
                     <small>
-                      {message.graph_update.concepts_reinforced} concepts reinforced · {message.graph_update.links_observed} relationships observed
+                      {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} new from cited evidence · ` : ""}
+                      {message.graph_update.concepts_reinforced} existing concepts reinforced · {message.graph_update.links_observed} candidate relationships observed
                       {message.graph_update.links_promoted > 0 ? ` · ${message.graph_update.links_promoted} promoted to supported` : ""}
                     </small>
                   </span>

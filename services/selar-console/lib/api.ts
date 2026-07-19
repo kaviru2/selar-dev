@@ -50,6 +50,61 @@ export interface Document {
   progress: number;
   added_at: string;
   processed_at: string | null;
+  source_id?: string;
+  source_type: "pdf" | "web" | "text";
+  source_url?: string;
+  canonical_url?: string;
+  content_hash?: string;
+  mime_type?: string;
+  metadata?: Record<string, unknown>;
+  fetched_at?: string | null;
+}
+
+export interface ContentBlock {
+  id: string;
+  document_id: string;
+  block_index: number;
+  kind: "heading" | "paragraph" | "list" | "quote" | "code" | "table" | "figure";
+  text: string;
+  locator: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+}
+
+export interface DocumentAsset {
+  id: string;
+  document_id: string;
+  block_index?: number;
+  kind: "image" | "figure" | "diagram" | "chart" | "table" | "page_render";
+  source_url?: string;
+  mime_type: string;
+  width: number;
+  height: number;
+  content_hash: string;
+  caption?: string;
+  alt_text?: string;
+  description?: string;
+  locator: Record<string, unknown>;
+  embedding_model: string;
+  embedding_version: string;
+}
+
+export interface DocumentContent {
+  document: Document;
+  blocks: ContentBlock[];
+  assets: DocumentAsset[];
+}
+
+export interface ContentSource {
+  id: string;
+  kind: "pdf" | "web" | "text";
+  uri?: string;
+  canonical_uri?: string;
+  title?: string;
+  refresh_policy: "manual" | "daily" | "weekly" | "never";
+  status: "active" | "paused" | "failed" | "archived";
+  last_fetched_at?: string;
+  last_error?: string;
+  created_at: string;
 }
 
 export interface DocumentStats {
@@ -275,6 +330,7 @@ export interface MetricsSummary {
 }
 
 export interface ChatGraphUpdate {
+  concepts_created: number;
   concepts_reinforced: number;
   links_observed: number;
   links_promoted: number;

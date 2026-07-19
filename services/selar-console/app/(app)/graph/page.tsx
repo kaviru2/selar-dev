@@ -47,7 +47,7 @@ function endpointId(endpoint: GraphLink["source"]): string | undefined {
 }
 
 function isInteractionLink(link: GraphLinkMetadata): boolean {
-  return ["deterministic_chat", "user_confirmed", "user_created"].includes(link.created_via);
+  return ["deterministic_chat", "user_confirmed", "user_created", "user_reviewed"].includes(link.created_via);
 }
 
 const REL_COLORS: Record<string, string> = {
@@ -207,6 +207,16 @@ export default function GraphPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, reason: "Reviewed in graph workspace" }),
     });
+    await loadGraph(false);
+  }, [loadGraph]);
+
+  const respondToConcept = useCallback(async (conceptId: string, action: "confirm" | "reject") => {
+    await clientFetch(`/api/graph/concepts/${conceptId}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason: "Reviewed in graph workspace" }),
+    });
+    if (action === "reject") setSelId(null);
     await loadGraph(false);
   }, [loadGraph]);
 
@@ -725,6 +735,28 @@ export default function GraphPage() {
                 {selectedNode.description || "No description has been generated for this node."}
               </p>
             </div>
+
+            {selectedNode.nodeType === "concept" && selectedNode.state === "candidate" && (
+              <div style={{
+                display: "grid", gap: 9, padding: 12, marginBottom: 20,
+                border: "1px solid rgba(94,138,170,.28)", borderRadius: "var(--r-md)",
+                background: "rgba(94,138,170,.06)"
+              }}>
+                <span style={{ fontSize: 10, lineHeight: 1.45, color: "var(--ink-3)" }}>
+                  This concept was discovered from cited chat evidence. Confirm it before treating it as established knowledge.
+                </span>
+                <div style={{ display: "flex", gap: 7 }}>
+                  <button onClick={() => respondToConcept(selectedNode.id, "confirm")} style={{
+                    border: "1px solid rgba(122,140,92,.45)", borderRadius: 4,
+                    background: "rgba(122,140,92,.1)", color: "#607044", padding: "6px 10px", cursor: "pointer", fontSize: 10
+                  }}>Confirm concept</button>
+                  <button onClick={() => respondToConcept(selectedNode.id, "reject")} style={{
+                    border: "1px solid rgba(163,59,50,.28)", borderRadius: 4,
+                    background: "transparent", color: "#a33b32", padding: "6px 10px", cursor: "pointer", fontSize: 10
+                  }}>Reject</button>
+                </div>
+              </div>
+            )}
 
             {/* Stats Block */}
             <div style={{

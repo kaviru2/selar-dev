@@ -95,7 +95,9 @@ func (s *Store) UpdateUserPreferences(ctx context.Context, id string, prefs map[
 
 func (s *Store) ListDocuments(ctx context.Context, userID string) ([]model.Document, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, user_id, title, authors, year, page_count, status, progress, added_at, processed_at
+		`SELECT id, user_id, title, authors, year, page_count, status, progress,
+		        source_id, source_type, source_url, canonical_url, content_hash,
+		        mime_type, metadata, fetched_at, added_at, processed_at
 		 FROM documents WHERE user_id = $1 ORDER BY added_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -105,7 +107,9 @@ func (s *Store) ListDocuments(ctx context.Context, userID string) ([]model.Docum
 	var docs []model.Document
 	for rows.Next() {
 		var d model.Document
-		if err := rows.Scan(&d.ID, &d.UserID, &d.Title, &d.Authors, &d.Year, &d.PageCount, &d.Status, &d.Progress, &d.AddedAt, &d.ProcessedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.UserID, &d.Title, &d.Authors, &d.Year, &d.PageCount, &d.Status, &d.Progress,
+			&d.SourceID, &d.SourceType, &d.SourceURL, &d.CanonicalURL, &d.ContentHash,
+			&d.MimeType, &d.Metadata, &d.FetchedAt, &d.AddedAt, &d.ProcessedAt); err != nil {
 			return nil, err
 		}
 		docs = append(docs, d)
@@ -116,9 +120,13 @@ func (s *Store) ListDocuments(ctx context.Context, userID string) ([]model.Docum
 func (s *Store) GetDocument(ctx context.Context, id, userID string) (*model.Document, error) {
 	d := &model.Document{}
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, user_id, title, authors, year, page_count, status, progress, added_at, processed_at
+		`SELECT id, user_id, title, authors, year, page_count, status, progress,
+		        source_id, source_type, source_url, canonical_url, content_hash,
+		        mime_type, metadata, fetched_at, added_at, processed_at
 		 FROM documents WHERE id = $1 AND user_id = $2`, id, userID,
-	).Scan(&d.ID, &d.UserID, &d.Title, &d.Authors, &d.Year, &d.PageCount, &d.Status, &d.Progress, &d.AddedAt, &d.ProcessedAt)
+	).Scan(&d.ID, &d.UserID, &d.Title, &d.Authors, &d.Year, &d.PageCount, &d.Status, &d.Progress,
+		&d.SourceID, &d.SourceType, &d.SourceURL, &d.CanonicalURL, &d.ContentHash,
+		&d.MimeType, &d.Metadata, &d.FetchedAt, &d.AddedAt, &d.ProcessedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +134,94 @@ func (s *Store) GetDocument(ctx context.Context, id, userID string) (*model.Docu
 }
 
 func (s *Store) CreateDocument(ctx context.Context, d *model.Document) error {
+	if d.SourceType == "" {
+		d.SourceType = "pdf"
+	}
+	if len(d.Metadata) == 0 {
+		d.Metadata = json.RawMessage(`{}`)
+	}
 	return s.pool.QueryRow(ctx,
-		`INSERT INTO documents (user_id, title, authors, year, page_count, status, progress, file_path, gdrive_file_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`INSERT INTO documents (
+		    user_id, title, authors, year, page_count, status, progress, file_path,
+		    gdrive_file_id, source_id, source_type, source_url, canonical_url,
+		    content_hash, mime_type, metadata, fetched_at
+		 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		 RETURNING id, added_at`,
-		d.UserID, d.Title, d.Authors, d.Year, d.PageCount, d.Status, d.Progress, d.FilePath, d.GDriveFileID,
+		d.UserID, d.Title, d.Authors, d.Year, d.PageCount, d.Status, d.Progress, d.FilePath,
+		d.GDriveFileID, d.SourceID, d.SourceType, d.SourceURL, d.CanonicalURL,
+		d.ContentHash, d.MimeType, d.Metadata, d.FetchedAt,
 	).Scan(&d.ID, &d.AddedAt)
+}
+
+func (s *Store) GetDocumentContent(ctx context.Context, id, userID string) (*model.DocumentContent, error) {
+	doc, err := s.GetDocument(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	blockRows, err := s.pool.Query(ctx, `
+		SELECT id, document_id, block_index, kind, text, locator, metadata
+		FROM content_blocks WHERE document_id = $1 AND user_id = $2
+		ORDER BY block_index`, id, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer blockRows.Close()
+	blocks := []model.ContentBlock{}
+	for blockRows.Next() {
+		var block model.ContentBlock
+		if err := blockRows.Scan(&block.ID, &block.DocumentID, &block.BlockIndex, &block.Kind,
+			&block.Text, &block.Locator, &block.Metadata); err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, block)
+	}
+	if err := blockRows.Err(); err != nil {
+		return nil, err
+	}
+
+	assetRows, err := s.pool.Query(ctx, `
+		SELECT id, document_id, block_index, kind, source_url, mime_type, width, height,
+		       content_hash, caption, alt_text, description, locator, embedding_model, embedding_version
+		FROM assets WHERE document_id = $1 AND user_id = $2
+		ORDER BY block_index NULLS LAST, created_at`, id, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer assetRows.Close()
+	assets := []model.Asset{}
+	for assetRows.Next() {
+		var asset model.Asset
+		if err := assetRows.Scan(&asset.ID, &asset.DocumentID, &asset.BlockIndex, &asset.Kind,
+			&asset.SourceURL, &asset.MimeType, &asset.Width, &asset.Height, &asset.ContentHash,
+			&asset.Caption, &asset.AltText, &asset.Description, &asset.Locator,
+			&asset.EmbeddingModel, &asset.EmbeddingVersion); err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	if err := assetRows.Err(); err != nil {
+		return nil, err
+	}
+	return &model.DocumentContent{Document: doc, Blocks: blocks, Assets: assets}, nil
+}
+
+func (s *Store) GetAsset(ctx context.Context, documentID, assetID, userID string) (*model.Asset, error) {
+	asset := &model.Asset{}
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, document_id, block_index, kind, storage_path, source_url, mime_type,
+		       width, height, content_hash, caption, alt_text, description, locator,
+		       embedding_model, embedding_version
+		FROM assets WHERE id = $1 AND document_id = $2 AND user_id = $3`,
+		assetID, documentID, userID,
+	).Scan(&asset.ID, &asset.DocumentID, &asset.BlockIndex, &asset.Kind, &asset.StoragePath,
+		&asset.SourceURL, &asset.MimeType, &asset.Width, &asset.Height, &asset.ContentHash,
+		&asset.Caption, &asset.AltText, &asset.Description, &asset.Locator,
+		&asset.EmbeddingModel, &asset.EmbeddingVersion)
+	if err != nil {
+		return nil, err
+	}
+	return asset, nil
 }
 
 func (s *Store) DeleteDocument(ctx context.Context, id, userID string) error {
@@ -554,6 +644,74 @@ func (s *Store) ListDocumentConceptEdges(ctx context.Context, userID string) ([]
 			State:      "supported",
 			Confidence: 1,
 			CreatedVia: "system",
+		})
+	}
+	return edges, rows.Err()
+}
+
+// ListReviewedSuggestionEdges projects passage-level user decisions between
+// document mental models. A suggestion remains visible in the adaptive graph
+// even when either passage has no extracted concept assignment; this preserves
+// the user's evidence-backed decision without manufacturing concept nodes.
+func (s *Store) ListReviewedSuggestionEdges(ctx context.Context, userID string) ([]model.GraphEdge, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH reviewed AS (
+		  SELECT DISTINCT ON (
+		    LEAST(ls.source_chunk_id::text, ls.target_chunk_id::text),
+		    GREATEST(ls.source_chunk_id::text, ls.target_chunk_id::text),
+		    ls.relation
+		  ) ls.id, ls.source_chunk_id, ls.target_chunk_id, ls.relation,
+		    ls.user_label, ls.status, ls.similarity, ls.summary,
+		    COALESCE(ls.responded_at, ls.suggested_at) AS observed_at
+		  FROM link_suggestions ls
+		  WHERE ls.user_id = $1 AND ls.status IN ('confirmed', 'relabeled', 'rejected')
+		  ORDER BY LEAST(ls.source_chunk_id::text, ls.target_chunk_id::text),
+		    GREATEST(ls.source_chunk_id::text, ls.target_chunk_id::text),
+		    ls.relation, ls.responded_at DESC NULLS LAST, ls.id
+		)
+		SELECT r.id, source_model.id, target_model.id,
+		       COALESCE(NULLIF(r.user_label, ''), r.relation), r.status,
+		       r.similarity, r.summary, r.observed_at
+		FROM reviewed r
+		JOIN chunks source_chunk ON source_chunk.id = r.source_chunk_id
+		JOIN chunks target_chunk ON target_chunk.id = r.target_chunk_id
+		JOIN LATERAL (
+		  SELECT mm.id FROM document_mental_models mm
+		  WHERE mm.document_id = source_chunk.document_id AND mm.user_id = $1 AND mm.status = 'ready'
+		  ORDER BY mm.version DESC LIMIT 1
+		) source_model ON true
+		JOIN LATERAL (
+		  SELECT mm.id FROM document_mental_models mm
+		  WHERE mm.document_id = target_chunk.document_id AND mm.user_id = $1 AND mm.status = 'ready'
+		  ORDER BY mm.version DESC LIMIT 1
+		) target_model ON true
+		WHERE source_model.id <> target_model.id
+		ORDER BY r.observed_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	edges := []model.GraphEdge{}
+	for rows.Next() {
+		var id, sourceModelID, targetModelID, relation, status, summary string
+		var confidence float32
+		var observedAt time.Time
+		if err := rows.Scan(&id, &sourceModelID, &targetModelID, &relation, &status,
+			&confidence, &summary, &observedAt); err != nil {
+			return nil, err
+		}
+		state := "confirmed"
+		if status == string(model.SuggestionRejected) {
+			state = "rejected"
+		}
+		if summary == "" {
+			summary = "You reviewed a passage connection between these documents."
+		}
+		edges = append(edges, model.GraphEdge{
+			ID: "suggestion:" + id, Source: "model:" + sourceModelID, Target: "model:" + targetModelID,
+			Relation: relation, State: state, Confidence: confidence, CreatedVia: "user_reviewed",
+			Explanation: summary, ValidFrom: &observedAt, ObservedAt: &observedAt,
 		})
 	}
 	return edges, rows.Err()

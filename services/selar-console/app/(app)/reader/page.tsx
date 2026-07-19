@@ -5,9 +5,11 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
+import { ArticleReader } from "@/components/ArticleReader";
 import {
   clientFetch,
   type Annotation,
+  type DocumentContent,
   type DocumentMentalModel,
   type LinkSuggestion,
   type MentalModelLink,
@@ -53,6 +55,7 @@ export default function ReaderPage() {
   const [mentalLinks, setMentalLinks] = useState<MentalModelLink[]>([]);
   const [mentalModel, setMentalModel] = useState<DocumentMentalModel | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [documentContent, setDocumentContent] = useState<DocumentContent | null>(null);
   const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestionActionError, setSuggestionActionError] = useState("");
@@ -77,12 +80,14 @@ export default function ReaderPage() {
       clientFetch<Annotation[]>(`/api/documents/${docId}/annotations`).catch(() => []),
       clientFetch<DocumentMentalModel>(`/api/documents/${docId}/mental-model`).catch(() => null),
       clientFetch<MentalModelLink[]>(`/api/mental-model-links?document_id=${docId}`).catch(() => []),
-    ]).then(([suggestionData, annotationData, modelData, linkData]) => {
+      clientFetch<DocumentContent>(`/api/documents/${docId}/content`).catch(() => null),
+    ]).then(([suggestionData, annotationData, modelData, linkData, contentData]) => {
       if (cancelled) return;
       setSuggestions(suggestionData);
       setAnnotations(annotationData);
       setMentalModel(modelData);
       setMentalLinks(linkData);
+      setDocumentContent(contentData);
       setLoading(false);
     });
 
@@ -100,6 +105,7 @@ export default function ReaderPage() {
     setMentalLinks([]);
     setMentalModel(null);
     setAnnotations([]);
+    setDocumentContent(null);
     setDocId(id);
   }, []);
 
@@ -113,6 +119,7 @@ export default function ReaderPage() {
     : suggestions.filter((item) => item.status === "confirmed").length;
   const visibleSuggestions = suggestions.filter((item) => item.status !== "rejected");
   const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === pageNumber).length;
+  const isPdf = !documentContent || documentContent.document.source_type === "pdf";
 
   const goToNextSuggestion = useCallback(() => {
     const pages = Array.from(new Set(
@@ -189,16 +196,16 @@ export default function ReaderPage() {
 
       <main className="doc-pane">
         <div className="doc-toolbar">
-          <div className="grp">
+          {isPdf && <div className="grp">
             <button aria-label="Previous page" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => Math.max(1, page - 1))}>‹</button>
             <span className="page-indicator">{pageNumber} / {numPages || "?"}</span>
             <button aria-label="Next page" disabled={!numPages || pageNumber >= numPages} onClick={() => setPageNumber((page) => Math.min(numPages, page + 1))}>›</button>
-          </div>
-          <div className="grp">
+          </div>}
+          {isPdf && <div className="grp">
             <button aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(0.6, value - 0.1))}><Icon name="zoom_out" size={12} /></button>
             <span className="page-indicator">{Math.round(zoom * 100)}%</span>
             <button aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(1.8, value + 0.1))}><Icon name="zoom_in" size={12} /></button>
-          </div>
+          </div>}
           <div className="grp">
             <button className={annotationsOn ? "on" : ""} onClick={() => setAnnotationsOn((value) => !value)}>
               <Icon name="highlight" size={12} /> Marks
@@ -217,8 +224,12 @@ export default function ReaderPage() {
           {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
         </div>
 
-        <div className="pdf-container">
-          {docId ? (
+        <div className={isPdf ? "pdf-container" : "article-container"}>
+          {loading ? (
+            <div className="reader-empty">Loading source snapshot…</div>
+          ) : docId && !isPdf && documentContent ? (
+            <ArticleReader content={documentContent} />
+          ) : docId ? (
             <PdfCanvas
               docId={docId}
               zoom={zoom}

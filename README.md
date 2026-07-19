@@ -43,7 +43,7 @@ SELAR is a monorepo containing three services:
 
 **Database:** PostgreSQL 16 with the [pgvector](https://github.com/pgvector/pgvector) extension for 3072-dimensional embedding storage and approximate nearest-neighbor search.
 
-**AI Provider:** Google Gemini API (`gemini-embedding-001` for embeddings, `gemini-3-flash-preview` for text generation).
+**AI Provider:** Google Gemini API (`gemini-embedding-2` for shared text/image embeddings, `gemini-3-flash-preview` for text generation).
 
 ```
 User --> selar-console (Next.js :3000)
@@ -187,6 +187,24 @@ docker compose up --build
 
 This starts Postgres (with pgvector and initialization migrations), the Python worker, the Go API, and the Next.js console. Run `make migrate` after pulling new migrations into an existing database volume.
 
+### Adding and managing research sources
+
+The Library **Add content** flow accepts a public article/blog URL, pasted text or Markdown, and PDFs. SELAR stores the origin separately from each immutable ingestion snapshot and records extractor/model provenance in an ingestion run. Web sources can be refreshed or archived from **Managed sources**; refreshing creates a new snapshot rather than silently rewriting prior research material.
+
+PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API caps each request and spills multipart data above 8 MB to temporary disk, and the worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`). This keeps several large PDFs from multiplying peak memory use. The worker wait queue is currently in-process; production deployments that require restart-safe delivery should replace it with a durable PostgreSQL or Redis-backed job queue.
+
+Grounded chat can add a missing concept candidate when a bounded phrase from the question appears directly in cited library evidence. The reducer does not mine generated answers or feedback comments for facts. Candidates preserve message/chunk provenance, create at most three candidate relationships per turn, and can be confirmed or rejected in the Graph workspace.
+
+The Managed sources panel can copy a small **Save to SELAR** bookmarklet. The bookmarklet only opens the authenticated SELAR add screen with the current URL—no API key or page contents are stored in the bookmark. Public pages are fetched server-side with redirect, size, content-type, robots, and private-network protections. It does not bypass authentication or paywalls.
+
+Because issue #5 establishes a new development schema and a new embedding space, reset a pre-issue-5 Docker database once:
+
+```bash
+make db-reset
+```
+
+The research hypotheses, evaluation conditions, provenance requirements, and scholarly references are maintained in [`dev_artifacts/ISSUE_5_RESEARCH_PROTOCOL.md`](dev_artifacts/ISSUE_5_RESEARCH_PROTOCOL.md).
+
 See the [Makefile](Makefile) for convenience targets:
 
 | Command | Description |
@@ -206,7 +224,9 @@ Copy `.env.example` to `.env.development` (local) or `.env` (Docker) and configu
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GEMINI_API_KEY` | Yes | — | Google AI Studio API key |
-| `GEMINI_EMBEDDING_MODEL` | No | `models/gemini-embedding-001` | Embedding model identifier |
+| `GEMINI_MULTIMODAL_EMBEDDING_MODEL` | No | `gemini-embedding-2` | Shared text/image embedding model identifier |
+| `INGESTION_CONCURRENCY` | No | `1` | Maximum documents processed simultaneously by each worker process; `1` is safest for large PDFs |
+| `GEMINI_EMBEDDING_DIMENSION` | No | `3072` | Shared pgvector embedding dimension |
 | `GEMINI_TEXT_MODEL` | No | `models/gemini-3-flash-preview` | Text generation model identifier |
 | `DATABASE_URL` | No | `postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable` | Postgres connection string |
 | `JWT_SECRET` | No | `dev-secret-change-in-production` | Secret for JWT token signing |
