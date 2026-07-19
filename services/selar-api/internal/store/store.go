@@ -95,10 +95,16 @@ func (s *Store) UpdateUserPreferences(ctx context.Context, id string, prefs map[
 
 func (s *Store) ListDocuments(ctx context.Context, userID string) ([]model.Document, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, user_id, title, authors, year, page_count, status, progress,
-		        source_id, source_type, source_url, canonical_url, content_hash,
-		        mime_type, metadata, fetched_at, added_at, processed_at
-		 FROM documents WHERE user_id = $1 ORDER BY added_at DESC`, userID)
+		`SELECT d.id, d.user_id, d.title, d.authors, d.year, d.page_count, d.status, d.progress,
+		        d.source_id, d.source_type, d.source_url, d.canonical_url, d.content_hash,
+		        d.mime_type, d.metadata, d.fetched_at, d.visible,
+		        COALESCE(job.status, ''), COALESCE(job.error, ''), added_at, processed_at
+		 FROM documents d
+		 LEFT JOIN LATERAL (
+		     SELECT status, error FROM ingestion_jobs j WHERE j.document_id = d.id
+		     ORDER BY created_at DESC LIMIT 1
+		 ) job ON true
+		 WHERE d.user_id = $1 AND d.visible ORDER BY added_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +115,8 @@ func (s *Store) ListDocuments(ctx context.Context, userID string) ([]model.Docum
 		var d model.Document
 		if err := rows.Scan(&d.ID, &d.UserID, &d.Title, &d.Authors, &d.Year, &d.PageCount, &d.Status, &d.Progress,
 			&d.SourceID, &d.SourceType, &d.SourceURL, &d.CanonicalURL, &d.ContentHash,
-			&d.MimeType, &d.Metadata, &d.FetchedAt, &d.AddedAt, &d.ProcessedAt); err != nil {
+			&d.MimeType, &d.Metadata, &d.FetchedAt, &d.Visible, &d.IngestionStatus,
+			&d.IngestionError, &d.AddedAt, &d.ProcessedAt); err != nil {
 			return nil, err
 		}
 		docs = append(docs, d)
@@ -120,13 +127,20 @@ func (s *Store) ListDocuments(ctx context.Context, userID string) ([]model.Docum
 func (s *Store) GetDocument(ctx context.Context, id, userID string) (*model.Document, error) {
 	d := &model.Document{}
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, user_id, title, authors, year, page_count, status, progress,
-		        source_id, source_type, source_url, canonical_url, content_hash,
-		        mime_type, metadata, fetched_at, added_at, processed_at
-		 FROM documents WHERE id = $1 AND user_id = $2`, id, userID,
+		`SELECT d.id, d.user_id, d.title, d.authors, d.year, d.page_count, d.status, d.progress,
+		        d.source_id, d.source_type, d.source_url, d.canonical_url, d.content_hash,
+		        d.mime_type, d.metadata, d.fetched_at, d.visible,
+		        COALESCE(job.status, ''), COALESCE(job.error, ''), d.added_at, d.processed_at
+		 FROM documents d
+		 LEFT JOIN LATERAL (
+		     SELECT status, error FROM ingestion_jobs j WHERE j.document_id = d.id
+		     ORDER BY created_at DESC LIMIT 1
+		 ) job ON true
+		 WHERE d.id = $1 AND d.user_id = $2`, id, userID,
 	).Scan(&d.ID, &d.UserID, &d.Title, &d.Authors, &d.Year, &d.PageCount, &d.Status, &d.Progress,
 		&d.SourceID, &d.SourceType, &d.SourceURL, &d.CanonicalURL, &d.ContentHash,
-		&d.MimeType, &d.Metadata, &d.FetchedAt, &d.AddedAt, &d.ProcessedAt)
+		&d.MimeType, &d.Metadata, &d.FetchedAt, &d.Visible, &d.IngestionStatus,
+		&d.IngestionError, &d.AddedAt, &d.ProcessedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +154,7 @@ func (s *Store) CreateDocument(ctx context.Context, d *model.Document) error {
 	if len(d.Metadata) == 0 {
 		d.Metadata = json.RawMessage(`{}`)
 	}
-	return s.pool.QueryRow(ctx,
+	err := s.pool.QueryRow(ctx,
 		`INSERT INTO documents (
 		    user_id, title, authors, year, page_count, status, progress, file_path,
 		    gdrive_file_id, source_id, source_type, source_url, canonical_url,
@@ -151,6 +165,10 @@ func (s *Store) CreateDocument(ctx context.Context, d *model.Document) error {
 		d.GDriveFileID, d.SourceID, d.SourceType, d.SourceURL, d.CanonicalURL,
 		d.ContentHash, d.MimeType, d.Metadata, d.FetchedAt,
 	).Scan(&d.ID, &d.AddedAt)
+	if err == nil {
+		d.Visible = true
+	}
+	return err
 }
 
 func (s *Store) GetDocumentContent(ctx context.Context, id, userID string) (*model.DocumentContent, error) {
@@ -249,7 +267,7 @@ func (s *Store) GetDocumentStats(ctx context.Context, userID string) (*model.Doc
 		   COALESCE(SUM((SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id)), 0),
 		   COALESCE((SELECT COUNT(*) FROM link_suggestions ls
 		     WHERE ls.user_id = $1 AND ls.status = 'confirmed'), 0)
-		 FROM documents d WHERE d.user_id = $1`,
+		 FROM documents d WHERE d.user_id = $1 AND d.visible`,
 		userID,
 	).Scan(&stats.TotalDocuments, &stats.TotalChunks, &stats.ConfirmedLinks)
 	return stats, err

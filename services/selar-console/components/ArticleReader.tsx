@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
+import { useEffect } from "react";
 import remarkGfm from "remark-gfm";
 import type { DocumentContent } from "@/lib/api";
 
@@ -16,7 +17,11 @@ function Markdown({ children, inline = false }: { children: string; inline?: boo
   );
 }
 
-export function ArticleReader({ content }: { content: DocumentContent }) {
+export function ArticleReader({ content, targetBlock }: { content: DocumentContent; targetBlock?: number }) {
+  useEffect(() => {
+    if (targetBlock === undefined) return;
+    document.getElementById(`block-${targetBlock}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [content.document.id, targetBlock]);
   const assetsByBlock = new Map(content.assets.map((asset) => [asset.block_index, asset]));
   return (
     <article className="article-reader">

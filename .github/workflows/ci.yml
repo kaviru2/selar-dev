@@ -59,6 +59,22 @@ jobs:
   check-worker:
     name: Check Python Worker
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: selar_test
+          POSTGRES_PASSWORD: selar_test
+          POSTGRES_DB: selar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U selar_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://selar_test:selar_test@localhost:5432/selar_test?sslmode=disable
     defaults:
       run:
         working-directory: services/selar-worker
@@ -70,10 +86,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
+
+      - name: Apply database migrations
+        run: |
+          for migration in ../selar-api/internal/store/migrations/*.sql; do
+            psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
+          done
 
       - name: Syntax check
         run: python -m py_compile main.py
 
       - name: Check imports
         run: python -c "import main"
+
+      - name: Test worker and durable queue
+        run: pytest -q

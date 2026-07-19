@@ -130,6 +130,9 @@ psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental
 psql -d selar -f services/selar-api/internal/store/migrations/004_adaptive_chat.sql
 psql -d selar -f services/selar-api/internal/store/migrations/005_chat_graph_reducer.sql
 psql -d selar -f services/selar-api/internal/store/migrations/006_graph_governance.sql
+psql -d selar -f services/selar-api/internal/store/migrations/007_multimodal_sources.sql
+psql -d selar -f services/selar-api/internal/store/migrations/008_grounded_chat_concepts.sql
+psql -d selar -f services/selar-api/internal/store/migrations/009_durable_ingestion_jobs.sql
 ```
 
 On Windows, use `psql` from the PostgreSQL installation directory, or pgAdmin.
@@ -191,7 +194,7 @@ This starts Postgres (with pgvector and initialization migrations), the Python w
 
 The Library **Add content** flow accepts a public article/blog URL, pasted text or Markdown, and PDFs. SELAR stores the origin separately from each immutable ingestion snapshot and records extractor/model provenance in an ingestion run. Web sources can be refreshed or archived from **Managed sources**; refreshing creates a new snapshot rather than silently rewriting prior research material.
 
-PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API caps each request and spills multipart data above 8 MB to temporary disk, and the worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`). This keeps several large PDFs from multiplying peak memory use. The worker wait queue is currently in-process; production deployments that require restart-safe delivery should replace it with a durable PostgreSQL or Redis-backed job queue.
+PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API validates the PDF signature, caps each request, and spills multipart data above 8 MB to temporary disk. Accepted PDF, web, and text work is stored in a PostgreSQL-backed queue before the API responds. Workers claim jobs with expiring leases, renew active leases, retry transient failures up to three times, and recover abandoned work after a restart. The worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`) to keep several large PDFs from multiplying peak memory use.
 
 Grounded chat can add a missing concept candidate when a bounded phrase from the question appears directly in cited library evidence. The reducer does not mine generated answers or feedback comments for facts. Candidates preserve message/chunk provenance, create at most three candidate relationships per turn, and can be confirmed or rejected in the Graph workspace.
 

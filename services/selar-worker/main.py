@@ -2,6 +2,9 @@ import os
 import re
 import json
 import asyncio
+import contextlib
+import socket
+import shutil
 import unicodedata
 import time
 from collections import Counter
@@ -17,7 +20,20 @@ from ingestion import extract_source
 # Load root .env.development
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env.development'))
 
-app = FastAPI(title="SELAR AI Ingestion Worker")
+@contextlib.asynccontextmanager
+async def lifespan(_: FastAPI):
+    global queue_poller_tasks
+    queue_poller_tasks = [asyncio.create_task(ingestion_queue_poller()) for _ in range(INGESTION_CONCURRENCY)]
+    try:
+        yield
+    finally:
+        for task in queue_poller_tasks:
+            task.cancel()
+        await asyncio.gather(*queue_poller_tasks, return_exceptions=True)
+        queue_poller_tasks = []
+
+
+app = FastAPI(title="SELAR AI Ingestion Worker", lifespan=lifespan)
 
 # Configure Gemini (new google.genai SDK)
 api_key = os.getenv("GEMINI_API_KEY")
@@ -33,6 +49,10 @@ TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "models/gemini-3-flash-preview")
 CHUNK_WORD_LIMIT = int(os.getenv("CHUNK_WORD_LIMIT", "120"))
 INGESTION_CONCURRENCY = max(1, int(os.getenv("INGESTION_CONCURRENCY", "1")))
 ingestion_semaphore = asyncio.Semaphore(INGESTION_CONCURRENCY)
+INGESTION_POLL_SECONDS = max(0.25, float(os.getenv("INGESTION_POLL_SECONDS", "1")))
+INGESTION_LEASE_SECONDS = max(60, int(os.getenv("INGESTION_LEASE_SECONDS", "300")))
+WORKER_ID = os.getenv("INGESTION_WORKER_ID", f"{socket.gethostname()}-{os.getpid()}")
+queue_poller_tasks: List[asyncio.Task] = []
 
 class ProcessRequest(BaseModel):
     doc_id: str
@@ -463,6 +483,40 @@ async def process_document_task(
             raw_text=raw_text,
             title=title,
         )
+        if source_id and source_type == "web" and normalized.content_hash:
+            conn = await asyncpg.connect(DATABASE_URL)
+            previous_hash = await conn.fetchval(
+                "SELECT last_content_hash FROM content_sources WHERE id = $1", source_id
+            )
+            if previous_hash and previous_hash == normalized.content_hash:
+                await conn.execute(
+                    """UPDATE documents SET status = 'ready', progress = 1, visible = false,
+                              title = $2, canonical_url = $3, content_hash = $4,
+                              mime_type = $5, fetched_at = now(), processed_at = now()
+                       WHERE id = $1""",
+                    doc_id, normalized.title, normalized.canonical_url,
+                    normalized.content_hash, normalized.mime_type,
+                )
+                await conn.execute(
+                    """UPDATE content_sources SET canonical_uri = $2, last_fetched_at = now(),
+                              last_error = '', status = 'active', updated_at = now()
+                       WHERE id = $1""",
+                    source_id, normalized.canonical_url,
+                )
+                if run_id:
+                    await conn.execute(
+                        """UPDATE ingestion_runs SET status = 'unchanged', completed_at = now(),
+                                  extractor = $2, extractor_version = $3,
+                                  metrics = $4, error = '' WHERE id = $1""",
+                        run_id, normalized.extractor, normalized.extractor_version,
+                        json.dumps({"source_type": source_type, "content_hash": normalized.content_hash}),
+                    )
+                await conn.close()
+                shutil.rmtree(os.path.join("/tmp/selar_uploads", doc_id), ignore_errors=True)
+                print(f"Source {source_id} is unchanged; hidden snapshot {doc_id}")
+                return
+            await conn.close()
+            conn = None
         # Adapters may encounter the same bytes through responsive-image URLs.
         # Keep one visual representation per source snapshot so embedding and
         # persistence remain deterministic.
@@ -910,6 +964,7 @@ Rules:
             await conn.close()
         except:
             pass
+        raise
 
 async def process_document_with_limit(**kwargs):
     """Keep expensive PDF extraction and embedding within a memory-safe bound."""
@@ -917,10 +972,149 @@ async def process_document_with_limit(**kwargs):
         await process_document_task(**kwargs)
 
 
+async def claim_ingestion_job() -> Optional[Dict[str, Any]]:
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        async with conn.transaction():
+            await conn.execute("""
+                UPDATE ingestion_jobs
+                SET status = 'queued', worker_id = '', lease_expires_at = NULL,
+                    available_at = now(), error = CASE WHEN error = '' THEN 'worker lease expired' ELSE error END,
+                    updated_at = now()
+                WHERE status = 'leased' AND lease_expires_at < now() AND attempts < max_attempts
+            """)
+            expired = await conn.fetch("""
+                UPDATE ingestion_jobs
+                SET status = 'failed', worker_id = '', lease_expires_at = NULL,
+                    error = CASE WHEN error = '' THEN 'worker lease expired after maximum attempts' ELSE error END,
+                    updated_at = now()
+                WHERE status = 'leased' AND lease_expires_at < now() AND attempts >= max_attempts
+                RETURNING run_id, document_id, source_id, error
+            """)
+            for row in expired:
+                await conn.execute(
+                    "UPDATE ingestion_runs SET status = 'failed', error = $2, completed_at = now() WHERE id = $1",
+                    row["run_id"], row["error"],
+                )
+                await conn.execute(
+                    "UPDATE documents SET status = 'failed', progress = 0 WHERE id = $1", row["document_id"]
+                )
+                await conn.execute(
+                    "UPDATE content_sources SET status = 'failed', last_error = $2, updated_at = now() WHERE id = $1",
+                    row["source_id"], row["error"],
+                )
+            row = await conn.fetchrow("""
+                WITH candidate AS (
+                    SELECT id FROM ingestion_jobs
+                    WHERE status = 'queued' AND available_at <= now() AND attempts < max_attempts
+                    ORDER BY created_at
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                UPDATE ingestion_jobs job
+                SET status = 'leased', attempts = attempts + 1, worker_id = $1,
+                    lease_expires_at = now() + ($2 * interval '1 second'),
+                    error = '', updated_at = now()
+                FROM candidate
+                WHERE job.id = candidate.id
+                RETURNING job.*
+            """, WORKER_ID, INGESTION_LEASE_SECONDS)
+            return dict(row) if row else None
+    finally:
+        await conn.close()
+
+
+async def heartbeat_ingestion_job(job_id: str) -> None:
+    while True:
+        await asyncio.sleep(max(20, INGESTION_LEASE_SECONDS // 3))
+        conn = await asyncpg.connect(DATABASE_URL)
+        try:
+            await conn.execute("""
+                UPDATE ingestion_jobs
+                SET lease_expires_at = now() + ($3 * interval '1 second'), updated_at = now()
+                WHERE id = $1 AND status = 'leased' AND worker_id = $2
+            """, job_id, WORKER_ID, INGESTION_LEASE_SECONDS)
+        finally:
+            await conn.close()
+
+
+async def finish_ingestion_job(job: Dict[str, Any], error: Optional[Exception] = None) -> None:
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        if error is None:
+            await conn.execute("""
+                UPDATE ingestion_jobs SET status = 'completed', lease_expires_at = NULL,
+                    worker_id = '', error = '', updated_at = now()
+                WHERE id = $1 AND worker_id = $2
+            """, job["id"], WORKER_ID)
+            return
+        message = str(error)[:2000]
+        if job["attempts"] < job["max_attempts"]:
+            delay_seconds = min(60, 2 ** job["attempts"])
+            await conn.execute("""
+                UPDATE ingestion_jobs SET status = 'queued', lease_expires_at = NULL,
+                    worker_id = '', error = $3,
+                    available_at = now() + ($4 * interval '1 second'), updated_at = now()
+                WHERE id = $1 AND worker_id = $2
+            """, job["id"], WORKER_ID, message, delay_seconds)
+            await conn.execute(
+                "UPDATE ingestion_runs SET status = 'queued', error = $2, completed_at = NULL WHERE id = $1",
+                job["run_id"], message,
+            )
+            await conn.execute(
+                "UPDATE documents SET status = 'processing', progress = 0.01 WHERE id = $1", job["document_id"]
+            )
+            await conn.execute(
+                "UPDATE content_sources SET status = 'active', last_error = $2, updated_at = now() WHERE id = $1",
+                job["source_id"], f"retrying after: {message}"[:1000],
+            )
+        else:
+            await conn.execute("""
+                UPDATE ingestion_jobs SET status = 'failed', lease_expires_at = NULL,
+                    worker_id = '', error = $3, updated_at = now()
+                WHERE id = $1 AND worker_id = $2
+            """, job["id"], WORKER_ID, message)
+    finally:
+        await conn.close()
+
+
+async def run_claimed_ingestion_job(job: Dict[str, Any]) -> None:
+    heartbeat = asyncio.create_task(heartbeat_ingestion_job(str(job["id"])))
+    error: Optional[Exception] = None
+    try:
+        await process_document_with_limit(
+            doc_id=str(job["document_id"]), file_path=job["file_path"],
+            source_id=str(job["source_id"]), run_id=str(job["run_id"]),
+            source_type=job["source_type"], source_url=job["source_url"],
+            raw_text=job["raw_text"], title=job["title"],
+        )
+    except Exception as exc:
+        error = exc
+    finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
+        await finish_ingestion_job(job, error)
+
+
+async def ingestion_queue_poller() -> None:
+    while True:
+        try:
+            job = await claim_ingestion_job()
+            if job:
+                await run_claimed_ingestion_job(job)
+                continue
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"Ingestion queue poll failed: {exc}")
+        await asyncio.sleep(INGESTION_POLL_SECONDS)
+
+
 @app.post("/process")
 async def process_document(req: ProcessRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(
-        process_document_with_limit,
+        process_document_direct_request,
         doc_id=req.doc_id,
         file_path=req.file_path,
         source_id=req.source_id,
@@ -931,6 +1125,14 @@ async def process_document(req: ProcessRequest, background_tasks: BackgroundTask
         title=req.title,
     )
     return {"message": "Processing started in background", "doc_id": req.doc_id}
+
+
+async def process_document_direct_request(**kwargs):
+    """Compatibility endpoint for manual development calls; durable work uses the DB queue."""
+    try:
+        await process_document_with_limit(**kwargs)
+    except Exception as exc:
+        print(f"Direct ingestion request failed: {exc}")
 
 
 @app.post("/chat")
@@ -951,7 +1153,7 @@ async def grounded_chat(req: ChatRequest):
     try:
         vector_rows = await conn.fetch("""
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
-                   c.page_start AS page, c.content,
+                   c.page_start AS page, c.content, c.locator, d.source_type,
                    1 - (c.embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)) AS score
             FROM chunks c JOIN documents d ON d.id = c.document_id
             WHERE c.user_id = $1 AND d.status = 'ready' AND c.embedding IS NOT NULL
@@ -960,7 +1162,7 @@ async def grounded_chat(req: ChatRequest):
         """, req.user_id, query_vector)
         lexical_rows = await conn.fetch("""
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
-                   c.page_start AS page, c.content,
+                   c.page_start AS page, c.content, c.locator, d.source_type,
                    ts_rank_cd(to_tsvector('english', c.content), websearch_to_tsquery('english', $2)) AS score
             FROM chunks c JOIN documents d ON d.id = c.document_id
             WHERE c.user_id = $1 AND d.status = 'ready'
@@ -986,44 +1188,44 @@ async def grounded_chat(req: ChatRequest):
                 WHERE e.user_id = $1 AND e.state IN ('supported', 'confirmed') AND e.valid_to IS NULL
             )
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
-                   c.page_start AS page, c.content,
+                   c.page_start AS page, c.content, c.locator, d.source_type,
                    MAX(ec.concept_score * cc.confidence) AS score
             FROM expanded_concepts ec
             JOIN chunk_concepts cc ON cc.concept_id = ec.id
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
             WHERE d.status = 'ready'
-            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id
             LIMIT 20
         """, req.user_id, query_vector)
         learner_rows = await conn.fetch("""
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
-                   c.page_start AS page, c.content,
+                   c.page_start AS page, c.content, c.locator, d.source_type,
                    MAX(lp.interest_score * cc.confidence) AS score
             FROM chat_learner_projection lp
             JOIN chunk_concepts cc ON cc.concept_id = lp.concept_id
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
             WHERE lp.user_id = $1 AND lp.interest_score > 0 AND d.status = 'ready'
-            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
         """, req.user_id)
         evidence_rows = await conn.fetch("""
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
-                   c.page_start AS page, c.content, MAX(cc.confidence) AS score
+                   c.page_start AS page, c.content, c.locator, d.source_type, MAX(cc.confidence) AS score
             FROM chunk_concepts cc
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
             JOIN concepts concept ON concept.id = cc.concept_id
             WHERE c.user_id = $1 AND d.status = 'ready'
               AND concept.state IN ('supported', 'confirmed')
-            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
         """, req.user_id)
         recency_rows = await conn.fetch("""
             SELECT c.id AS chunk_id, c.document_id, d.title AS document_title,
-                   c.page_start AS page, c.content,
+                   c.page_start AS page, c.content, c.locator, d.source_type,
                    MAX(1.0 / (1.0 + EXTRACT(EPOCH FROM (now() - mc.created_at)) / 2592000.0)
                        + LEAST(mc.open_count, 5) * 0.05) AS score
             FROM message_citations mc
@@ -1031,21 +1233,29 @@ async def grounded_chat(req: ChatRequest):
             JOIN chunks c ON c.id = mc.chunk_id
             JOIN documents d ON d.id = c.document_id
             WHERE m.user_id = $1 AND d.status = 'ready' AND m.status <> 'superseded'
-            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content
+            GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
         """, req.user_id)
     finally:
         await conn.close()
 
     def serialize(rows: Any) -> List[Dict[str, Any]]:
-        return [{
-            "chunk_id": str(row["chunk_id"]),
-            "document_id": str(row["document_id"]),
-            "document_title": row["document_title"],
-            "page": row["page"],
-            "content": row["content"],
-            "score": float(row["score"]),
-        } for row in rows]
+        serialized = []
+        for row in rows:
+            locator = row["locator"] or {}
+            if isinstance(locator, str):
+                locator = json.loads(locator)
+            serialized.append({
+                "chunk_id": str(row["chunk_id"]),
+                "document_id": str(row["document_id"]),
+                "document_title": row["document_title"],
+                "page": row["page"],
+                "content": row["content"],
+                "locator": locator,
+                "source_type": row["source_type"],
+                "score": float(row["score"]),
+            })
+        return serialized
 
     ranked = reciprocal_rank_fusion({
         "vector": serialize(vector_rows),
@@ -1077,9 +1287,8 @@ async def grounded_chat(req: ChatRequest):
     citations = []
     for rank, candidate in enumerate(ranked, start=1):
         quote = candidate["content"][:1000]
-        sources.append(
-            f"[S{rank}] {candidate['document_title']}, page {candidate['page']}\n{quote}"
-        )
+        location = f"page {candidate['page']}" if candidate["source_type"] == "pdf" else candidate["locator"].get("heading", "source block")
+        sources.append(f"[S{rank}] {candidate['document_title']}, {location}\n{quote}")
         citations.append({
             "chunk_id": candidate["chunk_id"],
             "document_id": candidate["document_id"],
@@ -1088,6 +1297,8 @@ async def grounded_chat(req: ChatRequest):
             "rank": rank,
             "score": candidate["rrf_score"],
             "quote": quote,
+            "source_type": candidate["source_type"],
+            "locator": candidate["locator"],
         })
 
     history_text = "\n".join(

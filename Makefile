@@ -33,6 +33,7 @@ migrate:
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/006_graph_governance.sql
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/007_multimodal_sources.sql
 	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/008_grounded_chat_concepts.sql
+	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/009_durable_ingestion_jobs.sql
 
 # Verify deterministic projections. Use APPLY=1 to rebuild them.
 replay:

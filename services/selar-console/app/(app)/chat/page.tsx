@@ -207,10 +207,13 @@ export default function ChatPage() {
               {message.citations.length > 0 && (
                 <div className="chat-citations">
                   {message.citations.map((citation) => (
-                    <Link key={citation.chunk_id} href={`/reader?docId=${citation.document_id}&page=${citation.page}`} onClick={() => recordCitationOpen(citation.id)}>
+                    <Link key={citation.chunk_id} href={citation.source_type === "pdf"
+                      ? `/reader?docId=${citation.document_id}&page=${citation.page}`
+                      : `/reader?docId=${citation.document_id}&block=${Number(citation.locator?.block_index ?? 0)}`
+                    } onClick={() => recordCitationOpen(citation.id)}>
                       <span>[S{citation.rank}]</span>
                       <strong>{citation.document_title}</strong>
-                      <small>Page {citation.page} · {citation.quote.slice(0, 150)}…</small>
+                      <small>{citation.source_type === "pdf" ? `Page ${citation.page}` : String(citation.locator?.heading || "Source passage")} · {citation.quote.slice(0, 150)}…</small>
                     </Link>
                   ))}
                 </div>

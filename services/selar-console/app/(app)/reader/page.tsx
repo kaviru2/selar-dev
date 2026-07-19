@@ -120,6 +120,7 @@ export default function ReaderPage() {
   const visibleSuggestions = suggestions.filter((item) => item.status !== "rejected");
   const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === pageNumber).length;
   const isPdf = !documentContent || documentContent.document.source_type === "pdf";
+  const ingestionState = documentContent?.document.status;
 
   const goToNextSuggestion = useCallback(() => {
     const pages = Array.from(new Set(
@@ -227,8 +228,12 @@ export default function ReaderPage() {
         <div className={isPdf ? "pdf-container" : "article-container"}>
           {loading ? (
             <div className="reader-empty">Loading source snapshot…</div>
+          ) : ingestionState === "processing" ? (
+            <div className="reader-empty"><Icon name="spinner" size={20} className="animate-spin" /><strong>Processing this source</strong><span>You can return to the Library while the durable ingestion job runs.</span></div>
+          ) : ingestionState === "failed" ? (
+            <div className="reader-empty"><Icon name="x" size={20} /><strong>Source processing failed</strong><span>{documentContent?.document.ingestion_error || "Open the Library to retry this document."}</span></div>
           ) : docId && !isPdf && documentContent ? (
-            <ArticleReader content={documentContent} />
+            <ArticleReader content={documentContent} targetBlock={searchParams.has("block") ? Number(searchParams.get("block")) : undefined} />
           ) : docId ? (
             <PdfCanvas
               docId={docId}

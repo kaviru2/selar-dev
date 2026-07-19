@@ -23,6 +23,7 @@ services:
       - ./services/selar-api/internal/store/migrations/006_graph_governance.sql:/docker-entrypoint-initdb.d/006_graph_governance.sql
       - ./services/selar-api/internal/store/migrations/007_multimodal_sources.sql:/docker-entrypoint-initdb.d/007_multimodal_sources.sql
       - ./services/selar-api/internal/store/migrations/008_grounded_chat_concepts.sql:/docker-entrypoint-initdb.d/008_grounded_chat_concepts.sql
+      - ./services/selar-api/internal/store/migrations/009_durable_ingestion_jobs.sql:/docker-entrypoint-initdb.d/009_durable_ingestion_jobs.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-selar}"]
       interval: 5s

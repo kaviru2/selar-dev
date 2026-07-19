@@ -88,6 +88,7 @@ func main() {
 		r.Get("/documents/stats", h.GetDocumentStats)
 		r.Get("/documents/{id}", h.GetDocument)
 		r.Get("/documents/{id}/content", h.GetDocumentContent)
+		r.Post("/documents/{id}/retry", h.RetryDocumentIngestion)
 		r.Get("/documents/{id}/assets/{assetId}", h.ServeAsset)
 		r.Get("/documents/{docId}/pdf", h.ServeDocument)
 		r.Delete("/documents/{id}", h.DeleteDocument)

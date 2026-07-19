@@ -1,6 +1,8 @@
 """Tests for the SELAR worker ingestion pipeline utilities."""
 
 import json
+import os
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 
@@ -223,6 +225,59 @@ def test_document_processing_respects_concurrency_limit(monkeypatch):
 
     asyncio.run(run_batch())
     assert peak == 1
+
+
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is not configured")
+def test_durable_queue_claims_and_completes_committed_job(monkeypatch):
+    import asyncio
+    import asyncpg
+    import main
+
+    database_url = os.environ["TEST_DATABASE_URL"]
+    monkeypatch.setattr(main, "DATABASE_URL", database_url)
+
+    async def exercise_queue():
+        conn = await asyncpg.connect(database_url)
+        email = f"queue-test-{uuid.uuid4()}@example.test"
+        user_id = await conn.fetchval(
+            "INSERT INTO users (email, password_hash) VALUES ($1, 'test') RETURNING id", email
+        )
+        source_id = await conn.fetchval(
+            "INSERT INTO content_sources (user_id, kind, title) VALUES ($1, 'text', 'Queue test') RETURNING id",
+            user_id,
+        )
+        document_id = await conn.fetchval(
+            """INSERT INTO documents (user_id, title, status, source_id, source_type)
+               VALUES ($1, 'Queue test', 'processing', $2, 'text') RETURNING id""",
+            user_id, source_id,
+        )
+        run_id = await conn.fetchval(
+            """INSERT INTO ingestion_runs (source_id, document_id, user_id)
+               VALUES ($1, $2, $3) RETURNING id""",
+            source_id, document_id, user_id,
+        )
+        job_id = await conn.fetchval(
+            """INSERT INTO ingestion_jobs (
+                   run_id, source_id, document_id, user_id, source_type, raw_text, title
+               ) VALUES ($1, $2, $3, $4, 'text', 'Durable queue evidence.', 'Queue test')
+               RETURNING id""",
+            run_id, source_id, document_id, user_id,
+        )
+        await conn.close()
+
+        job = await main.claim_ingestion_job()
+        assert str(job["id"]) == str(job_id)
+        assert job["status"] == "leased"
+        assert job["attempts"] == 1
+        await main.finish_ingestion_job(job)
+
+        conn = await asyncpg.connect(database_url)
+        status = await conn.fetchval("SELECT status FROM ingestion_jobs WHERE id = $1", job_id)
+        assert status == "completed"
+        await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+        await conn.close()
+
+    asyncio.run(exercise_queue())
 
 
 def test_reciprocal_rank_fusion_is_deterministic_and_bounded():

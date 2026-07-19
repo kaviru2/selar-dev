@@ -58,6 +58,9 @@ export interface Document {
   mime_type?: string;
   metadata?: Record<string, unknown>;
   fetched_at?: string | null;
+  visible?: boolean;
+  ingestion_status?: "queued" | "leased" | "completed" | "failed" | "cancelled";
+  ingestion_error?: string;
 }
 
 export interface ContentBlock {
@@ -280,6 +283,8 @@ export interface ChatCitation {
   rank: number;
   score: number;
   quote: string;
+  source_type: "pdf" | "web" | "text";
+  locator: Record<string, unknown>;
 }
 
 export interface ChatMessage {

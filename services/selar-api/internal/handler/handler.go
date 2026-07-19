@@ -10,9 +10,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
 	"github.com/selar-dev/selar-api/internal/store"
@@ -206,7 +208,10 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clean up local temp file storage to save space
-	_ = os.Remove("/tmp/selar_uploads/" + id + ".pdf")
+	if _, parseErr := uuid.Parse(id); parseErr == nil {
+		_ = os.Remove(filepath.Join("/tmp/selar_uploads", id+".pdf"))
+		_ = os.RemoveAll(filepath.Join("/tmp/selar_uploads", id))
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
