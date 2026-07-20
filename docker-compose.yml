@@ -23,6 +23,7 @@ services:
       - ./services/selar-api/internal/store/migrations/006_graph_governance.sql:/docker-entrypoint-initdb.d/006_graph_governance.sql
       - ./services/selar-api/internal/store/migrations/007_multimodal_sources.sql:/docker-entrypoint-initdb.d/007_multimodal_sources.sql
       - ./services/selar-api/internal/store/migrations/008_grounded_chat_concepts.sql:/docker-entrypoint-initdb.d/008_grounded_chat_concepts.sql
+      - ./services/selar-api/internal/store/migrations/009_durable_ingestion_jobs.sql:/docker-entrypoint-initdb.d/009_durable_ingestion_jobs.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-selar}"]
       interval: 5s
@@ -83,6 +84,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MULTIMODAL_EMBEDDING_MODEL: ${GEMINI_MULTIMODAL_EMBEDDING_MODEL:-gemini-embedding-2}
+      INGESTION_QUEUE_ENABLED: "true"
       INGESTION_CONCURRENCY: ${INGESTION_CONCURRENCY:-1}
     volumes:
       - selar_uploads:/tmp/selar_uploads

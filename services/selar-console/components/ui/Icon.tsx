@@ -29,6 +29,7 @@ export type IconName =
   | "drive"
   | "more"
   | "spinner"
+  | "refresh"
   | "clock"
   | "note"
   | "highlight"
@@ -144,6 +145,7 @@ export function Icon({ name, size = 14, style, className }: IconProps) {
         d="M8 2v2M8 12v2M3 8H1M15 8h-2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5L5 11M11 5l1.5-1.5"
       />
     ),
+    refresh: <path {...p} d="M13 5V2.5l-2 2A5.5 5.5 0 104 12M13 2.5h-2.5" />,
     clock: (
       <>
         <circle cx="8" cy="8" r="6" {...p} />

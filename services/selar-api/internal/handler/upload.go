@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"os"
@@ -56,6 +57,15 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "file too large"}`, http.StatusRequestEntityTooLarge)
 		return
 	}
+	magic := make([]byte, 5)
+	if _, err := io.ReadFull(file, magic); err != nil || !bytes.Equal(magic, []byte("%PDF-")) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file is not a valid PDF"})
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unable to read PDF"})
+		return
+	}
 
 	// Create upload folder
 	uploadDir := "/tmp/selar_uploads"
@@ -86,6 +96,7 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	outFile, err := os.Create(outPath)
 	if err != nil {
 		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		_ = h.store.ArchiveSource(r.Context(), source.ID, userIdStr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to write PDF"})
 		return
 	}
@@ -94,6 +105,7 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(outPath)
 		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		_ = h.store.ArchiveSource(r.Context(), source.ID, userIdStr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save PDF"})
 		return
 	}
@@ -104,13 +116,21 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.CreateIngestionRun(r.Context(), run, userIdStr); err != nil {
 		_ = os.Remove(outPath)
 		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		_ = h.store.ArchiveSource(r.Context(), source.ID, userIdStr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to queue PDF ingestion"})
 		return
 	}
-	go triggerWorker(workerProcessRequest{
-		DocumentID: doc.ID, SourceID: source.ID, RunID: run.ID,
+	job := &model.IngestionJob{
+		RunID: run.ID, SourceID: source.ID, DocumentID: doc.ID, UserID: userIdStr,
 		SourceType: "pdf", FilePath: outPath, Title: source.Title,
-	})
+	}
+	if err := h.store.CreateIngestionJob(r.Context(), job); err != nil {
+		_ = os.Remove(outPath)
+		_ = h.store.DeleteDocument(r.Context(), doc.ID, userIdStr)
+		_ = h.store.ArchiveSource(r.Context(), source.ID, userIdStr)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to queue PDF ingestion"})
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"source": source, "document": doc, "run": run})
 }
 

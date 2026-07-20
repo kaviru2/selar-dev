@@ -9,6 +9,7 @@ import { AddContentButton } from "@/components/AddContentButton";
 import { SourcesPanel } from "@/components/SourcesPanel";
 import { DeleteDocButton } from "@/components/DeleteDocButton";
 import { ProcessingRefresh } from "@/components/ProcessingRefresh";
+import { RetryIngestionButton } from "@/components/RetryIngestionButton";
 
 export default async function LibraryPage() {
   const token = await getAuthToken();
@@ -99,10 +100,13 @@ export default async function LibraryPage() {
                     <div className="prog" style={{ height: 3, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden", width: 80 }}>
                       <div className="fill" style={{ width: `${(d.progress ?? 0) * 100}%`, height: "100%", background: "var(--accent)" }} />
                     </div>
-                    <span className="mono" style={{ fontSize: 10 }}>{Math.round((d.progress ?? 0) * 100)}%</span>
+                    <span className="mono" style={{ fontSize: 10 }}>{d.ingestion_status === "queued" ? "queued" : `${Math.round((d.progress ?? 0) * 100)}%`}</span>
                   </span>
                 ) : (
-                  <span className="mono" style={{ color: "var(--ink-4)" }}>{d.status}</span>
+                  <span className="document-failed-state" title={d.ingestion_error || "Processing failed"}>
+                    <span className="mono">failed{d.ingestion_error ? ` · ${d.ingestion_error.slice(0, 80)}` : ""}</span>
+                    <RetryIngestionButton documentId={d.id} />
+                  </span>
                 )}
               </span>
               <DeleteDocButton docId={d.id} />

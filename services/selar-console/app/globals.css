@@ -2342,3 +2342,8 @@ body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+.document-failed-state { display: flex; align-items: center; gap: 8px; min-width: 0; color: #c0443a; }
+.document-failed-state > .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.retry-ingestion-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.retry-ingestion { padding: 3px 7px; font-size: 10px; }
+.retry-ingestion-error { color: #c0443a; max-width: 180px; }

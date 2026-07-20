@@ -45,7 +45,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -85,7 +85,7 @@ jobs:
           pip install pytest pytest-cov httpx
 
       - name: Run tests with coverage
-        run: pytest test_main.py --cov=. --cov-report=xml:coverage.xml -v
+        run: pytest test_*.py --cov=. --cov-report=xml:coverage.xml -v
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4

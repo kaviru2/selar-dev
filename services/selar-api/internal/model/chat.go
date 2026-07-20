@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ChatThread groups a user conversation over the personal research library.
 type ChatThread struct {
@@ -13,15 +16,17 @@ type ChatThread struct {
 
 // ChatCitation grounds an assistant message in a stored PDF passage.
 type ChatCitation struct {
-	ID            string  `json:"id,omitempty"`
-	MessageID     string  `json:"message_id,omitempty"`
-	ChunkID       string  `json:"chunk_id"`
-	DocumentID    string  `json:"document_id"`
-	DocumentTitle string  `json:"document_title"`
-	Page          int     `json:"page"`
-	Rank          int     `json:"rank"`
-	Score         float32 `json:"score"`
-	Quote         string  `json:"quote"`
+	ID            string          `json:"id,omitempty"`
+	MessageID     string          `json:"message_id,omitempty"`
+	ChunkID       string          `json:"chunk_id"`
+	DocumentID    string          `json:"document_id"`
+	DocumentTitle string          `json:"document_title"`
+	Page          int             `json:"page"`
+	Rank          int             `json:"rank"`
+	Score         float32         `json:"score"`
+	Quote         string          `json:"quote"`
+	SourceType    string          `json:"source_type"`
+	Locator       json.RawMessage `json:"locator"`
 }
 
 // ChatMessage is an immutable conversation episode.

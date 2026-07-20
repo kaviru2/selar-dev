@@ -1,14 +1,13 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/selar-dev/selar-api/internal/middleware"
@@ -44,7 +43,18 @@ func canonicalizeURL(raw string) (string, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "", fmt.Errorf("only http and https URLs are supported")
 	}
-	parsed.Host = strings.ToLower(parsed.Host)
+	if parsed.User != nil {
+		return "", fmt.Errorf("URLs containing credentials are not supported")
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	port := parsed.Port()
+	if port != "" && !((parsed.Scheme == "http" && port == "80") || (parsed.Scheme == "https" && port == "443")) {
+		host = net.JoinHostPort(host, port)
+	}
+	parsed.Host = host
+	if parsed.Path == "" {
+		parsed.Path = "/"
+	}
 	parsed.Fragment = ""
 	query := parsed.Query()
 	for key := range query {
@@ -156,29 +166,16 @@ func (h *Handler) createIngestionSnapshot(r *http.Request, source *model.Content
 	process.SourceID = source.ID
 	process.RunID = run.ID
 	process.Title = source.Title
-	go triggerWorker(process)
+	job := &model.IngestionJob{
+		RunID: run.ID, SourceID: source.ID, DocumentID: doc.ID, UserID: source.UserID,
+		SourceType: process.SourceType, FilePath: process.FilePath, SourceURL: process.SourceURL,
+		RawText: process.RawText, Title: process.Title,
+	}
+	if err := h.store.CreateIngestionJob(r.Context(), job); err != nil {
+		_ = h.store.DeleteDocument(r.Context(), doc.ID, source.UserID)
+		return nil, nil, err
+	}
 	return doc, run, nil
-}
-
-func triggerWorker(payload workerProcessRequest) {
-	workerURL := os.Getenv("WORKER_URL")
-	if workerURL == "" {
-		workerURL = "http://localhost:8000"
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Post(workerURL+"/process", "application/json", bytes.NewReader(body))
-	if err != nil {
-		fmt.Printf("worker connection failed for %s: %v\n", payload.DocumentID, err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		fmt.Printf("worker rejected %s with status %d\n", payload.DocumentID, resp.StatusCode)
-	}
 }
 
 func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
@@ -216,6 +213,16 @@ func (h *Handler) RefreshSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"source": source, "document": doc, "run": run})
+}
+
+func (h *Handler) RetryDocumentIngestion(w http.ResponseWriter, r *http.Request) {
+	run, job, err := h.store.RetryIngestion(r.Context(), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()))
+	if err != nil {
+		log.Printf("retry ingestion failed for document %s: %v", chi.URLParam(r, "id"), err)
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "document cannot be retried while work is active or no prior ingestion payload exists"})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"run": run, "job": job})
 }
 
 func (h *Handler) ArchiveSource(w http.ResponseWriter, r *http.Request) {

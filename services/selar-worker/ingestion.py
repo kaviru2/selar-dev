@@ -13,7 +13,7 @@ from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 
 import fitz
@@ -72,7 +72,11 @@ def canonicalize_url(raw: str) -> str:
     port = parsed.port
     if port and not ((parsed.scheme == "http" and port == 80) or (parsed.scheme == "https" and port == 443)):
         host = f"{host}:{port}"
-    return urlunparse((parsed.scheme.lower(), host, parsed.path or "/", "", parsed.query, ""))
+    query = urlencode([
+        (key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_") and key.lower() not in {"fbclid", "gclid"}
+    ])
+    return urlunparse((parsed.scheme.lower(), host, parsed.path or "/", "", query, ""))
 
 
 def _is_public_ip(value: str) -> bool:
@@ -325,7 +329,7 @@ async def extract_web(url: str, doc_id: str, word_limit: int) -> NormalizedSourc
         title=title,
         authors=author,
         year=int(year_match.group(0)) if year_match else 0,
-        canonical_url=final_url,
+        canonical_url=canonicalize_url(final_url),
         content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
         mime_type=mime_type,
         metadata={"published_at": date, "site_name": getattr(metadata, "sitename", "") or ""},

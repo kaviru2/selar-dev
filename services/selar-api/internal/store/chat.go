@@ -109,7 +109,7 @@ func (s *Store) ListChatMessages(ctx context.Context, userID, threadID string) (
 func (s *Store) listMessageCitations(ctx context.Context, messageID string) ([]model.ChatCitation, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT mc.id, mc.message_id, mc.chunk_id, c.document_id, d.title, c.page_start,
-		        mc.rank, mc.score, mc.quote
+		        mc.rank, mc.score, mc.quote, d.source_type, c.locator
 		 FROM message_citations mc
 		 JOIN chunks c ON c.id = mc.chunk_id
 		 JOIN documents d ON d.id = c.document_id
@@ -123,7 +123,7 @@ func (s *Store) listMessageCitations(ctx context.Context, messageID string) ([]m
 		var citation model.ChatCitation
 		if err := rows.Scan(&citation.ID, &citation.MessageID, &citation.ChunkID,
 			&citation.DocumentID, &citation.DocumentTitle, &citation.Page, &citation.Rank,
-			&citation.Score, &citation.Quote); err != nil {
+			&citation.Score, &citation.Quote, &citation.SourceType, &citation.Locator); err != nil {
 			return nil, err
 		}
 		citations = append(citations, citation)
@@ -166,6 +166,8 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		saved.DocumentID = citation.DocumentID
 		saved.DocumentTitle = citation.DocumentTitle
 		saved.Page = citation.Page
+		saved.SourceType = citation.SourceType
+		saved.Locator = citation.Locator
 		message.Citations = append(message.Citations, saved)
 	}
 	metrics, err := json.Marshal(map[string]any{

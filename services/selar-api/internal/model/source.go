@@ -37,3 +37,25 @@ type IngestionRun struct {
 	CompletedAt        *time.Time      `json:"completed_at,omitempty"`
 	CreatedAt          time.Time       `json:"created_at"`
 }
+
+type IngestionJob struct {
+	ID             string     `json:"id"`
+	RunID          string     `json:"run_id"`
+	SourceID       string     `json:"source_id"`
+	DocumentID     string     `json:"document_id"`
+	UserID         string     `json:"user_id"`
+	SourceType     string     `json:"source_type"`
+	FilePath       string     `json:"file_path,omitempty"`
+	SourceURL      string     `json:"source_url,omitempty"`
+	RawText        string     `json:"-"`
+	Title          string     `json:"title,omitempty"`
+	Status         string     `json:"status"`
+	Attempts       int        `json:"attempts"`
+	MaxAttempts    int        `json:"max_attempts"`
+	AvailableAt    time.Time  `json:"available_at"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
+	WorkerID       string     `json:"worker_id,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}

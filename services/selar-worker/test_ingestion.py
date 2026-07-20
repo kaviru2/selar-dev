@@ -16,6 +16,10 @@ def test_canonicalize_url_removes_fragment_and_normalizes_host():
     assert canonicalize_url("HTTPS://Example.COM/paper?q=1#results") == "https://example.com/paper?q=1"
 
 
+def test_canonicalize_url_matches_api_rules_for_root_default_port_and_tracking():
+    assert canonicalize_url("https://Example.COM:443?utm_source=test&keep=1") == "https://example.com/?keep=1"
+
+
 @pytest.mark.parametrize("value", ["file:///etc/passwd", "javascript:alert(1)", "http://"])
 def test_canonicalize_url_rejects_unsafe_schemes(value):
     with pytest.raises(UnsafeSourceURL):
