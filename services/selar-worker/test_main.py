@@ -280,6 +280,27 @@ def test_durable_queue_claims_and_completes_committed_job(monkeypatch):
     asyncio.run(exercise_queue())
 
 
+def test_worker_lifespan_does_not_poll_queue_when_disabled(monkeypatch):
+    import asyncio
+    import main
+
+    poller_started = False
+
+    async def unexpected_poller():
+        nonlocal poller_started
+        poller_started = True
+
+    monkeypatch.setattr(main, "INGESTION_QUEUE_ENABLED", False)
+    monkeypatch.setattr(main, "ingestion_queue_poller", unexpected_poller)
+
+    async def exercise_lifespan():
+        async with main.lifespan(main.app):
+            assert main.queue_poller_tasks == []
+
+    asyncio.run(exercise_lifespan())
+    assert poller_started is False
+
+
 def test_reciprocal_rank_fusion_is_deterministic_and_bounded():
     from main import reciprocal_rank_fusion
 

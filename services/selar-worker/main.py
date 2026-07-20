@@ -23,7 +23,14 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 @contextlib.asynccontextmanager
 async def lifespan(_: FastAPI):
     global queue_poller_tasks
-    queue_poller_tasks = [asyncio.create_task(ingestion_queue_poller()) for _ in range(INGESTION_CONCURRENCY)]
+    queue_poller_tasks = []
+    if INGESTION_QUEUE_ENABLED:
+        queue_poller_tasks = [
+            asyncio.create_task(ingestion_queue_poller())
+            for _ in range(INGESTION_CONCURRENCY)
+        ]
+    else:
+        print("Durable ingestion queue polling is disabled (set INGESTION_QUEUE_ENABLED=true to enable it).")
     try:
         yield
     finally:
@@ -48,6 +55,9 @@ EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "3072"))
 TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "models/gemini-3-flash-preview")
 CHUNK_WORD_LIMIT = int(os.getenv("CHUNK_WORD_LIMIT", "120"))
 INGESTION_CONCURRENCY = max(1, int(os.getenv("INGESTION_CONCURRENCY", "1")))
+INGESTION_QUEUE_ENABLED = os.getenv("INGESTION_QUEUE_ENABLED", "false").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 ingestion_semaphore = asyncio.Semaphore(INGESTION_CONCURRENCY)
 INGESTION_POLL_SECONDS = max(0.25, float(os.getenv("INGESTION_POLL_SECONDS", "1")))
 INGESTION_LEASE_SECONDS = max(60, int(os.getenv("INGESTION_LEASE_SECONDS", "300")))

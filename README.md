@@ -194,7 +194,7 @@ This starts Postgres (with pgvector and initialization migrations), the Python w
 
 The Library **Add content** flow accepts a public article/blog URL, pasted text or Markdown, and PDFs. SELAR stores the origin separately from each immutable ingestion snapshot and records extractor/model provenance in an ingestion run. Web sources can be refreshed or archived from **Managed sources**; refreshing creates a new snapshot rather than silently rewriting prior research material.
 
-PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API validates the PDF signature, caps each request, and spills multipart data above 8 MB to temporary disk. Accepted PDF, web, and text work is stored in a PostgreSQL-backed queue before the API responds. Workers claim jobs with expiring leases, renew active leases, retry transient failures up to three times, and recover abandoned work after a restart. The worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`) to keep several large PDFs from multiplying peak memory use.
+PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API validates the PDF signature, caps each request, and spills multipart data above 8 MB to temporary disk. Accepted PDF, web, and text work is stored in a PostgreSQL-backed queue before the API responds. Workers claim jobs with expiring leases, renew active leases, retry transient failures up to three times, and recover abandoned work after a restart. The worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`) to keep several large PDFs from multiplying peak memory use. Queue polling is disabled for ad-hoc local worker processes unless `INGESTION_QUEUE_ENABLED=true`; Docker Compose enables it on the worker service so a stray local `uvicorn` process cannot consume jobs without access to the shared upload volume.
 
 Grounded chat can add a missing concept candidate when a bounded phrase from the question appears directly in cited library evidence. The reducer does not mine generated answers or feedback comments for facts. Candidates preserve message/chunk provenance, create at most three candidate relationships per turn, and can be confirmed or rejected in the Graph workspace.
 
@@ -228,6 +228,7 @@ Copy `.env.example` to `.env.development` (local) or `.env` (Docker) and configu
 |----------|----------|---------|-------------|
 | `GEMINI_API_KEY` | Yes | — | Google AI Studio API key |
 | `GEMINI_MULTIMODAL_EMBEDDING_MODEL` | No | `gemini-embedding-2` | Shared text/image embedding model identifier |
+| `INGESTION_QUEUE_ENABLED` | No | `false` | Enables durable queue polling; Docker Compose sets this to `true` for its shared-volume worker |
 | `INGESTION_CONCURRENCY` | No | `1` | Maximum documents processed simultaneously by each worker process; `1` is safest for large PDFs |
 | `GEMINI_EMBEDDING_DIMENSION` | No | `3072` | Shared pgvector embedding dimension |
 | `GEMINI_TEXT_MODEL` | No | `models/gemini-3-flash-preview` | Text generation model identifier |

@@ -84,6 +84,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MULTIMODAL_EMBEDDING_MODEL: ${GEMINI_MULTIMODAL_EMBEDDING_MODEL:-gemini-embedding-2}
+      INGESTION_QUEUE_ENABLED: "true"
       INGESTION_CONCURRENCY: ${INGESTION_CONCURRENCY:-1}
     volumes:
       - selar_uploads:/tmp/selar_uploads
