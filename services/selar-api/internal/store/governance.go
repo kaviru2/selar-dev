@@ -186,6 +186,31 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 	if !inserted {
 		return feedback, tx.Commit(ctx)
 	}
+	if request.Action == "helpful" {
+		var query string
+		if err = tx.QueryRow(ctx, `
+			SELECT query FROM retrieval_traces
+			WHERE assistant_message_id = $1 AND user_id = $2`, messageID, userID).Scan(&query); err != nil {
+			return nil, err
+		}
+		graphUpdate, reduceErr := reduceChatGraph(ctx, tx, userID, messageID, query)
+		if reduceErr != nil {
+			return nil, reduceErr
+		}
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
+			VALUES ($1, 'chat_graph_reduced', $2,
+			        jsonb_build_object('concepts_created', $3::int, 'concepts_reinforced', $4::int,
+			                           'links_observed', $5::int, 'links_promoted', $6::int,
+			                           'reducer_version', $7::text, 'reviewed', true),
+			        'helpful_feedback', $8)
+			ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, messageID,
+			graphUpdate.ConceptsCreated, graphUpdate.ConceptsReinforced,
+			graphUpdate.LinksObserved, graphUpdate.LinksPromoted, graphUpdate.ReducerVersion,
+			fmt.Sprintf("chat-graph-reduced:%s", messageID)); err != nil {
+			return nil, err
+		}
+	}
 
 	conceptRows, err := tx.Query(ctx, `
 		SELECT DISTINCT concept_id FROM chat_concept_evidence
@@ -247,6 +272,8 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 			threadID, userID, "Correction recorded: "+request.CorrectionText, messageID); err != nil {
 			return nil, err
 		}
+	}
+	if request.Action == "unhelpful" || request.Action == "correction" {
 		edgeRows, err := tx.Query(ctx, `
 			SELECT DISTINCT edge_id FROM adaptive_edge_evidence
 			WHERE message_id = $1 AND active ORDER BY edge_id`, messageID)
@@ -281,12 +308,23 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 				WHERE user_id = $1 AND concept_id = $2`, userID, conceptID); err != nil {
 				return nil, err
 			}
+			if _, err = tx.Exec(ctx, `
+				UPDATE learner_concept_state SET
+					evidence_count = GREATEST(0, evidence_count - 1),
+					state_version = state_version + 1, updated_at = now()
+				WHERE user_id = $1 AND concept_id = $2`, userID, conceptID); err != nil {
+				return nil, err
+			}
+		}
+		reason := "Unhelpful answer retracted chat evidence"
+		if request.Action == "correction" {
+			reason = "User correction superseded chat evidence"
 		}
 		for _, edgeID := range edgeIDs {
 			if _, err = tx.Exec(ctx, `
 				INSERT INTO graph_edge_actions (user_id, edge_id, action, reason, source_message_id)
-				VALUES ($1, $2, 'weakened', 'User correction superseded chat evidence', $3)`,
-				userID, edgeID, messageID); err != nil {
+				VALUES ($1, $2, 'weakened', $3, $4)`,
+				userID, edgeID, reason, messageID); err != nil {
 				return nil, err
 			}
 			if err = recalculateAdaptiveEdge(ctx, tx, edgeID, time.Now().UTC()); err != nil {

@@ -107,6 +107,31 @@ def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: 
     return sorted(fused.values(), key=lambda item: (-item["rrf_score"], item["chunk_id"]))[:limit]
 
 
+def diversify_ranked_candidates(
+    ranked: List[Dict[str, Any]], limit: int = 6, per_document: int = 3,
+) -> List[Dict[str, Any]]:
+    """Prevent one highly redundant document from crowding out primary evidence."""
+    if limit <= 0:
+        return []
+    selected: List[Dict[str, Any]] = []
+    deferred: List[Dict[str, Any]] = []
+    document_counts: Counter = Counter()
+    for candidate in ranked:
+        document_id = str(candidate.get("document_id", ""))
+        if document_counts[document_id] >= per_document:
+            deferred.append(candidate)
+            continue
+        selected.append(candidate)
+        document_counts[document_id] += 1
+        if len(selected) >= limit:
+            return selected
+    for candidate in deferred:
+        selected.append(candidate)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def referenced_citation_ranks(answer: str, maximum: int) -> set[int]:
     """Return only source labels explicitly referenced in the generated answer."""
     return {
@@ -1274,13 +1299,14 @@ async def grounded_chat(req: ChatRequest):
         "learner": serialize(learner_rows),
         "evidence": serialize(evidence_rows),
         "recency": serialize(recency_rows),
-    })
+    }, limit=18)
+    ranked = diversify_ranked_candidates(ranked)
     retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
     if not ranked:
         return {
             "answer": "I could not find evidence for that question in your processed library.",
             "model_version": "deterministic-no-evidence-v1",
-            "ranking_policy": "hybrid-rrf-v1",
+            "ranking_policy": "hybrid-rrf-v2-source-diverse",
             "citations": [],
             "candidates": [],
             "metrics": {
@@ -1318,6 +1344,8 @@ async def grounded_chat(req: ChatRequest):
 
 Answer the question only from the supplied evidence. Cite factual statements using [S1], [S2], and so on. If the evidence is incomplete or conflicting, say so explicitly. Never invent a citation. Keep the answer concise and useful.
 
+Preserve assertion provenance. A paper may report experiments that use or modify another system; do not describe those experiments as work performed by the original system's authors. Distinguish "paper A evaluates system B" from "system B's original paper evaluates on benchmark C." When the question asks what a named paper or system originally did, require evidence from that primary document. If primary evidence is absent, say the claim is not established by the retrieved library evidence rather than inferring it from a later comparison paper.
+
 RECENT CONVERSATION:
 {history_text}
 
@@ -1351,7 +1379,7 @@ EVIDENCE:
     return {
         "answer": answer_text,
         "model_version": TEXT_MODEL,
-        "ranking_policy": "hybrid-rrf-v1",
+        "ranking_policy": "hybrid-rrf-v2-source-diverse",
         "citations": citations,
         "candidates": candidates,
         "metrics": {

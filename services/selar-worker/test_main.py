@@ -320,6 +320,25 @@ def test_reciprocal_rank_fusion_is_deterministic_and_bounded():
     assert set(first[0]["signals"]) == {"vector", "lexical"}
 
 
+def test_diversify_ranked_candidates_preserves_secondary_documents():
+    from main import diversify_ranked_candidates
+
+    ranked = [
+        {"chunk_id": f"a-{index}", "document_id": "paper-a"}
+        for index in range(5)
+    ] + [
+        {"chunk_id": "b-1", "document_id": "paper-b"},
+        {"chunk_id": "b-2", "document_id": "paper-b"},
+    ]
+
+    selected = diversify_ranked_candidates(ranked, limit=6, per_document=3)
+
+    assert len(selected) == 6
+    assert [item["chunk_id"] for item in selected[:3]] == ["a-0", "a-1", "a-2"]
+    assert {item["document_id"] for item in selected} == {"paper-a", "paper-b"}
+    assert sum(item["document_id"] == "paper-b" for item in selected) == 2
+
+
 def test_referenced_citation_ranks_filters_invalid_and_duplicate_labels():
     from main import referenced_citation_ranks
 

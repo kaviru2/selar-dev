@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/selar-dev/selar-api/internal/model"
 )
 
 func TestGroundedConceptExtractionRequiresQuestionAndCitationMatch(t *testing.T) {
@@ -23,25 +24,6 @@ func TestGroundedConceptExtractionRequiresQuestionAndCitationMatch(t *testing.T)
 	}
 	if _, ok := conceptTermFromQuery("Compare several benchmark design tradeoffs"); ok {
 		t.Fatal("open-ended questions must not manufacture a concept candidate")
-	}
-}
-
-func TestGroundedConceptPairsPreferNewCandidateAndAreBounded(t *testing.T) {
-	evidence := []chatConceptEvidence{
-		{conceptID: "realm", chunkID: "chunk-1"},
-		{conceptID: "rac", chunkID: "chunk-2"},
-		{conceptID: "failure", chunkID: "chunk-3"},
-		{conceptID: "agent", chunkID: "chunk-4"},
-		{conceptID: "extra", chunkID: "chunk-5"},
-	}
-	pairs := boundedChatEvidencePairs(evidence, map[string]bool{"realm": true}, 3)
-	if len(pairs) != 3 {
-		t.Fatalf("got %d candidate relationships, want 3", len(pairs))
-	}
-	for _, pair := range pairs {
-		if pair[0].conceptID != "realm" && pair[1].conceptID != "realm" {
-			t.Fatalf("relationship did not include the grounded candidate: %#v", pair)
-		}
 	}
 }
 
@@ -97,6 +79,9 @@ func TestGroundedChatConceptDiscoveryIntegration(t *testing.T) {
 	if update.ConceptsCreated != 1 || update.ConceptsReinforced != 0 {
 		t.Fatalf("unexpected graph update: %#v", update)
 	}
+	if update.LinksObserved != 0 || update.LinksPromoted != 0 {
+		t.Fatalf("reviewed concepts must not manufacture relationships: %#v", update)
+	}
 	var name, state, promptVersion, bindingMethod string
 	if err = tx.QueryRow(ctx, `
 		SELECT c.name, c.state, c.prompt_version, cce.binding_method
@@ -108,6 +93,109 @@ func TestGroundedChatConceptDiscoveryIntegration(t *testing.T) {
 	}
 	if name != "REALM-Bench" || state != "candidate" || promptVersion != "grounded-chat-concept-v1" || bindingMethod != "grounded_query_exact" {
 		t.Fatalf("unexpected grounded concept: %q %q %q %q", name, state, promptVersion, bindingMethod)
+	}
+}
+
+func TestChatGraphWaitsForHelpfulFeedbackIntegration(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	store := New(pool)
+
+	var userID, documentID, chunkID, conceptID, threadID string
+	email := "reviewed-chat-" + time.Now().Format("20060102150405.000000000") + "@example.test"
+	if err = pool.QueryRow(ctx, `INSERT INTO users (email, password_hash) VALUES ($1, 'test') RETURNING id`, email).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if err = pool.QueryRow(ctx, `INSERT INTO documents (user_id, title, status) VALUES ($1, 'Primary paper', 'ready') RETURNING id`, userID).Scan(&documentID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `
+		INSERT INTO chunks (document_id, user_id, chunk_index, content)
+		VALUES ($1, $2, 0, 'RAC is evaluated on tau2-bench by the RAC paper authors.') RETURNING id`,
+		documentID, userID).Scan(&chunkID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `
+		INSERT INTO concepts (user_id, name, state, model_version, prompt_version)
+		VALUES ($1, 'tau2-bench', 'supported', 'test', 'test') RETURNING id`, userID).Scan(&conceptID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `INSERT INTO chunk_concepts (chunk_id, concept_id) VALUES ($1, $2)`, chunkID, conceptID); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `INSERT INTO chat_threads (user_id) VALUES ($1) RETURNING id`, userID).Scan(&threadID); err != nil {
+		t.Fatal(err)
+	}
+	userMessage, err := store.CreateChatMessage(ctx, userID, threadID, "user", "Did the RAC paper use tau2-bench?", "complete", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistantMessage, err := store.SaveChatAnswer(ctx, userID, threadID, userMessage.ID, userMessage.Content, model.ChatAnswer{
+		Answer:        "The RAC paper reports evaluating RAC on tau2-bench [S1].",
+		ModelVersion:  "test-model",
+		RankingPolicy: "test-policy",
+		Citations: []model.ChatCitation{{
+			ChunkID: chunkID, DocumentID: documentID, DocumentTitle: "Primary paper",
+			Page: 1, Rank: 1, Score: 1, Quote: "RAC is evaluated on tau2-bench.", SourceType: "pdf",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assistantMessage.GraphUpdate != nil {
+		t.Fatalf("unreviewed answer mutated graph: %#v", assistantMessage.GraphUpdate)
+	}
+	var updateCount, evidenceCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM chat_graph_updates WHERE message_id = $1`, assistantMessage.ID).Scan(&updateCount); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM chat_concept_evidence WHERE message_id = $1`, assistantMessage.ID).Scan(&evidenceCount); err != nil {
+		t.Fatal(err)
+	}
+	if updateCount != 0 || evidenceCount != 0 {
+		t.Fatalf("unreviewed answer persisted graph evidence: updates=%d evidence=%d", updateCount, evidenceCount)
+	}
+
+	if _, err = store.RecordChatFeedback(ctx, userID, assistantMessage.ID, model.ChatFeedbackRequest{Action: "helpful"}); err != nil {
+		t.Fatal(err)
+	}
+	var bindingMethod string
+	if err = pool.QueryRow(ctx, `
+		SELECT cce.binding_method FROM chat_concept_evidence cce
+		WHERE cce.message_id = $1 AND cce.concept_id = $2 AND cce.active`, assistantMessage.ID, conceptID).Scan(&bindingMethod); err != nil {
+		t.Fatal(err)
+	}
+	if bindingMethod != "explicit_chunk_concept" {
+		t.Fatalf("binding method = %q, want explicit_chunk_concept", bindingMethod)
+	}
+	var edgeCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM concept_edges WHERE user_id = $1 AND created_via = 'deterministic_chat'`, userID).Scan(&edgeCount); err != nil {
+		t.Fatal(err)
+	}
+	if edgeCount != 0 {
+		t.Fatalf("helpful co-citation manufactured %d relationship(s)", edgeCount)
+	}
+	if _, err = store.RecordChatFeedback(ctx, userID, assistantMessage.ID, model.ChatFeedbackRequest{Action: "unhelpful"}); err != nil {
+		t.Fatal(err)
+	}
+	var activeEvidence, learnerEvidence int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM chat_concept_evidence WHERE message_id = $1 AND active`, assistantMessage.ID).Scan(&activeEvidence); err != nil {
+		t.Fatal(err)
+	}
+	if err = pool.QueryRow(ctx, `SELECT evidence_count FROM learner_concept_state WHERE user_id = $1 AND concept_id = $2`, userID, conceptID).Scan(&learnerEvidence); err != nil {
+		t.Fatal(err)
+	}
+	if activeEvidence != 0 || learnerEvidence != 0 {
+		t.Fatalf("unhelpful feedback did not retract reviewed evidence: active=%d learner=%d", activeEvidence, learnerEvidence)
 	}
 }
 

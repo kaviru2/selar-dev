@@ -186,12 +186,6 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		return nil, err
 	}
 
-	graphUpdate, err := reduceChatGraph(ctx, tx, userID, message.ID, query)
-	if err != nil {
-		return nil, err
-	}
-	message.GraphUpdate = graphUpdate
-
 	candidates, err := json.Marshal(answer.Candidates)
 	if err != nil {
 		return nil, err
@@ -203,20 +197,6 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx,
-		`INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
-		 VALUES ($1, 'chat_graph_reduced', $2,
-		         jsonb_build_object('concepts_created', $3::int, 'concepts_reinforced', $4::int,
-		                            'links_observed', $5::int, 'links_promoted', $6::int,
-		                            'reducer_version', $7::text),
-		         'deterministic_reducer', $8)
-		 ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, message.ID,
-		graphUpdate.ConceptsCreated, graphUpdate.ConceptsReinforced, graphUpdate.LinksObserved, graphUpdate.LinksPromoted,
-		graphUpdate.ReducerVersion, fmt.Sprintf("chat-graph-reduced:%s", message.ID))
-	if err != nil {
-		return nil, err
-	}
-
 	_, err = tx.Exec(ctx,
 		`INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
 		 VALUES ($1, 'chat_question', $2, jsonb_build_object('thread_id', $3::text), 'chat', $4),
@@ -441,11 +421,11 @@ func (s *Store) loadChatGraphUpdate(ctx context.Context, messageID string) (*mod
 	return update, err
 }
 
-// reduceChatGraph converts cited, already-grounded passages into bounded graph
-// evidence. It never reads generated answer text and never asks a model to
-// choose nodes or edges.
+// reduceChatGraph applies explicitly reviewed citation evidence to the graph.
+// It is invoked only after helpful feedback, never when an answer is merely
+// generated. It does not infer relationships from concept co-occurrence.
 func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID, query string) (*model.ChatGraphUpdate, error) {
-	const reducerVersion = "chat-graph-reducer-v2"
+	const reducerVersion = "reviewed-chat-evidence-v1"
 	update := &model.ChatGraphUpdate{ReducerVersion: reducerVersion}
 
 	// Serialize reducers per user so concurrent chat answers cannot create the
@@ -470,25 +450,6 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID, query st
 			JOIN chunk_concepts cc ON cc.chunk_id = mc.chunk_id
 			JOIN concepts concept ON concept.id = cc.concept_id AND concept.user_id = $2
 			WHERE mc.message_id = $1 AND concept.state NOT IN ('rejected', 'archived')
-
-			UNION ALL
-
-			SELECT nearest.concept_id, mc.chunk_id, c.document_id, mc.rank, mc.score,
-			       'embedding_fallback'::text, nearest.similarity::real
-			FROM message_citations mc
-			JOIN chunks c ON c.id = mc.chunk_id AND c.user_id = $2
-			CROSS JOIN LATERAL (
-				SELECT concept.id AS concept_id,
-				       1 - (concept.embedding::halfvec(3072) <=> c.embedding::halfvec(3072)) AS similarity
-				FROM concepts concept
-				WHERE concept.user_id = $2 AND concept.embedding IS NOT NULL
-				  AND concept.state NOT IN ('rejected', 'archived')
-				ORDER BY concept.embedding::halfvec(3072) <=> c.embedding::halfvec(3072), concept.id
-				LIMIT 2
-			) nearest
-			WHERE mc.message_id = $1 AND c.embedding IS NOT NULL
-			  AND nearest.similarity >= 0.65
-			  AND NOT EXISTS (SELECT 1 FROM chunk_concepts existing WHERE existing.chunk_id = mc.chunk_id)
 		),
 		ranked AS (
 			SELECT concept_id, chunk_id, document_id, rank, score, binding_method, binding_confidence,
@@ -565,81 +526,6 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID, query st
 		}
 	}
 
-	for _, pair := range boundedChatEvidencePairs(evidence, createdConcepts, 3) {
-		source := pair[0]
-		target := pair[1]
-		if target.conceptID < source.conceptID {
-			source, target = target, source
-		}
-
-		var edgeID, oldState string
-		err := tx.QueryRow(ctx, `
-				SELECT id, state FROM concept_edges
-				WHERE user_id = $1 AND relation = 'related_to'
-				  AND ((source_concept_id = $2 AND target_concept_id = $3)
-				    OR (source_concept_id = $3 AND target_concept_id = $2))
-				  AND state <> 'rejected'
-				ORDER BY created_at LIMIT 1`, userID, source.conceptID, target.conceptID).Scan(&edgeID, &oldState)
-		if err == pgx.ErrNoRows {
-			err = tx.QueryRow(ctx, `
-					INSERT INTO concept_edges (
-						user_id, source_concept_id, target_concept_id, relation,
-						created_via, state, confidence, last_adapted_at,
-						base_confidence, evidence_confidence, observed_at
-					) VALUES ($1, $2, $3, 'related_to', 'deterministic_chat', 'candidate', 0.35, now(), 0, 0.35, now())
-					RETURNING id, state`, userID, source.conceptID, target.conceptID).Scan(&edgeID, &oldState)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		result, err := tx.Exec(ctx, `
-				INSERT INTO adaptive_edge_evidence (
-					edge_id, message_id, source_chunk_id, target_chunk_id,
-					source_document_id, target_document_id
-				) VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (edge_id, message_id) DO NOTHING`, edgeID, messageID,
-			source.chunkID, target.chunkID, source.documentID, target.documentID)
-		if err != nil {
-			return nil, err
-		}
-		if result.RowsAffected() == 0 {
-			continue
-		}
-		update.LinksObserved++
-
-		var messageCount, documentCount int
-		err = tx.QueryRow(ctx, `
-				SELECT count(*)::int,
-				       (SELECT count(DISTINCT document_id)::int FROM (
-				          SELECT source_document_id AS document_id FROM adaptive_edge_evidence WHERE edge_id = $1 AND active
-				          UNION ALL
-				          SELECT target_document_id FROM adaptive_edge_evidence WHERE edge_id = $1 AND active
-				       ) documents)
-				FROM adaptive_edge_evidence WHERE edge_id = $1 AND active`, edgeID).Scan(&messageCount, &documentCount)
-		if err != nil {
-			return nil, err
-		}
-		newState := adaptiveEdgeState(messageCount, documentCount)
-		confidence := adaptiveEdgeConfidence(messageCount, documentCount)
-		var savedState string
-		err = tx.QueryRow(ctx, `
-				UPDATE concept_edges SET
-					support_count = $2, document_count = $3,
-					evidence_confidence = $4,
-					confidence = GREATEST(base_confidence, $4),
-					state = CASE WHEN state IN ('confirmed', 'supported') THEN state ELSE $5 END,
-					last_adapted_at = now(), observed_at = now(), valid_to = NULL
-				WHERE id = $1 RETURNING state`, edgeID, messageCount, documentCount,
-			confidence, newState).Scan(&savedState)
-		if err != nil {
-			return nil, err
-		}
-		if oldState == "candidate" && savedState == "supported" {
-			update.LinksPromoted++
-		}
-	}
-
 	_, err = tx.Exec(ctx, `
 		INSERT INTO chat_graph_updates (
 			message_id, concepts_created, concepts_reinforced, links_observed, links_promoted, reducer_version
@@ -652,41 +538,6 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID, query st
 			reducer_version = EXCLUDED.reducer_version`, messageID, update.ConceptsCreated,
 		update.ConceptsReinforced, update.LinksObserved, update.LinksPromoted, update.ReducerVersion)
 	return update, err
-}
-
-func boundedChatEvidencePairs(evidence []chatConceptEvidence, created map[string]bool, limit int) [][2]chatConceptEvidence {
-	pairs := make([][2]chatConceptEvidence, 0, limit)
-	appendPair := func(source, target chatConceptEvidence) bool {
-		if source.conceptID == target.conceptID || source.chunkID == target.chunkID {
-			return false
-		}
-		pairs = append(pairs, [2]chatConceptEvidence{source, target})
-		return len(pairs) >= limit
-	}
-	if len(created) > 0 {
-		for _, source := range evidence {
-			if !created[source.conceptID] {
-				continue
-			}
-			for _, target := range evidence {
-				if created[target.conceptID] {
-					continue
-				}
-				if appendPair(source, target) {
-					return pairs
-				}
-			}
-		}
-		return pairs
-	}
-	for sourceIndex := 0; sourceIndex < len(evidence); sourceIndex++ {
-		for targetIndex := sourceIndex + 1; targetIndex < len(evidence); targetIndex++ {
-			if appendPair(evidence[sourceIndex], evidence[targetIndex]) {
-				return pairs
-			}
-		}
-	}
-	return pairs
 }
 
 func adaptiveEdgeState(messageCount, documentCount int) string {

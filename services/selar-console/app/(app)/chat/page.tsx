@@ -222,11 +222,10 @@ export default function ChatPage() {
                 <Link className="chat-graph-update" href="/graph">
                   <span className="chat-graph-update-mark">↗</span>
                   <span>
-                    <strong>{message.graph_update.concepts_created > 0 ? "Grounded concept candidate added" : "Existing graph evidence reinforced"}</strong>
+                    <strong>Reviewed graph evidence applied</strong>
                     <small>
-                      {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} new from cited evidence · ` : ""}
-                      {message.graph_update.concepts_reinforced} existing concepts reinforced · {message.graph_update.links_observed} candidate relationships observed
-                      {message.graph_update.links_promoted > 0 ? ` · ${message.graph_update.links_promoted} promoted to supported` : ""}
+                      {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} grounded concept candidate${message.graph_update.concepts_created === 1 ? "" : "s"} · ` : ""}
+                      {message.graph_update.concepts_reinforced} existing concept${message.graph_update.concepts_reinforced === 1 ? "" : "s"} linked to cited passages after helpful feedback
                     </small>
                   </span>
                 </Link>
