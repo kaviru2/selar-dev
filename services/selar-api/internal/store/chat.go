@@ -186,11 +186,10 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 		return nil, err
 	}
 
-	graphUpdate, err := reduceChatGraph(ctx, tx, userID, message.ID, query)
-	if err != nil {
-		return nil, err
-	}
-	message.GraphUpdate = graphUpdate
+	// Answers remain read-only with respect to the source graph. A later,
+	// explicit helpful rating may request a bounded candidate reduction from
+	// the answer's cited evidence; ratings never supply factual graph content.
+	message.GraphUpdate = &model.ChatGraphUpdate{ReducerVersion: "feedback-gated-graph-v1"}
 
 	candidates, err := json.Marshal(answer.Candidates)
 	if err != nil {
@@ -205,14 +204,11 @@ func (s *Store) SaveChatAnswer(ctx context.Context, userID, threadID, userMessag
 	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
-		 VALUES ($1, 'chat_graph_reduced', $2,
-		         jsonb_build_object('concepts_created', $3::int, 'concepts_reinforced', $4::int,
-		                            'links_observed', $5::int, 'links_promoted', $6::int,
-		                            'reducer_version', $7::text),
-		         'deterministic_reducer', $8)
+		 VALUES ($1, 'chat_graph_pending_review', $2,
+		         jsonb_build_object('reducer_version', 'feedback-gated-graph-v1'),
+		         'deterministic_reducer', $3)
 		 ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, message.ID,
-		graphUpdate.ConceptsCreated, graphUpdate.ConceptsReinforced, graphUpdate.LinksObserved, graphUpdate.LinksPromoted,
-		graphUpdate.ReducerVersion, fmt.Sprintf("chat-graph-reduced:%s", message.ID))
+		fmt.Sprintf("chat-graph-pending-review:%s", message.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -253,6 +249,10 @@ type chatConceptEvidence struct {
 	score             float32
 	bindingMethod     string
 	bindingConfidence float32
+}
+
+func feedbackPermitsGraphReduction(action string) bool {
+	return action == "helpful"
 }
 
 var groundedQuestionPatterns = []*regexp.Regexp{

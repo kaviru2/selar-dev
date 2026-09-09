@@ -166,7 +166,7 @@ export default function ChatPage() {
         </div>
         <div className="chat-policy-note">
           <strong>Evidence-first</strong>
-          <span>Cited concepts reinforce the graph. Repeated independent evidence promotes relationships.</span>
+          <span>Only explicit helpful feedback may request candidate graph updates; source facts always require cited evidence.</span>
         </div>
       </aside>
 
@@ -222,7 +222,7 @@ export default function ChatPage() {
                 <Link className="chat-graph-update" href="/graph">
                   <span className="chat-graph-update-mark">↗</span>
                   <span>
-                    <strong>{message.graph_update.concepts_created > 0 ? "Grounded concept candidate added" : "Existing graph evidence reinforced"}</strong>
+                    <strong>{message.graph_update.concepts_created > 0 ? "Feedback-approved grounded candidate added" : "Feedback-approved graph evidence reinforced"}</strong>
                     <small>
                       {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} new from cited evidence · ` : ""}
                       {message.graph_update.concepts_reinforced} existing concepts reinforced · {message.graph_update.links_observed} candidate relationships observed
