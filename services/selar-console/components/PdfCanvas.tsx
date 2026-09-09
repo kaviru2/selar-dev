@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { visibleSuggestionBoxes } from "@/lib/reader-highlights";
 import type { Annotation, LinkSuggestion } from "@/lib/api";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 interface NormalizedBBox {
   x: number;
@@ -134,7 +138,8 @@ export default function PdfCanvas({
 
   const pageAnnotations = annotations.filter((annotation) => annotation.page === pageNumber);
   const selectedSuggestion = suggestions.find((suggestion) => suggestion.id === suggestionMenu?.suggestionId);
-  const renderedSuggestionBoxes = new Set<string>();
+  const suggestionByID = useMemo(() => new Map(suggestions.map((suggestion) => [suggestion.id, suggestion])), [suggestions]);
+  const pageSuggestionBoxes = useMemo(() => visibleSuggestionBoxes(suggestions, pageNumber), [suggestions, pageNumber]);
 
   async function respondToSelectedSuggestion(action: "confirmed" | "rejected") {
     if (!selectedSuggestion || suggestionBusy) return;
@@ -189,45 +194,39 @@ export default function PdfCanvas({
                 ))
               )}
 
-              {suggestionsOn && suggestions.flatMap((suggestion) => {
-                if (suggestion.status === "rejected" || suggestion.src_page !== pageNumber) return [];
-                return parseBBoxes(suggestion.src_bboxes)
-                  .filter((bbox) => bbox.w * bbox.h <= 0.20)
-                  .flatMap((bbox, index) => {
-                  const key = `${suggestion.status}-${bbox.x.toFixed(4)}-${bbox.y.toFixed(4)}-${bbox.w.toFixed(4)}-${bbox.h.toFixed(4)}`;
-                  if (renderedSuggestionBoxes.has(key)) return [];
-                  renderedSuggestionBoxes.add(key);
-                  return (
-                    <div
-                      key={`suggestion-${suggestion.id}-${index}`}
-                      className={`pdf-mark suggestion-mark ${suggestion.status}`}
-                      style={{
-                        left: `${bbox.x * 100}%`,
-                        top: `${bbox.y * 100}%`,
-                        width: `${bbox.w * 100}%`,
-                        height: `${bbox.h * 100}%`,
-                      }}
-                      title={`Connection to ${suggestion.tgt_doc}`}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Suggested ${suggestion.relation.replaceAll("_", " ")} connection to ${suggestion.tgt_doc}, page ${suggestion.tgt_page}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const bounds = containerRef.current?.getBoundingClientRect();
-                        if (!bounds) return;
-                        setSuggestionError("");
-                        setSuggestionMenu({
-                          suggestionId: suggestion.id,
-                          x: Math.min(Math.max(8, event.clientX - bounds.left + 8), Math.max(8, bounds.width - 292)),
-                          y: Math.max(8, event.clientY - bounds.top + 8),
-                        });
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
-                      }}
-                    />
-                  );
-                  });
+              {suggestionsOn && pageSuggestionBoxes.map(({ suggestionID, bbox }, index) => {
+                const suggestion = suggestionByID.get(suggestionID);
+                if (!suggestion) return null;
+                return (
+                  <div
+                    key={`suggestion-${suggestion.id}-${index}`}
+                    className={`pdf-mark suggestion-mark ${suggestion.status}`}
+                    style={{
+                      left: `${bbox.x * 100}%`,
+                      top: `${bbox.y * 100}%`,
+                      width: `${bbox.w * 100}%`,
+                      height: `${bbox.h * 100}%`,
+                    }}
+                    title={`Connection to ${suggestion.tgt_doc}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Suggested ${suggestion.relation.replaceAll("_", " ")} connection to ${suggestion.tgt_doc}, page ${suggestion.tgt_page}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const bounds = containerRef.current?.getBoundingClientRect();
+                      if (!bounds) return;
+                      setSuggestionError("");
+                      setSuggestionMenu({
+                        suggestionId: suggestion.id,
+                        x: Math.min(Math.max(8, event.clientX - bounds.left + 8), Math.max(8, bounds.width - 292)),
+                        y: Math.max(8, event.clientY - bounds.top + 8),
+                      });
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
+                    }}
+                  />
+                );
               })}
             </div>
           )}
