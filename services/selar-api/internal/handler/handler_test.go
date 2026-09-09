@@ -54,6 +54,18 @@ func TestRegisterRejectsInvalidCredentialsBeforePersistence(t *testing.T) {
 	}
 }
 
+func TestStartSessionRequiresDocumentID(t *testing.T) {
+	h := handler.New(nil)
+	req := httptest.NewRequest(http.MethodPost, "/sessions/start", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+
+	h.StartSession(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("StartSession missing document ID: got status %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestLoginInvalidJSON(t *testing.T) {
 	h := handler.New(nil)
 
