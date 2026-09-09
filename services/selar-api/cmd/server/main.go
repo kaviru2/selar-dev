@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,12 +25,18 @@ import (
 	"github.com/selar-dev/selar-api/internal/store"
 )
 
+const developmentJWTSecret = "dev-secret-change-in-production"
+
 func main() {
 	loadEnv()
 	port := getEnv("PORT", "8080")
-	dbURL := getEnv("DATABASE_URL", "postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable")
-	jwtSecret := getEnv("JWT_SECRET", "dev-secret-change-in-production")
+	appEnv := getEnv("APP_ENV", "development")
+	dbURL := getEnv("DATABASE_URL", "postgres://selar:***@localhost:5432/selar?sslmode=disable")
+	jwtSecret := getEnv("JWT_SECRET", developmentJWTSecret)
 	corsOrigin := getEnv("CORS_ORIGIN", "http://localhost:3000")
+	if err := validateRuntimeConfig(appEnv, jwtSecret); err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -164,6 +171,13 @@ func main() {
 		log.Fatalf("server error: %v", err)
 	}
 	fmt.Println("server stopped")
+}
+
+func validateRuntimeConfig(appEnv, jwtSecret string) error {
+	if strings.EqualFold(strings.TrimSpace(appEnv), "production") && jwtSecret == developmentJWTSecret {
+		return errors.New("JWT_SECRET must be replaced before running SELAR in production")
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {
