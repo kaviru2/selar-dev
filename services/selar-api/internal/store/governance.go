@@ -236,6 +236,37 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 		}
 	}
 
+	if feedbackPermitsGraphReduction(request.Action) {
+		var query string
+		err = tx.QueryRow(ctx, `
+			SELECT query FROM retrieval_traces
+			WHERE user_id = $1 AND assistant_message_id = $2
+			ORDER BY created_at LIMIT 1`, userID, messageID).Scan(&query)
+		if err != nil && err != pgx.ErrNoRows {
+			return nil, err
+		}
+		if err == nil {
+			graphUpdate, reduceErr := reduceChatGraph(ctx, tx, userID, messageID, query)
+			if reduceErr != nil {
+				return nil, reduceErr
+			}
+			_, err = tx.Exec(ctx, `
+				INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
+				VALUES ($1, 'chat_graph_reduced', $2,
+				        jsonb_build_object('feedback_id', $3::text, 'concepts_created', $4::int,
+				        'concepts_reinforced', $5::int, 'links_observed', $6::int,
+				        'links_promoted', $7::int, 'reducer_version', $8::text),
+				        'feedback_gated_reducer', $9)
+				ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, messageID, feedback.ID,
+				graphUpdate.ConceptsCreated, graphUpdate.ConceptsReinforced, graphUpdate.LinksObserved,
+				graphUpdate.LinksPromoted, graphUpdate.ReducerVersion,
+				fmt.Sprintf("chat-graph-reduced:%s", messageID))
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if request.Action == "correction" {
 		if _, err = tx.Exec(ctx, `UPDATE chat_messages SET status = 'superseded' WHERE id = $1`, messageID); err != nil {
 			return nil, err

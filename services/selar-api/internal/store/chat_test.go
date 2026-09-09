@@ -9,6 +9,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+func TestOnlyExplicitHelpfulFeedbackPermitsGraphReduction(t *testing.T) {
+	for _, action := range []string{"", "unhelpful", "correction", "comment", "helpful "} {
+		if feedbackPermitsGraphReduction(action) {
+			t.Fatalf("%q must not permit a source-graph reduction", action)
+		}
+	}
+	if !feedbackPermitsGraphReduction("helpful") {
+		t.Fatal("explicit helpful feedback must permit a candidate graph reduction")
+	}
+}
+
 func TestGroundedConceptExtractionRequiresQuestionAndCitationMatch(t *testing.T) {
 	term, ok := conceptTermFromQuery("What is realmbench?")
 	if !ok || term != "realmbench" {
