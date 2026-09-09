@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -60,8 +61,9 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.Email == "" || req.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email and password required"})
+	req.Email = strings.TrimSpace(req.Email)
+	if req.Email == "" || len(req.Password) < 8 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email and a password of at least 8 characters are required"})
 		return
 	}
 
