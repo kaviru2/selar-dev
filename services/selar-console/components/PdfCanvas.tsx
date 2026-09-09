@@ -43,6 +43,7 @@ interface PdfCanvasProps {
     comment?: string
   ) => void;
   onPageLoad: (numPages: number) => void;
+  onScrollDepth?: (depth: number) => void;
   onRespondSuggestion: (id: string, action: "confirmed" | "rejected") => Promise<boolean>;
   onOpenSuggestionTarget: (suggestion: LinkSuggestion) => void;
 }
@@ -71,6 +72,7 @@ export default function PdfCanvas({
   annotations = [],
   onCreateAnnotation,
   onPageLoad,
+  onScrollDepth,
   onRespondSuggestion,
   onOpenSuggestionTarget,
 }: PdfCanvasProps) {
@@ -145,7 +147,15 @@ export default function PdfCanvas({
   }
 
   return (
-    <div ref={containerRef} className="pdf-canvas-shell">
+    <div
+      ref={containerRef}
+      className="pdf-canvas-shell"
+      onScroll={(event) => {
+        const target = event.currentTarget;
+        const scrollable = target.scrollHeight - target.clientHeight;
+        onScrollDepth?.(scrollable > 0 ? (target.scrollTop / scrollable) * 100 : 0);
+      }}
+    >
       <Document
         file={`/api/documents/${docId}/pdf`}
         onLoadSuccess={({ numPages }) => onPageLoad(numPages)}
