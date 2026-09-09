@@ -72,7 +72,7 @@ export default function RegisterPage() {
         Create your account
       </h1>
       <p style={{ color: "var(--ink-3)", fontSize: "var(--t-md)", marginBottom: 24 }}>
-        Join the SELAR study. Your cohort will be assigned automatically.
+        Create an account to add material and test evidence-backed reading connections.
       </p>
 
       {error && (
@@ -181,7 +181,7 @@ export default function RegisterPage() {
         marginTop: 32, paddingTop: 16, borderTop: "1px solid var(--rule)",
         textAlign: "center", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-4)",
       }}>
-        By registering you consent to participate in UCSC Ethics Protocol SELAR-2026-04
+        Prototype access · do not upload sensitive or confidential material
       </div>
     </div>
   );

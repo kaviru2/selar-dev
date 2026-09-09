@@ -62,33 +62,17 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Study */}
+        {/* Prototype status */}
         <div className="settings-group">
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--ink-4)", textTransform: "uppercase", marginBottom: 6 }}>
-            Study
+            Prototype status
           </div>
           <div className="settings-row">
             <div className="k">
-              Cohort<span className="sub">assigned at random</span>
+              Initial tester access<span className="sub">No study cohort or assessment is active in this build.</span>
             </div>
             <div className="v" style={{ fontSize: "var(--t-md)", color: "var(--ink-2)" }}>
-              <div className="toggle">
-                {/* Cohort cannot be changed by the user in production, mapped visually for debug */}
-                <button className={user?.cohort === "treatment_hitl" ? "on" : ""} disabled>HITL</button>
-                <button className={user?.cohort === "treatment_auto" ? "on" : ""} disabled>Auto</button>
-                <button className={user?.cohort === "control" ? "on" : ""} disabled>Control</button>
-              </div>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="k">
-              Study progress<span className="sub">days remaining</span>
-            </div>
-            <div className="v" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: "var(--t-md)", color: "var(--ink-2)" }}>
-              <div style={{ width: 180, height: 6, background: "var(--bg-3)", borderRadius: 3 }}>
-                <div style={{ width: "0%", height: "100%", background: "var(--accent)", borderRadius: 3 }} />
-              </div>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>day 0 / 14 · waiting for first reading session</span>
+              Evidence-backed link testing
             </div>
           </div>
         </div>
@@ -159,20 +143,20 @@ export default function SettingsPage() {
           <div className="settings-row">
             <div className="k">
               Export my data
-              <span className="sub">JSON of all annotations, confirmations, quiz responses</span>
+              <span className="sub">Not available in this prototype; do not use it for data you may need to export.</span>
             </div>
             <div className="v" style={{ fontSize: "var(--t-md)", color: "var(--ink-2)" }}>
-              <button className="btn">Download .json</button>
+              <button className="btn" disabled>Unavailable</button>
             </div>
           </div>
           <div className="settings-row">
             <div className="k">
-              Withdraw from study
-              <span className="sub">Irreversible · deletes all link and quiz data</span>
+              Remove account data
+              <span className="sub">Not available in this prototype; contact the research team before adding data you may need removed.</span>
             </div>
             <div className="v" style={{ fontSize: "var(--t-md)", color: "var(--ink-2)" }}>
-              <button className="btn" style={{ color: "#c0443a", borderColor: "#c0443a55" }}>
-                Withdraw
+              <button className="btn" disabled style={{ color: "#c0443a", borderColor: "#c0443a55" }}>
+                Unavailable
               </button>
             </div>
           </div>
