@@ -41,6 +41,7 @@ func TestRegisterRejectsInvalidCredentialsBeforePersistence(t *testing.T) {
 		`{}`,
 		`{"email":"a@b.com"}`,
 		`{"email":"   ","password":"eightchars"}`,
+		`{"email":"not-an-email","password":"eightchars"}`,
 		`{"email":"a@b.com","password":"short"}`,
 		`not json`,
 	} {
