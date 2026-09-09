@@ -174,7 +174,7 @@ function LoginForm() {
         fontSize: 10,
         color: "var(--ink-4)",
       }}>
-        UCSC Ethics Protocol SELAR-2026-04
+        Prototype access · use non-sensitive material for testing
       </div>
     </div>
   );

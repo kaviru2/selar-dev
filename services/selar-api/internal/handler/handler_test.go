@@ -34,34 +34,23 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestRegisterMissingFields(t *testing.T) {
+func TestRegisterRejectsInvalidCredentialsBeforePersistence(t *testing.T) {
 	h := handler.New(nil)
 
-	// Empty body
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{}`))
-	w := httptest.NewRecorder()
-	h.Register(w, req)
+	for _, body := range []string{
+		`{}`,
+		`{"email":"a@b.com"}`,
+		`{"email":"   ","password":"eightchars"}`,
+		`{"email":"a@b.com","password":"short"}`,
+		`not json`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		h.Register(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Register empty: got status %d, want %d", w.Code, http.StatusBadRequest)
-	}
-
-	// Missing password
-	req = httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"email":"a@b.com"}`))
-	w = httptest.NewRecorder()
-	h.Register(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Register no password: got status %d, want %d", w.Code, http.StatusBadRequest)
-	}
-
-	// Invalid JSON
-	req = httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`not json`))
-	w = httptest.NewRecorder()
-	h.Register(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Register invalid JSON: got status %d, want %d", w.Code, http.StatusBadRequest)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Register invalid request %s: got status %d, want %d", body, w.Code, http.StatusBadRequest)
+		}
 	}
 }
 
