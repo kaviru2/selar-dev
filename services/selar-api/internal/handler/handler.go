@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -524,6 +525,12 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.UserID = userID
+	sess.DocumentID = strings.TrimSpace(sess.DocumentID)
+	if sess.DocumentID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "document_id required"})
+		return
+	}
+	sess.StartedAt = time.Now()
 	if err := h.store.CreateReadingSession(r.Context(), &sess); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create session"})
 		return

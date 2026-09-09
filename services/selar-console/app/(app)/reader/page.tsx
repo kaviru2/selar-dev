@@ -2,10 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
+import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
 import {
   clientFetch,
   type Annotation,
@@ -68,6 +69,7 @@ export default function ReaderPage() {
     const requestedPage = Number(searchParams.get("page") || "1");
     return Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
   });
+  const telemetryRef = useRef<ReaderTelemetry | null>(null);
 
   useEffect(() => {
     if (!docId) return;
@@ -95,6 +97,48 @@ export default function ReaderPage() {
       cancelled = true;
     };
   }, [docId]);
+
+  useEffect(() => {
+    if (!docId || documentContent?.document.status !== "ready") return;
+
+    const telemetry = createReaderTelemetry();
+    telemetryRef.current = telemetry;
+    let closed = false;
+    let sessionID = "";
+
+    const endSession = (id: string) => {
+      void clientFetch(`/api/sessions/${id}/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(telemetry.sessionSummary()),
+      }).catch(() => undefined);
+    };
+
+    void clientFetch<{ id: string }>("/api/sessions/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document_id: docId }),
+    }).then((session) => {
+      sessionID = session.id;
+      if (closed) endSession(sessionID);
+    }).catch(() => undefined);
+
+    return () => {
+      closed = true;
+      if (sessionID) endSession(sessionID);
+      if (telemetryRef.current === telemetry) telemetryRef.current = null;
+    };
+  }, [docId, documentContent?.document.status]);
+
+  useEffect(() => {
+    telemetryRef.current?.visitPage(pageNumber);
+  }, [pageNumber]);
+
+  useEffect(() => {
+    for (const suggestion of suggestions) {
+      if (suggestion.status === "pending") telemetryRef.current?.showSuggestion(suggestion.id);
+    }
+  }, [suggestions]);
 
   const openDocument = useCallback((id: string, page = 1) => {
     setLoading(true);
@@ -163,7 +207,7 @@ export default function ReaderPage() {
       await clientFetch(`/api/suggestions/${id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, time_to_respond_ms: 1500 }),
+        body: JSON.stringify({ action, time_to_respond_ms: telemetryRef.current?.responseTime(id) || 0 }),
       });
       const persisted = await clientFetch<LinkSuggestion[]>(`/api/documents/${docId}/suggestions?page=0`);
       setSuggestions(persisted);
@@ -245,6 +289,7 @@ export default function ReaderPage() {
               annotations={annotations}
               onCreateAnnotation={createAnnotation}
               onPageLoad={setNumPages}
+              onScrollDepth={(depth) => telemetryRef.current?.recordScrollDepth(depth)}
               onRespondSuggestion={respondToPassage}
               onOpenSuggestionTarget={(suggestion) => {
                 if (suggestion.tgt_document_id) openDocument(suggestion.tgt_document_id, suggestion.tgt_page);
