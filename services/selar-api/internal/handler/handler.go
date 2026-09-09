@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -63,8 +64,9 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
-	if req.Email == "" || len(req.Password) < 8 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email and a password of at least 8 characters are required"})
+	parsedEmail, emailErr := mail.ParseAddress(req.Email)
+	if req.Email == "" || emailErr != nil || parsedEmail.Address != req.Email || len(req.Password) < 8 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a valid email and a password of at least 8 characters are required"})
 		return
 	}
 
