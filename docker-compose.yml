@@ -78,8 +78,8 @@ services:
       context: ./services/selar-worker
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "${WORKER_PORT:-8000}:8000"
+    expose:
+      - "8000"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
