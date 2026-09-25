@@ -22,7 +22,7 @@ func TestGroundedReviewQuarantinesLegacyMentalConceptEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	edge := q(`INSERT INTO concept_edges(user_id,source_concept_id,target_concept_id,relation,created_via,state) VALUES ($1,$2,$3,'related_to','user_confirmed','confirmed') RETURNING id`, owner, a, b)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO learning_events(user_id,event_type,mental_link_id,concept_edge_id,idempotency_key) VALUES ($1,'mental_link_graph_confirmed',$2,$3,'legacy:'||$3::text)`, owner, id, edge); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO learning_events(user_id,event_type,mental_link_id,concept_edge_id,idempotency_key) VALUES ($1,'mental_link_graph_confirmed',$2,$3,'legacy:'||($3::uuid)::text)`, owner, id, edge); err != nil {
 		t.Fatal(err)
 	}
 	edges, err := s.ListConceptEdges(ctx, owner)

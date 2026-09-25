@@ -179,7 +179,7 @@ export default function ReaderPage() {
     ? mentalLinks.filter((item) => item.status === "candidate").length
     : suggestions.filter((item) => item.status === "pending").length;
   const confirmedCount = panelMode === "argument"
-    ? mentalLinks.filter((item) => item.status === "confirmed").length
+    ? mentalLinks.filter((item) => item.status === "confirmed" || item.status === "relabeled").length
     : suggestions.filter((item) => item.status === "confirmed").length;
   const visibleSuggestions = suggestions.filter((item) => item.status !== "rejected");
   const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === pageNumber).length;
