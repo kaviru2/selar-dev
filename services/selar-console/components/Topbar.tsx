@@ -1,6 +1,6 @@
 // Topbar.tsx — SELAR top navigation bar.
-// Reads user state from SelarProvider context. Shows real initials
-// and cohort assignment instead of hardcoded values.
+// Reads user state from SelarProvider context. Study assignment and
+// unfinished assessments are deliberately absent from prototype navigation.
 
 "use client";
 
@@ -13,23 +13,13 @@ const NAV_ITEMS = [
   { key: "reader", label: "Reader", href: "/reader" },
   { key: "chat", label: "Chat", href: "/chat" },
   { key: "graph", label: "Graph", href: "/graph" },
-  { key: "quiz", label: "Quiz", href: "/quiz" },
   { key: "settings", label: "Settings", href: "/settings" },
 ] as const;
-
-const COHORT_CONFIG = {
-  control: { label: "Control", color: "#9a938a" },
-  treatment_auto: { label: "Auto-link", color: "#7a8c5c" },
-  treatment_hitl: { label: "HITL", color: "#c96442" },
-} as const;
 
 export function Topbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useSelar();
-
-  const cohort = user?.cohort ?? "treatment_hitl";
-  const cohortInfo = COHORT_CONFIG[cohort];
 
   // Get initials from email
   const initials = user?.email
@@ -73,17 +63,6 @@ export function Topbar() {
           navigate ·{" "}
           <span className="kbd">Y</span>
           confirm
-        </span>
-
-        <span
-          className="cohort-chip"
-          style={{ borderColor: cohortInfo.color + "66" }}
-        >
-          <span
-            className="dot"
-            style={{ background: cohortInfo.color }}
-          />
-          {cohortInfo.label}
         </span>
 
         <button
