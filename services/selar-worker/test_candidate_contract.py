@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import uuid
 import pytest
 
 from candidate_contract import grounded_overlap, persist_grounded_overlap
@@ -26,6 +27,24 @@ def test_exact_two_sided_owner_matched_overlap_keeps_a_candidate():
     assert link["source_evidence"]["asserted_concept"] == "gradient descent optimization"
     assert link["target_evidence"]["asserting_source_id"] == "prior"
     assert link["source_evidence"]["locator"] == {"page": 2}
+
+
+def test_asyncpg_uuid_rows_match_string_job_document_id_without_weakening_owner_check():
+    """Queue jobs carry string IDs; asyncpg fetchrows carry UUID instances."""
+    owner, intruder = uuid.uuid4(), uuid.uuid4()
+    new_doc, prior_doc = uuid.uuid4(), uuid.uuid4()
+    source = row(new_doc, owner, uuid.uuid4(), NEW["content"])
+    target = row(prior_doc, owner, uuid.uuid4(), PRIOR["content"])
+    # The current job doc ID is a string, the prior model/doc and row IDs are UUIDs.
+    link = grounded_overlap(CONCEPT, source, target, owner, str(new_doc), prior_doc)
+    assert link is not None
+    assert link["source_evidence"]["asserting_source_id"] == str(new_doc)
+    assert link["target_evidence"]["asserting_source_id"] == str(prior_doc)
+    assert link["source_evidence"]["chunk_id"] == str(source["id"])
+    assert grounded_overlap(CONCEPT, source, {**target, "user_id": intruder},
+                            owner, str(new_doc), prior_doc) is None
+    assert grounded_overlap(CONCEPT, source, target,
+                            owner, str(prior_doc), new_doc) is None
 
 
 def test_json_locator_from_asyncpg_is_preserved():

@@ -7,12 +7,19 @@ other directed relationship types need a separate assertion verifier.
 import hashlib
 import json
 import re
+from uuid import UUID
 
 from offline_evidence import _evidence
 
 
+def _same_identity(left, right):
+    """Compare queue string IDs with asyncpg UUIDs, never unrelated values."""
+    return (isinstance(left, (str, UUID)) and isinstance(right, (str, UUID))
+            and bool(str(left)) and bool(str(right)) and str(left) == str(right))
+
+
 def grounded_overlap(model, source, target, owner, source_doc, target_doc):
-    if source_doc == target_doc:
+    if _same_identity(source_doc, target_doc):
         return None
     source, target = dict(source), dict(target)
     for row, expected in ((source, source_doc), (target, target_doc)):
@@ -22,7 +29,8 @@ def grounded_overlap(model, source, target, owner, source_doc, target_doc):
                 locator = json.loads(locator)
             except ValueError:
                 return None
-        if (row.get("user_id") != owner or row.get("document_id") != expected
+        if (not _same_identity(row.get("user_id"), owner)
+                or not _same_identity(row.get("document_id"), expected)
                 or not row.get("id") or not row.get("content")
                 or not isinstance(locator, dict) or not locator
                 or not row.get("content_hash")):
