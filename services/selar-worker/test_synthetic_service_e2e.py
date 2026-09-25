@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import time
 import uuid
 
@@ -82,18 +83,25 @@ def services():
     if not all((db, binary, console)):
         pytest.fail("real synthetic E2E requires TEST_DATABASE_URL, TEST_API_BINARY, TEST_CONSOLE_DIR")
     assert "selar_e2e" in db, "only use the isolated CI database"
-    api_port, next_port = _port(), _port()
-    api = subprocess.Popen([binary], env={**os.environ, "DATABASE_URL": db,
-        "PORT": str(api_port), "JWT_SECRET": "ci-synthetic-jwt-not-production", "APP_ENV": "development"})
+    api_port, next_port, worker_port = _port(), _port(), _port()
+    worker = subprocess.Popen([sys.executable, "-m", "uvicorn", "synthetic_chat_worker:app",
+        "--host", "127.0.0.1", "--port", str(worker_port)],
+        cwd=Path(__file__).parent, env={**os.environ, "DATABASE_URL": db,
+                                      "INGESTION_QUEUE_ENABLED": "false"})
+    api = None
     next_server = None
     try:
+        _ready(f"http://127.0.0.1:{worker_port}/health", worker)
+        api = subprocess.Popen([binary], env={**os.environ, "DATABASE_URL": db,
+            "PORT": str(api_port), "WORKER_URL": f"http://127.0.0.1:{worker_port}",
+            "JWT_SECRET": "ci-synthetic-jwt-not-production", "APP_ENV": "development"})
         _ready(f"http://127.0.0.1:{api_port}/healthz", api)
         next_server = subprocess.Popen(["pnpm", "start", "-p", str(next_port)], cwd=console,
             env={**os.environ, "API_INTERNAL_URL": f"http://127.0.0.1:{api_port}"})
         _ready(f"http://127.0.0.1:{next_port}/login", next_server)
         yield f"http://127.0.0.1:{api_port}", f"http://127.0.0.1:{next_port}"
     finally:
-        for process in (next_server, api):
+        for process in (next_server, api, worker):
             if process:
                 process.terminate()
                 try:
