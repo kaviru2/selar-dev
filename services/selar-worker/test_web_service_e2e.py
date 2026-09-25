@@ -5,6 +5,7 @@ import json
 import os
 import uuid
 from io import BytesIO
+from pathlib import Path
 
 import asyncpg
 
@@ -98,6 +99,13 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
     monkeypatch.setattr(main, "embed_text_documents", lambda texts, title="": [
         [1.0] + [0.0] * 3071 for _ in texts])
 
+    def embed_fabricated_image(asset):
+        assert asset["mime_type"] == "image/png"
+        assert Path(asset["storage_path"]).read_bytes() == image
+        return [0.0, 1.0] + [0.0] * 3070
+
+    monkeypatch.setattr(main, "embed_visual_asset", embed_fabricated_image)
+
     class Models:
         def generate_content(self, **_):
             return type("Result", (), {"text": json.dumps({
@@ -155,16 +163,19 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
             finally:
                 await conn.close()
         chunks = asyncio.run(persisted())
-        assert len(chunks) == 1 and chunks[0]["content"] == ARTICLE_TEXT
-        locator = json.loads(chunks[0]["locator"])
+        article_chunks = [chunk for chunk in chunks if chunk["content"] == ARTICLE_TEXT]
+        assert len(article_chunks) == 1, chunks
+        article_chunk = article_chunks[0]
+        locator = json.loads(article_chunk["locator"])
         assert locator == {"kind": "block", "block_index": 1,
                            "heading": "Fabricated orchard article", "word_start": 0,
                            "word_end": len(ARTICLE_TEXT.split())}
+        assert any(chunk["content"] == "Invented orchard diagram" for chunk in chunks)
         links = _request(client, "GET", f"{api}/api/mental-model-links?document_id={web}", owner)
         link = next(item for item in links if item["source_document_id"] == web)
         assert link["status"] == "candidate" and link["link_type"] == "concept_overlap"
         assert link["target_document_id"] == prior
-        assert link["source_evidence_chunk_id"] == str(chunks[0]["id"])
+        assert link["source_evidence_chunk_id"] == str(article_chunk["id"])
         assert link["source_quote"] == ARTICLE_TEXT and link["source_locator"] == locator
         async def stored_witness():
             conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
