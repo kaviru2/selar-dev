@@ -78,15 +78,15 @@ async def _local_fixture(monkeypatch, *, redirect=False, robots=False, proxy=Fal
 
 def test_rebound_initial_sends_zero_get_bytes_to_loopback(monkeypatch):
     received, attempts, lookups = asyncio.run(_local_fixture(monkeypatch))
+    assert received == [], f"loopback fixture received HTTP GET: {received!r}"
     assert lookups == ["rebound.invalid"]
-    assert received == []
     assert attempts == [("8.8.8.8", 80)]
 
 
 def test_rebound_redirect_sends_zero_get_bytes_to_redirect_target(monkeypatch):
     received, attempts, lookups = asyncio.run(_local_fixture(monkeypatch, redirect=True))
+    assert len(received) == 1, f"unexpected GET to rebound target: {received!r}"
     assert lookups == ["start.invalid", "rebound.invalid"]
-    assert len(received) == 1
     assert received[0].startswith(b"GET /article HTTP/1.1\r\nHost: start.invalid\r\n")
     assert attempts == [("8.8.8.8", 80), ("8.8.8.8", 80)]
 
