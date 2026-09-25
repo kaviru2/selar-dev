@@ -69,6 +69,8 @@ def canonicalize_url(raw: str) -> str:
     if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         raise UnsafeSourceURL("only public http and https URLs are supported")
     host = parsed.hostname.lower().rstrip(".")
+    if ":" in host:
+        host = f"[{host}]"
     port = parsed.port
     if port and not ((parsed.scheme == "http" and port == 80) or (parsed.scheme == "https" and port == 443)):
         host = f"{host}:{port}"
@@ -87,7 +89,7 @@ def _is_public_ip(value: str) -> bool:
     )
 
 
-async def validate_public_url(raw: str) -> str:
+async def _resolve_public_url(raw: str) -> tuple[str, str]:
     canonical = canonicalize_url(raw)
     parsed = urlparse(canonical)
     try:
@@ -95,10 +97,31 @@ async def validate_public_url(raw: str) -> str:
         records = await asyncio.to_thread(socket.getaddrinfo, parsed.hostname, parsed.port or default_port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise UnsafeSourceURL("source host could not be resolved") from exc
-    addresses = {record[4][0] for record in records}
+    addresses = {str(record[4][0]) for record in records}
     if not addresses or any(not _is_public_ip(address) for address in addresses):
         raise UnsafeSourceURL("source resolves to a blocked network address")
+    # All records must be public; connect only to one of these validated IPs.
+    return canonical, sorted(addresses)[0]
+
+
+async def validate_public_url(raw: str) -> str:
+    canonical, _ = await _resolve_public_url(raw)
     return canonical
+
+
+class _PinnedPublicTransport(httpx.AsyncHTTPTransport):
+    """Connect to the validated IP without changing HTTP authority or TLS identity."""
+
+    def __init__(self, address: str):
+        super().__init__(trust_env=False)
+        self.address = address
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        original_url = request.url
+        request.headers["Host"] = original_url.netloc.decode("ascii")
+        request.extensions["sni_hostname"] = original_url.raw_host.decode("ascii")
+        request.url = original_url.copy_with(host=self.address)
+        return await super().handle_async_request(request)
 
 
 async def fetch_public_url(
@@ -107,16 +130,19 @@ async def fetch_public_url(
     max_bytes: int = MAX_SOURCE_BYTES,
     allowed_content_types: tuple[str, ...] = ("text/html", "text/plain", "application/xhtml+xml"),
 ) -> tuple[bytes, str, str]:
-    current = await validate_public_url(raw)
+    current, address = await _resolve_public_url(raw)
     timeout = httpx.Timeout(20.0, connect=8.0)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers={"User-Agent": USER_AGENT}) as client:
-        for _ in range(MAX_REDIRECTS + 1):
+    for _ in range(MAX_REDIRECTS + 1):
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False, trust_env=False,
+            transport=_PinnedPublicTransport(address), headers={"User-Agent": USER_AGENT},
+        ) as client:
             async with client.stream("GET", current) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
                     location = response.headers.get("location")
                     if not location:
                         raise ValueError("redirect response did not include a location")
-                    current = await validate_public_url(urljoin(current, location))
+                    current, address = await _resolve_public_url(urljoin(current, location))
                     continue
                 response.raise_for_status()
                 network_stream = response.extensions.get("network_stream")
