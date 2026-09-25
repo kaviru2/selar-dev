@@ -1,6 +1,6 @@
 # SELAR evidence → working-app mission state
 
-Updated: 2026-09-25 (+05:30). Current status: **synthetic text/PDF→review→graph service/browser paths verified in CI; not a participant-ready study or deployed live stack**.
+Updated: 2026-09-26 (+05:30). Current status: **synthetic text/PDF→review→graph service/browser paths verified in CI; not a participant-ready study or deployed live stack**.
 
 ## Goal and stop condition
 
@@ -11,6 +11,7 @@ Deliver more than a requirements audit: versioned survey analysis where authoriz
 - Starting main: `99f217f53059dca3c7a136d9d23123e640f784de`; issues #9/#11/#14 open. Canonical Doc `1-MCai2wAhpRfy_R0O0TNggdo5NuYaPrthL-UgR6OlUs` read via authorized Docs API; it calls for suggested cross-document links confirmed by the learner.
 - Form ID `19DrwsofX9ck0rxNHfpMxpW25JGVSzjxgXlusVQx0T-U`: public respondent-view question snapshot saved locally with SHA-256 `0a94942ed41f9bf52dba02a0419ae7007973dd6d0642fa50125933ed4af29e3e`; 33 question items plus four section headings. Read-only public-page recheck at 2026-09-25 23:32 (+05:30) found the entire public load-data array identical to that snapshot; this does not expose response rows. Drive modified timestamp `2026-09-17T15:35:29.925Z`. No response-row access or current count verified.
 - Forms API: HTTP 403, API disabled in OAuth project. Drive search found no uniquely identified linked response Sheet. Read-only browser editor recheck redirected `/edit` to `/viewform?edit_requested=true` and displayed a Sinhala "request edit access" control; it was not clicked. Authenticated Chrome foreground input required consent and timed out; do not retry it or use an equivalent bypass. The public questions can be analyzed, but actual respondent findings **cannot** yet be claimed.
+- Fresh read-only recheck on **2026-09-26 (+05:30)**: the public `FB_PUBLIC_LOAD_DATA_` array was exactly equal to the saved 2026-09-25 array (all 20 top-level entries; the previously counted 33 question items/four headings remain unchanged). Opening the authenticated `/edit` route redirected again to `/viewform?edit_requested=true` with a Sinhala "request edit access" control. No access request was made, no response rows or current response count were visible, and the live Form was not changed. This is **question-version evidence only**, not a respondent finding.
 - Traceability matrix: `dev_artifacts/formative_requirements_traceability_2026-09-25.md`; every respondent-derived finding is explicitly pending, including ambiguity/team review. No raw survey data/PII is committed.
 
 ## Phase 1 — traceability baseline / documentation PR
