@@ -244,6 +244,10 @@ export interface MentalModelLink {
   target_evidence_chunk_id?: string;
   source_evidence?: string;
   target_evidence?: string;
+  source_quote?: string;
+  target_quote?: string;
+  source_locator?: { page?: number; block_index?: number };
+  target_locator?: { page?: number; block_index?: number };
   status: "candidate" | "confirmed" | "rejected" | "relabeled" | "archived";
   created_via: string;
   user_label?: string;

@@ -283,7 +283,7 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 		   SELECT ls.id, ls.user_id,
 		          CASE WHEN sc.document_id = $2 THEN sc.id ELSE tc.id END AS source_chunk_id,
 		          CASE WHEN sc.document_id = $2 THEN tc.id ELSE sc.id END AS target_chunk_id,
-		          ls.similarity, ls.relation, ls.status, ls.user_label,
+		          ls.similarity, 'unclassified' AS relation, ls.status, ls.user_label,
 		          ls.time_to_respond_ms, ls.suggested_at, ls.responded_at,
 		          CASE WHEN sc.document_id = $2 THEN sc.content ELSE tc.content END AS src_text,
 		          CASE WHEN sc.document_id = $2 THEN tc.content ELSE sc.content END AS tgt_text,
@@ -307,7 +307,10 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 		   JOIN chunks tc ON ls.target_chunk_id = tc.id
 		   JOIN documents sd ON sc.document_id = sd.id
 		   JOIN documents td ON tc.document_id = td.id
-		   WHERE ls.user_id = $1
+		   WHERE ls.user_id = $1 AND ls.status NOT IN ('confirmed', 'relabeled')
+		     AND sc.user_id = $1 AND tc.user_id = $1
+		     AND sd.user_id = $1 AND td.user_id = $1
+		     AND sd.id <> td.id
 		     AND (sc.document_id = $2 OR tc.document_id = $2)
 		 )
 		 SELECT id, user_id, source_chunk_id, target_chunk_id,
@@ -348,6 +351,10 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 }
 
 func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, action model.SuggestionStatus, label string, timeMs int) error {
+	// Distance-only passage matches can be dismissed, never promoted to assertions.
+	if action != model.SuggestionRejected {
+		return fmt.Errorf("unclassified passage match cannot be confirmed as a relation")
+	}
 	now := time.Now()
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -682,7 +689,8 @@ func (s *Store) ListReviewedSuggestionEdges(ctx context.Context, userID string) 
 		    ls.user_label, ls.status, ls.similarity, ls.summary,
 		    COALESCE(ls.responded_at, ls.suggested_at) AS observed_at
 		  FROM link_suggestions ls
-		  WHERE ls.user_id = $1 AND ls.status IN ('confirmed', 'relabeled', 'rejected')
+		  WHERE ls.user_id = $1 AND ls.evidence_verified
+		    AND ls.status IN ('confirmed', 'relabeled', 'rejected')
 		  ORDER BY LEAST(ls.source_chunk_id::text, ls.target_chunk_id::text),
 		    GREATEST(ls.source_chunk_id::text, ls.target_chunk_id::text),
 		    ls.relation, ls.responded_at DESC NULLS LAST, ls.id
@@ -819,6 +827,8 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 		        ml.similarity, ml.confidence, ml.bridge_explanation,
 		        ml.source_evidence_chunk_id, ml.target_evidence_chunk_id,
 		        COALESCE(sc.content, ''), COALESCE(tc.content, ''),
+		        ml.source_evidence->>'quote', ml.target_evidence->>'quote',
+		        ml.source_evidence->'locator', ml.target_evidence->'locator',
 		        ml.status, ml.created_via, ml.model_version, ml.prompt_version,
 		        ml.user_label, ml.suggested_at, ml.responded_at
 		 FROM mental_model_links ml
@@ -831,6 +841,8 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 		 WHERE ml.user_id = $1
 		   AND ($2 = '' OR sm.document_id::text = $2 OR tm.document_id::text = $2)
 		   AND ml.status != 'archived'
+		   AND sd.status = 'ready' AND td.status = 'ready'
+		   AND valid_grounded_mental_link(ml)
 		 ORDER BY CASE ml.status WHEN 'candidate' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END,
 		          ml.confidence DESC, ml.suggested_at DESC`, userID, documentID)
 	if err != nil {
@@ -845,7 +857,9 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 			&link.SourceDocumentID, &link.TargetDocumentID, &link.SourceDocumentTitle,
 			&link.TargetDocumentTitle, &link.LinkType, &link.Similarity, &link.Confidence,
 			&link.BridgeExplanation, &link.SourceEvidenceChunkID, &link.TargetEvidenceChunkID,
-			&link.SourceEvidence, &link.TargetEvidence, &link.Status, &link.CreatedVia,
+			&link.SourceEvidence, &link.TargetEvidence,
+			&link.SourceQuote, &link.TargetQuote, &link.SourceLocator, &link.TargetLocator,
+			&link.Status, &link.CreatedVia,
 			&link.ModelVersion, &link.PromptVersion, &link.UserLabel, &link.SuggestedAt,
 			&link.RespondedAt); err != nil {
 			return nil, err
@@ -870,7 +884,8 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, userID, id string,
 		`UPDATE mental_model_links
 		 SET status = $1, user_label = COALESCE(NULLIF($2, ''), user_label),
 		     created_via = $3, responded_at = now()
-		 WHERE id = $4 AND user_id = $5`,
+		 WHERE id = $4 AND user_id = $5
+		   AND valid_grounded_mental_link(mental_model_links)`,
 		response.Action, response.Label, createdVia, id, userID)
 	if err != nil {
 		return fmt.Errorf("update mental-model link: %w", err)

@@ -110,6 +110,12 @@ func TestSuggestionStatusConstants(t *testing.T) {
 	}
 }
 
+func TestUnclassifiedSimilarityMatchIsNotRelation(t *testing.T) {
+	if model.RelationUnclassified != "unclassified" {
+		t.Fatal("similarity match must be unclassified")
+	}
+}
+
 func TestRelationTypeConstants(t *testing.T) {
 	relations := []model.RelationType{
 		model.RelationRelatedTo,
@@ -164,6 +170,20 @@ func TestLinkSuggestionJSON(t *testing.T) {
 	}
 	if decoded.UserLabel == nil || *decoded.UserLabel != "my-label" {
 		t.Error("UserLabel not preserved in JSON round-trip")
+	}
+}
+
+func TestMentalLinkEvidenceContractJSON(t *testing.T) {
+	link := model.MentalModelLink{SourceQuote: "A source sentence.", TargetQuote: "An earlier sentence.",
+		SourceLocator: json.RawMessage(`{"page":2}`), TargetLocator: json.RawMessage(`{"page":3}`)}
+	data, err := json.Marshal(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"source_quote", "target_quote", "source_locator", "target_locator"} {
+		if !containsField(string(data), field) {
+			t.Errorf("missing %s in API payload", field)
+		}
 	}
 }
 
