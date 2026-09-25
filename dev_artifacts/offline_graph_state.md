@@ -21,8 +21,9 @@ Status: **isolated implementation, not a participant or production feature**. Th
 - RED → GREEN: rollback test failed to compile (`Ledger.Rollback`, `Ledger.SnapshotAt` undefined); then passed.
 - RED → GREEN: forged preview test failed as expected (`forged preview accepted: <nil>`); then passed after adding a ledger-bound HMAC seal. A modified support ID is likewise rejected.
 - `go test ./internal/offlinegraph -count=1 -v`: **7 tests passed**, including invalid/missing support, cross-scope, duplicate or historical IDs, stale revisions, rejected actions, detached snapshots and replay equivalence.
-- `go test ./... -count=1`: **passed** (Go API packages); `go vet ./...`: **passed**; `go build ./...`: **passed**; `gofmt -l internal/offlinegraph/*.go`: **clean**; `git diff --check`: **clean**.
-- CI workflow now executes `go test ./... -count=1` in addition to its existing build/vet checks. Remote CI result and merge status must be recorded after the PR is checked.
+- `go test ./... -count=1`: **passed** (Go API packages); `go test -race ./internal/offlinegraph -count=1`: **passed**; `go vet ./...`: **passed**; `go build ./...`: **passed**; `gofmt -l internal/offlinegraph/*.go`: **clean**; `git diff --check`: **clean**.
+- PR #27's first remote check run for commit `ae6141f` passed all eight checks: Build Go API (including newly added `go test ./... -count=1`), Build Next.js Console, Check Python Worker, Go API Coverage, Console Coverage, Worker Coverage, Dependency Review, and Claude / PR Review. This is automated CI, not independent human review. The documentation update itself requires a fresh check run before merge.
+- CI workflow now executes `go test ./... -count=1` in addition to its existing build/vet checks.
 
 ## Limitations / deliberate non-goals
 
