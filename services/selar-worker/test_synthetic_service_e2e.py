@@ -256,7 +256,7 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert login.status == 200, login.text()
             page.goto(f"{console}/reader?docId={pdf_id}&page=1")
             page.locator(".pdf-page-container .textLayer").get_by_text(PDF_LINE).wait_for(timeout=20000)
-            assert "1 / 1" in page.locator(".page-indicator").inner_text()
+            assert "1 / 1" in page.locator(".page-indicator").first.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
             card = page.locator(".mental-link-card").filter(has_text="concept overlap")
             card.wait_for(timeout=20000)
