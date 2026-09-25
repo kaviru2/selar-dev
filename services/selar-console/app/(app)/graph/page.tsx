@@ -499,6 +499,7 @@ export default function GraphPage() {
             <Icon name="search" size={13} style={{ color: "var(--ink-3)" }} />
             <input
               type="text"
+              aria-label="Search graph nodes"
               placeholder="Search the knowledge graph..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -510,6 +511,8 @@ export default function GraphPage() {
             />
             {searchQuery && (
               <button
+                type="button"
+                aria-label="Clear graph search"
                 onClick={() => setSearchQuery("")}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)" }}
               >
@@ -816,12 +819,6 @@ export default function GraphPage() {
                 return (
                   <div
                     key={l.id}
-                    onClick={() => {
-                      if (peerId) setSelId(peerId);
-                      if (fgRef.current && peer) {
-                        fgRef.current.centerAt(peer.x, peer.y, 600);
-                      }
-                    }}
                     style={{
                       display: "flex", flexDirection: "column", gap: 6,
                       padding: "10px 12px", borderRadius: "var(--r-md)", cursor: "pointer",
@@ -851,15 +848,21 @@ export default function GraphPage() {
                         {isOutgoing ? "outgoing →" : "← incoming"}
                       </span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>
-                      {peer?.name || "Loading peer..."}
-                    </span>
+                    <button type="button" onClick={() => {
+                      if (peerId) setSelId(peerId);
+                      if (fgRef.current && peer) fgRef.current.centerAt(peer.x, peer.y, 600);
+                    }} style={{ textAlign: "left", fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>
+                      Focus {peer?.name || "related node"}
+                    </button>
                     {l.created_via === "deterministic_chat" && (
                       <span style={{ color: "#7a8c5c", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         Adapted from grounded chat · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>
                     )}
-                    {l.created_via !== "deterministic_chat" && (
+                    {l.mental_link_id && <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9 }}>
+                      Learner-reviewed exact concept overlap; human note does not establish another relation.
+                    </span>}
+                    {l.created_via !== "deterministic_chat" && !l.mental_link_id && (
                       <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         PDF-derived knowledge · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>

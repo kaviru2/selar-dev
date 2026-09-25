@@ -611,6 +611,7 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 		        state, confidence, support_count, document_count, base_confidence, evidence_confidence,
 		        confirmed_at, valid_from, valid_to, observed_at, COALESCE(superseded_by::text, ''), created_at
 		 FROM concept_edges e WHERE user_id = $1
+		 AND NOT EXISTS (SELECT 1 FROM learning_events le WHERE le.concept_edge_id = e.id AND le.user_id = $1 AND le.event_type IN ('mental_link_graph_confirmed', 'suggestion_graph_confirmed'))
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.source_concept_id)
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.target_concept_id)
 		 ORDER BY created_at`, userID)
@@ -840,9 +841,11 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 		 LEFT JOIN chunks tc ON tc.id = ml.target_evidence_chunk_id
 		 WHERE ml.user_id = $1
 		   AND ($2 = '' OR sm.document_id::text = $2 OR tm.document_id::text = $2)
-		   AND ml.status != 'archived'
+		   AND (ml.status != 'archived' OR ml.review_revision > 0)
 		   AND sd.status = 'ready' AND td.status = 'ready'
 		   AND valid_grounded_mental_link(ml)
+		   AND NOT EXISTS (SELECT 1 FROM document_mental_models newer WHERE newer.document_id = sm.document_id AND newer.version > sm.version AND newer.status = 'ready')
+		   AND NOT EXISTS (SELECT 1 FROM document_mental_models newer WHERE newer.document_id = tm.document_id AND newer.version > tm.version AND newer.status = 'ready')
 		 ORDER BY CASE ml.status WHEN 'candidate' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END,
 		          ml.confidence DESC, ml.suggested_at DESC`, userID, documentID)
 	if err != nil {

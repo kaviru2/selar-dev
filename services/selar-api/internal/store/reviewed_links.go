@@ -42,7 +42,7 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, owner, id string, 
 	rows, err := tx.Query(ctx, `SELECT d.id FROM mental_model_links ml
  JOIN document_mental_models mm ON mm.id IN (ml.source_model_id,ml.target_model_id)
  JOIN documents d ON d.id=mm.document_id
- WHERE ml.id=$1 AND ml.user_id=$2 FOR SHARE OF d`, id, owner)
+ WHERE ml.id=$1 AND ml.user_id=$2 FOR SHARE OF d,mm`, id, owner)
 	if err != nil {
 		return err
 	}
@@ -67,7 +67,10 @@ func (s *Store) RespondToMentalModelLink(ctx context.Context, owner, id string, 
 		return err
 	}
 	var valid bool
-	if err = tx.QueryRow(ctx, `SELECT valid_grounded_mental_link(ml) FROM mental_model_links ml WHERE ml.id=$1 AND ml.user_id=$2`, id, owner).Scan(&valid); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT valid_grounded_mental_link(ml)
+ AND NOT EXISTS (SELECT 1 FROM document_mental_models newer JOIN document_mental_models sm ON sm.id=ml.source_model_id WHERE newer.document_id=sm.document_id AND newer.version>sm.version AND newer.status='ready')
+ AND NOT EXISTS (SELECT 1 FROM document_mental_models newer JOIN document_mental_models tm ON tm.id=ml.target_model_id WHERE newer.document_id=tm.document_id AND newer.version>tm.version AND newer.status='ready')
+ FROM mental_model_links ml WHERE ml.id=$1 AND ml.user_id=$2`, id, owner).Scan(&valid); err != nil {
 		return err
 	}
 	if !valid {
