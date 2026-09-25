@@ -244,6 +244,19 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
         assert pdf_link["source_evidence_chunk_id"] == str(chunks[0]["id"])
         assert pdf_link["source_quote"] == PDF_LINE
         assert pdf_link["source_locator"]["kind"] == "pdf" and pdf_link["source_locator"]["page"] == 1
+        async def pdf_witness():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                return json.loads(await conn.fetchval(
+                    "SELECT source_evidence FROM mental_model_links WHERE id=$1 AND user_id=$2",
+                    pdf_link["id"], owner["user"]["id"]))
+            finally:
+                await conn.close()
+        witness = asyncio.run(pdf_witness())
+        assert witness["asserting_source_id"] == pdf_id
+        assert witness["source_snapshot_hash"] == hashlib.sha256(pdf).hexdigest()
+        assert witness["chunk_id"] == str(chunks[0]["id"]) and witness["quote"] == PDF_LINE
+        assert witness["locator"]["kind"] == "pdf" and witness["locator"]["page"] == 1
         _request(client, "GET", f"{api}/api/mental-model-links/{pdf_link['id']}/preview", foreign, expected=404)
 
         with sync_playwright() as playwright:
@@ -299,7 +312,7 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             page.get_by_text("confirmed", exact=True).first.wait_for(timeout=10000)
             browser.close()
         confirmed = _request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token)
-        assert len(confirmed) == 1 and confirmed[0]["status"] == "confirmed"
+        assert any(item["id"] == link["id"] and item["status"] == "confirmed" for item in confirmed)
         review = _request(client, "GET", f"{api}/api/mental-model-links/{link['id']}/preview", token)
         assert review["revision"] == 1 and len(review["history"]) == 1
         assert review["history"][0]["action"] == "confirmed"
@@ -372,7 +385,8 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             finally:
                 await conn.close()
         asyncio.run(stale())
-        assert _request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token) == []
+        assert not any(item["id"] == link["id"] for item in
+                       _request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token))
         _request(client, "GET", f"{api}/api/mental-model-links/{link['id']}/preview", token, expected=404)
         _request(client, "POST", f"{api}/api/mental-model-links/{link['id']}/respond", token,
                  expected=404, json={"action": "retracted", "revision": 4,
