@@ -36,8 +36,14 @@ func TestGroundedReviewLifecycleAndCurrentGraphProjection(t *testing.T) {
 	if err := decide(1, model.MentalLinkRelabeled, "Compare optimization methods", "human correction", nil); err != nil {
 		t.Fatal(err)
 	}
+	if corrected, err := s.ListReviewedMentalLinkEdges(ctx, owner); err != nil || len(corrected) != 1 || corrected[0].State != "relabeled" {
+		t.Fatalf("correction lifecycle missing from graph: %+v %v", corrected, err)
+	}
 	if err := decide(2, "retracted", "", "no longer endorse", nil); err != nil {
 		t.Fatal(err)
+	}
+	if p, err := s.PreviewMentalModelLink(ctx, owner, id); err != nil || p.Status != model.MentalLinkArchived || p.Revision != 3 {
+		t.Fatalf("retraction must retain an owner-visible rollback preview: %+v %v", p, err)
 	}
 	edges, err = s.ListReviewedMentalLinkEdges(ctx, owner)
 	if err != nil || len(edges) != 0 {
