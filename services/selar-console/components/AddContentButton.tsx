@@ -3,6 +3,7 @@
 import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
+import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
 
 type AddMode = "web" | "text" | "pdf";
 type UploadProgress = { completed: number; total: number } | null;
@@ -153,6 +154,7 @@ export function AddContentButton() {
               </button>
             })}
           </div>
+          <ProcessingDisclosure />
           {mode === "web" && (
             <div className="add-source-fields">
               <label>
@@ -180,7 +182,7 @@ export function AddContentButton() {
           )}
           {mode === "pdf" && (
             <div className="pdf-upload-section">
-              <input ref={fileInputRef} id="pdf-upload-input" className="pdf-file-input" type="file" accept="application/pdf,.pdf" multiple tabIndex={-1} onChange={(event) => acceptFiles(Array.from(event.target.files || []))} />
+              <input ref={fileInputRef} id="pdf-upload-input" type="file" accept="application/pdf,.pdf" multiple aria-label="Choose PDF files to upload" onChange={(event) => acceptFiles(Array.from(event.target.files || []))} />
               <div
                 className={`pdf-dropzone${dragActive ? " drag-active" : ""}${selectedFiles.length ? " compact" : ""}`}
                 onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
@@ -189,8 +191,9 @@ export function AddContentButton() {
                 onDrop={dropFile}
                 onClick={() => fileInputRef.current?.click()}
                 role="button"
+                aria-label="Drop PDF files or choose PDF files to upload"
                 tabIndex={0}
-                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click(); }}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); fileInputRef.current?.click(); } }}
               >
                 {selectedFiles.length ? (
                   <>
@@ -223,6 +226,9 @@ export function AddContentButton() {
                   </div>
                 </div>
               )}
+              <div role="status" aria-live="polite">
+                {uploadProgress ? `Uploading PDF ${Math.min(uploadProgress.completed + 1, uploadProgress.total)} of ${uploadProgress.total}` : selectedFiles.length ? `${selectedFiles.length} PDFs ready to upload` : ""}
+              </div>
               <div className="pdf-feature-row">
                 <span><Icon name="check" size={13} /> Text and citations</span>
                 <span><Icon name="check" size={13} /> Figures and diagrams</span>
@@ -232,7 +238,7 @@ export function AddContentButton() {
           )}
           {error && <div className="form-error" role="alert">{error}</div>}
           <div className="add-content-actions">
-            <div className="add-content-assurance"><Icon name="check" size={12} /> Source and processing history are preserved</div>
+            <div className="add-content-assurance">Prototype testing only</div>
             <button type="button" className="btn" onClick={() => dialogRef.current?.close()}>Cancel</button>
             <button type="submit" className="btn primary add-submit" disabled={submitting || (mode === "pdf" && !selectedFiles.length)}>
               {submitting ? <><Icon name="spinner" size={12} className="animate-spin" /> {mode === "pdf" && uploadProgress ? `Uploading ${Math.min(uploadProgress.completed + 1, uploadProgress.total)} of ${uploadProgress.total}` : "Importing…"}</> : <>{mode === "web" ? "Import article" : mode === "text" ? "Save text" : selectedFiles.length ? `Upload ${selectedFiles.length} PDF${selectedFiles.length === 1 ? "" : "s"}` : "Upload PDFs"} <Icon name="arrow_right" size={12} /></>}

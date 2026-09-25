@@ -5,6 +5,7 @@
 "use client";
 
 import { Icon } from "@/components/ui/Icon";
+import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
 import { useSelar, type Theme, type Density } from "@/lib/context";
 import { useEffect, useState } from "react";
 import { clientFetch, type MetricsSummary } from "@/lib/api";
@@ -122,7 +123,7 @@ export default function SettingsPage() {
             Local evaluation
           </div>
           <div className="settings-row">
-            <div className="k">Grounded chat<span className="sub">stored locally; no third-party analytics</span></div>
+            <div className="k">Grounded chat<span className="sub">Prototype interaction measurements</span></div>
             <div className="v" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-2)" }}>
               {metrics ? `${metrics.chat_turns} turns · ${Math.round(metrics.average_retrieval_ms)}ms retrieval · ${metrics.average_citations.toFixed(1)} citations/answer` : "No measurements yet"}
             </div>
@@ -140,6 +141,7 @@ export default function SettingsPage() {
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--ink-4)", textTransform: "uppercase", marginBottom: 6 }}>
              Privacy &amp; data
           </div>
+          <ProcessingDisclosure />
           <div className="settings-row">
             <div className="k">
               Export my data
