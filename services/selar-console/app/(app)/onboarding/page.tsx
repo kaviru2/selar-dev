@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
+import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
 
 const STEPS = [
-  { no: "01", lbl: "Create your account", sub: "Your library is private to your account.", done: true },
+  { no: "01", lbl: "Create your account", sub: "Your library is associated with your account.", done: true },
   { no: "02", lbl: "Add a document or text", sub: "Start with material you are allowed to use for testing.", done: false },
   { no: "03", lbl: "Read and inspect connections", sub: "Review candidate links before treating them as useful.", done: false },
   { no: "04", lbl: "Share feedback", sub: "Report unclear, incorrect, or useful results to the research team.", done: false },
@@ -28,6 +29,7 @@ export default function OnboardingPage() {
           Add reading material, explore evidence-backed connections, and help us identify what is useful or misleading before any formal study begins.
         </div>
 
+        <ProcessingDisclosure />
         <div className="steps">
           {STEPS.map((s) => (
             <div key={s.no} className={`step${s.done ? " done" : ""}`}>
