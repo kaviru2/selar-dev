@@ -167,7 +167,8 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
         preview = _request(client, "GET", f"{api}/api/mental-model-links/{link['id']}/preview", token)
         assert preview["revision"] == link["revision"] == 0 and preview["history"] == []
         assert preview["source_quote"] and preview["target_quote"]
-        assert not any(edge["id"] == link["id"] for edge in _request(client, "GET", f"{api}/api/graph", foreign)["edges"])
+        reviewed_edge_id = f"reviewed:{link['id']}"
+        assert not any(edge["id"] == reviewed_edge_id for edge in _request(client, "GET", f"{api}/api/graph", foreign)["edges"])
         # A similarity-only near negative may be retrieved; it must not become a
         # grounded candidate without a two-sided exact assertion.
         neg = _request(client, "POST", f"{api}/api/documents/add", token, expected=202,
@@ -197,7 +198,9 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert "Data export and account data removal are not available" in disclosure.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
             card = page.locator(".mental-link-card").filter(has_text="concept overlap")
-            card.get_by_role("button", name="Confirm").click()
+            page.get_by_role("button", name=(
+                f"Preview grounded assertion from {link['source_document_title']} "
+                f"to {link['target_document_title']}")).click()
             review = page.get_by_role("region", name="Grounded assertion review")
             review.get_by_text("not a retrieval success").wait_for(timeout=10000)
             assert "gradient descent optimization" in review.inner_text().lower()
@@ -213,7 +216,8 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
                  expected=409, json={"action": "retracted", "revision": 0,
                                      "reason": "stale synthetic review"})
         graph = _request(client, "GET", f"{api}/api/graph", token)
-        assert any(edge["id"] == link["id"] and edge["state"] == "confirmed" for edge in graph["edges"])
+        assert any(edge["id"] == reviewed_edge_id and edge["mental_link_id"] == link["id"]
+                   and edge["state"] == "confirmed" for edge in graph["edges"])
         # A changed snapshot invalidates the witness, not merely its display.
         async def stale():
             conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
@@ -227,4 +231,4 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
         _request(client, "POST", f"{api}/api/mental-model-links/{link['id']}/respond", token,
                  expected=404, json={"action": "retracted", "revision": 1,
                                      "reason": "source snapshot changed"})
-        assert not any(edge["id"] == link["id"] for edge in _request(client, "GET", f"{api}/api/graph", token)["edges"])
+        assert not any(edge["id"] == reviewed_edge_id for edge in _request(client, "GET", f"{api}/api/graph", token)["edges"])
