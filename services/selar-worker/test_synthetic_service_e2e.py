@@ -223,13 +223,14 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
             try:
                 return [dict(row) for row in await conn.fetch(
-                    "SELECT id, text, page, locator FROM chunks WHERE document_id=$1 AND user_id=$2",
+                    "SELECT id, content, page_start, page_end, locator FROM chunks WHERE document_id=$1 AND user_id=$2",
                     pdf_id, owner["user"]["id"])]
             finally:
                 await conn.close()
         chunks = asyncio.run(pdf_chunk())
-        assert len(chunks) == 1 and chunks[0]["text"] == PDF_LINE
-        assert chunks[0]["page"] == 1 and json.loads(chunks[0]["locator"])["kind"] == "pdf"
+        assert len(chunks) == 1 and chunks[0]["content"] == PDF_LINE
+        assert chunks[0]["page_start"] == chunks[0]["page_end"] == 1
+        assert json.loads(chunks[0]["locator"])["kind"] == "pdf"
         assert json.loads(chunks[0]["locator"])["block_index"] == 0
         raw_pdf = client.get(f"{api}/api/documents/{pdf_id}/pdf", headers={"Authorization": f"Bearer {token}"})
         assert raw_pdf.status_code == 200 and raw_pdf.content == pdf
