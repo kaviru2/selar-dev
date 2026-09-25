@@ -90,6 +90,8 @@ class ChatRequest(BaseModel):
 
 def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: int = 6) -> List[Dict[str, Any]]:
     """Fuse independently ranked retrieval signals with fixed, replayable weights."""
+    if limit <= 0:
+        return []
     weights = {
         "vector": 0.40,
         "lexical": 0.25,
@@ -105,7 +107,21 @@ def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: 
             entry = fused.setdefault(chunk_id, {**candidate, "rrf_score": 0.0, "signals": {}})
             entry["rrf_score"] += weights.get(signal, 0) / (60 + rank)
             entry["signals"][signal] = {"rank": rank, "score": float(candidate.get("score", 0))}
-    return sorted(fused.values(), key=lambda item: (-item["rrf_score"], item["chunk_id"]))[:limit]
+    # Prefer diverse documents, then fill any unused slots with the next-best
+    # chunks. A one-document library must not lose most of its evidence.
+    selected: List[Dict[str, Any]] = []
+    overflow: List[Dict[str, Any]] = []
+    per_document: Counter = Counter()
+    for item in sorted(fused.values(), key=lambda entry: (-entry["rrf_score"], entry["chunk_id"])):
+        document = item.get("document_id") or item["chunk_id"]
+        if per_document[document] >= 2:
+            overflow.append(item)
+            continue
+        selected.append(item)
+        per_document[document] += 1
+        if len(selected) == limit:
+            break
+    return selected + overflow[:max(0, limit - len(selected))]
 
 
 def referenced_citation_ranks(answer: str, maximum: int) -> set[int]:
@@ -114,6 +130,19 @@ def referenced_citation_ranks(answer: str, maximum: int) -> set[int]:
         rank for rank in (int(value) for value in re.findall(r"\[S(\d+)\]", answer, re.I))
         if 1 <= rank <= maximum
     }
+
+
+def requires_primary_source_verification(question: str) -> bool:
+    """Identify direct source-use questions that cannot be verified by citations alone.
+
+    A title match or generated label cannot establish a document as the original.
+    """
+    words = question.lower()
+    predicate = re.search(r"\b(?:us(?:e|ed|ing)|evaluat\w*|test(?:ed|ing)?|employ\w*|appl(?:y|ied))\b", words)
+    original = re.search(r"\boriginal(?:ly)?\b", words)
+    benchmark_or_method = re.search(r"\b\w*bench\w*\b|\b(?:method|algorithm|technique)\w*\b", words)
+    direct_question = re.search(r"^\s*(?:did|does|do|was|were|has|have|whether)\b", words)
+    return bool(predicate and (original or (direct_question and benchmark_or_method)))
 
 
 def safe_parse_json(text: str) -> Any:
@@ -1109,7 +1138,7 @@ async def grounded_chat(req: ChatRequest):
                    c.page_start AS page, c.content, c.locator, d.source_type,
                    1 - (c.embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)) AS score
             FROM chunks c JOIN documents d ON d.id = c.document_id
-            WHERE c.user_id = $1 AND d.status = 'ready' AND c.embedding IS NOT NULL
+            WHERE c.user_id = $1 AND d.user_id = $1 AND d.status = 'ready' AND c.embedding IS NOT NULL
             ORDER BY c.embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)
             LIMIT 20
         """, req.user_id, query_vector)
@@ -1118,7 +1147,7 @@ async def grounded_chat(req: ChatRequest):
                    c.page_start AS page, c.content, c.locator, d.source_type,
                    ts_rank_cd(to_tsvector('english', c.content), websearch_to_tsquery('english', $2)) AS score
             FROM chunks c JOIN documents d ON d.id = c.document_id
-            WHERE c.user_id = $1 AND d.status = 'ready'
+            WHERE c.user_id = $1 AND d.user_id = $1 AND d.status = 'ready'
               AND to_tsvector('english', c.content) @@ websearch_to_tsquery('english', $2)
             ORDER BY score DESC, c.id
             LIMIT 20
@@ -1147,7 +1176,7 @@ async def grounded_chat(req: ChatRequest):
             JOIN chunk_concepts cc ON cc.concept_id = ec.id
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
-            WHERE d.status = 'ready'
+            WHERE c.user_id = $1 AND d.user_id = $1 AND d.status = 'ready'
             GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id
             LIMIT 20
@@ -1160,7 +1189,8 @@ async def grounded_chat(req: ChatRequest):
             JOIN chunk_concepts cc ON cc.concept_id = lp.concept_id
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
-            WHERE lp.user_id = $1 AND lp.interest_score > 0 AND d.status = 'ready'
+            WHERE lp.user_id = $1 AND c.user_id = $1 AND d.user_id = $1
+              AND lp.interest_score > 0 AND d.status = 'ready'
             GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
         """, req.user_id)
@@ -1171,7 +1201,7 @@ async def grounded_chat(req: ChatRequest):
             JOIN chunks c ON c.id = cc.chunk_id
             JOIN documents d ON d.id = c.document_id
             JOIN concepts concept ON concept.id = cc.concept_id
-            WHERE c.user_id = $1 AND d.status = 'ready'
+            WHERE c.user_id = $1 AND d.user_id = $1 AND d.status = 'ready'
               AND concept.state IN ('supported', 'confirmed')
             GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
@@ -1185,7 +1215,8 @@ async def grounded_chat(req: ChatRequest):
             JOIN chat_messages m ON m.id = mc.message_id
             JOIN chunks c ON c.id = mc.chunk_id
             JOIN documents d ON d.id = c.document_id
-            WHERE m.user_id = $1 AND d.status = 'ready' AND m.status <> 'superseded'
+            WHERE m.user_id = $1 AND c.user_id = $1 AND d.user_id = $1
+              AND d.status = 'ready' AND m.status <> 'superseded'
             GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
         """, req.user_id)
@@ -1219,6 +1250,28 @@ async def grounded_chat(req: ChatRequest):
         "recency": serialize(recency_rows),
     })
     retrieval_ms = (time.perf_counter() - retrieval_started) * 1000
+    if requires_primary_source_verification(question):
+        # Even a retrieved document titled like the original does not establish
+        # identity or entailment. Do not let generated [Sx] labels manufacture
+        # original-source evidence; require a future explicit primary-document
+        # selection and verified claim witness before answering affirmatively.
+        candidates = [{
+            "chunk_id": item["chunk_id"], "rrf_score": item["rrf_score"],
+            "signals": item["signals"],
+        } for item in ranked]
+        return {
+            "answer": "I cannot verify what the original source used from primary-source evidence here. "
+                      "A later paper's comparison baseline does not establish what the original paper did. "
+                      "Check the original document before making that attribution.",
+            "model_version": "deterministic-primary-source-abstention-v1",
+            "ranking_policy": "hybrid-rrf-v1",
+            "citations": [], "candidates": candidates,
+            "metrics": {
+                "embedding_ms": embedding_ms, "retrieval_ms": retrieval_ms,
+                "generation_ms": 0, "total_ms": (time.perf_counter() - total_started) * 1000,
+                "candidate_count": len(candidates), "model_calls": 1,
+            },
+        }
     if not ranked:
         return {
             "answer": "I could not find evidence for that question in your processed library.",
