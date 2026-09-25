@@ -372,7 +372,7 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental models"})
 		return
 	}
-	mentalLinks, err := h.store.ListMentalModelLinks(r.Context(), userID, "")
+	mentalLinks, err := h.store.ListReviewedMentalLinkEdges(r.Context(), userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental-model links"})
 		return
@@ -440,13 +440,7 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 				Source: modelNodeID, Target: nodeID, Relation: "raises", State: "confirmed", CreatedVia: "system"})
 		}
 	}
-	for _, link := range mentalLinks {
-		graphEdges = append(graphEdges, model.GraphEdge{
-			ID: link.ID, Source: "model:" + link.SourceModelID, Target: "model:" + link.TargetModelID,
-			Relation: string(link.LinkType), State: string(link.Status), Confidence: link.Confidence,
-			CreatedVia: string(link.CreatedVia), Explanation: link.BridgeExplanation,
-		})
-	}
+	graphEdges = append(graphEdges, mentalLinks...)
 	graphEdges = append(graphEdges, documentConceptEdges...)
 	graphEdges = append(graphEdges, reviewedSuggestionEdges...)
 
@@ -487,13 +481,22 @@ func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if response.Action != model.MentalLinkConfirmed && response.Action != model.MentalLinkRejected && response.Action != model.MentalLinkRelabeled {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be confirmed, rejected, or relabeled"})
+	if response.Revision == nil || *response.Revision < 0 || uuid.Validate(chi.URLParam(r, "id")) != nil ||
+		(response.Action != model.MentalLinkConfirmed && response.Action != model.MentalLinkRejected && response.Action != model.MentalLinkRelabeled && response.Action != "retracted" && response.Action != "rolled_back") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "valid id, explicit revision and supported action required"})
 		return
 	}
 	if err := h.store.RespondToMentalModelLink(r.Context(), userID, chi.URLParam(r, "id"), response); err != nil {
 		if errors.Is(err, store.ErrMentalModelLinkNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})
+			return
+		}
+		if errors.Is(err, store.ErrReviewStale) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "stale review revision; refresh preview"})
+			return
+		}
+		if errors.Is(err, store.ErrReviewInvalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid transition or unsupported relabel"})
 			return
 		}
 		log.Printf("failed to respond to mental-model link %s: %v", chi.URLParam(r, "id"), err)

@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { clientFetch, type GraphData, type GraphNodeType, type ReplayReport } from "@/lib/api";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
 
 type ForceGraphComponent = (typeof import("react-force-graph-2d"))["default"];
@@ -36,6 +37,12 @@ interface GraphLinkMetadata {
   valid_to?: string;
   observed_at?: string;
   superseded_by?: string;
+  mental_link_id?: string;
+  source_document_id?: string;
+  target_document_id?: string;
+  source_quote?: string;
+  target_quote?: string;
+  review_revision?: number;
 }
 
 type RenderNode = NodeObject<GraphNode>;
@@ -179,6 +186,12 @@ export default function GraphPage() {
           valid_to: e.valid_to,
           observed_at: e.observed_at,
           superseded_by: e.superseded_by,
+          mental_link_id: e.mental_link_id,
+          source_document_id: e.source_document_id,
+          target_document_id: e.target_document_id,
+          source_quote: e.source_quote,
+          target_quote: e.target_quote,
+          review_revision: e.review_revision,
         }));
 
         setNodes(gNodes);
@@ -515,7 +528,7 @@ export default function GraphPage() {
               maxHeight: 200, overflowY: "auto"
             }}>
               {filteredNodes.map((n) => (
-                <div
+                <button type="button"
                   key={n.id}
                   onClick={() => handleSearchSelect(n)}
                   style={{
@@ -528,7 +541,7 @@ export default function GraphPage() {
                 >
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: n.color }} />
                   <span style={{ fontWeight: 500 }}>{n.name}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -856,6 +869,11 @@ export default function GraphPage() {
                         {l.explanation}
                       </span>
                     )}
+                    {l.mental_link_id && l.source_document_id && <div onClick={(event) => event.stopPropagation()}>
+                      <span>Reviewed assertion · revision {l.review_revision} · two-sided source support</span>
+                      <blockquote>{l.source_quote}</blockquote><blockquote>{l.target_quote}</blockquote>
+                      <Link href={`/reader?docId=${encodeURIComponent(l.source_document_id)}&linkId=${encodeURIComponent(l.mental_link_id)}`}>Open reviewed assertion in reader</Link>
+                    </div>}
                     {l.valid_to && (
                       <span style={{ color: "#a33b32", fontFamily: "var(--font-mono)", fontSize: 9 }}>
                         No longer active since {new Date(l.valid_to).toLocaleDateString()}

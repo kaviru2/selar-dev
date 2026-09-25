@@ -8,6 +8,8 @@ import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
 import { groundedLinkPresentation } from "@/lib/link-evidence";
+import { ReviewAssertion } from "@/components/ReviewAssertion";
+import { type ReviewAction } from "@/lib/reviewed-links";
 import {
   clientFetch,
   type Annotation,
@@ -15,6 +17,7 @@ import {
   type DocumentMentalModel,
   type LinkSuggestion,
   type MentalModelLink,
+  type MentalLinkReviewPreview,
 } from "@/lib/api";
 
 const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
@@ -56,6 +59,11 @@ export default function ReaderPage() {
   const [docId, setDocId] = useState(searchParams.get("docId") || "");
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [mentalLinks, setMentalLinks] = useState<MentalModelLink[]>([]);
+  const [reviewPreview, setReviewPreview] = useState<MentalLinkReviewPreview | null>(null);
+  const [reviewLabel, setReviewLabel] = useState("");
+  const [reviewReason, setReviewReason] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const [mentalModel, setMentalModel] = useState<DocumentMentalModel | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [documentContent, setDocumentContent] = useState<DocumentContent | null>(null);
@@ -99,6 +107,16 @@ export default function ReaderPage() {
       cancelled = true;
     };
   }, [docId]);
+
+  useEffect(() => {
+    const linkId = searchParams.get("linkId");
+    if (!linkId || !mentalLinks.some(link => link.id === linkId)) return;
+    let active = true;
+    clientFetch<MentalLinkReviewPreview>(`/api/mental-model-links/${linkId}/preview`)
+      .then(preview => { if (active) { setReviewPreview(preview); setReviewLabel(preview.user_label || ""); } })
+      .catch(error => { if (active) setReviewError(error instanceof Error ? error.message : "Assertion unavailable"); });
+    return () => { active = false; };
+  }, [mentalLinks, searchParams]);
 
   useEffect(() => {
     if (!docId || documentContent?.document.status !== "ready") return;
@@ -222,18 +240,39 @@ export default function ReaderPage() {
     }
   }
 
-  async function respondToMentalLink(id: string, action: "confirmed" | "rejected") {
-    const previous = mentalLinks;
-    setMentalLinks((current) => current.map((item) => item.id === id ? { ...item, status: action } : item));
+  async function previewMentalLink(id: string) {
+    setReviewError("");
     try {
-      await clientFetch(`/api/mental-model-links/${id}/respond`, {
+      const preview = await clientFetch<MentalLinkReviewPreview>(`/api/mental-model-links/${id}/preview`);
+      setReviewPreview(preview);
+      setReviewLabel(preview.user_label || "");
+      setReviewReason("");
+    } catch (error) {
+      setReviewPreview(null);
+      setReviewError(error instanceof Error ? error.message : "Assertion preview unavailable");
+    }
+  }
+
+  async function respondToMentalLink(action: ReviewAction) {
+    if (!reviewPreview || reviewBusy) return;
+    setReviewBusy(true);
+    setReviewError("");
+    try {
+      await clientFetch(`/api/mental-model-links/${reviewPreview.id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, revision: reviewPreview.revision,
+          label: action === "relabeled" ? reviewLabel : "", reason: reviewReason,
+          target_revision: action === "rolled_back" ? reviewPreview.revision - 1 : undefined }),
       });
+      const links = await clientFetch<MentalModelLink[]>(`/api/mental-model-links?document_id=${docId}`);
+      setMentalLinks(links);
+      await previewMentalLink(reviewPreview.id);
     } catch (error) {
-      setMentalLinks(previous);
-      console.error("Failed to save mental-model response", error);
+      setReviewError(error instanceof Error ? error.message : "Could not save assertion review");
+      setReviewPreview(null); // never reuse a possibly stale revision
+    } finally {
+      setReviewBusy(false);
     }
   }
 
@@ -324,6 +363,7 @@ export default function ReaderPage() {
             <>
               {mentalModel && <MentalModelSummary model={mentalModel} />}
               <div className="match-group-lbl">Argument-level candidates · {loading ? "…" : mentalLinks.length}</div>
+              {reviewError && <p role="alert" className="reader-action-error">{reviewError} Refresh the assertion preview before trying again.</p>}
               {!loading && mentalLinks.length === 0 && <PanelEmpty message="No argument-level links yet. They appear after at least two documents have mental models." />}
               {mentalLinks.map((link) => {
                 const pair = groundedLinkPresentation(link);
@@ -338,11 +378,17 @@ export default function ReaderPage() {
                     explanation={pair.prompt}
                     evidence={pair.evidence}
                     status={link.status}
-                    onConfirm={() => respondToMentalLink(link.id, "confirmed")}
-                    onReject={() => respondToMentalLink(link.id, "rejected")}
+                    allowConfirm={false}
+                    showActions={false}
+                    onConfirm={() => previewMentalLink(link.id)}
+                    onReject={() => previewMentalLink(link.id)}
                   />
                 );
               })}
+              {mentalLinks.map(link => <div key={`review-${link.id}`}>
+                <button type="button" onClick={() => previewMentalLink(link.id)} aria-label={`Preview grounded assertion from ${link.source_document_title} to ${link.target_document_title}`}>Review assertion · {link.source_document_title} → {link.target_document_title}</button>
+                {reviewPreview?.id === link.id && <ReviewAssertion preview={reviewPreview} label={reviewLabel} reason={reviewReason} busy={reviewBusy} onLabel={setReviewLabel} onReason={setReviewReason} onAct={respondToMentalLink} />}
+              </div>)}
             </>
           ) : (
             <>
@@ -394,7 +440,7 @@ function MentalModelSummary({ model }: { model: DocumentMentalModel }) {
   );
 }
 
-function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject, onReveal, allowConfirm = true }: {
+function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject, onReveal, allowConfirm = true, showActions = true }: {
   relation: string;
   score: number;
   source: string;
@@ -405,6 +451,7 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
   onReject: () => void;
   onReveal?: () => void;
   allowConfirm?: boolean;
+  showActions?: boolean;
 }) {
   const relationColor = RELATION_COLORS[relation] || "var(--ink-4)";
   const reviewed = status === "confirmed" || status === "rejected" || status === "relabeled";
@@ -418,7 +465,7 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
       <div className="connection-source">{source}</div>
       <p className="connection-explanation">{explanation}</p>
       {evidence && <details className="connection-evidence"><summary>View both source passages</summary><p style={{ whiteSpace: "pre-line" }}>{evidence}</p></details>}
-      <div className="foot">
+      {showActions && <div className="foot">
         {onReveal && <button className="reveal" onClick={onReveal}><Icon name="eye" size={11} /> Show highlight</button>}
         {reviewed ? (
           <span className={`review-state ${status}`}><Icon name={status === "rejected" ? "x" : "check"} size={11} /> {status}</span>
@@ -428,7 +475,7 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
             <button onClick={onReject}><Icon name="x" size={11} /> {allowConfirm ? "Reject" : "Dismiss"}</button>
           </>
         )}
-      </div>
+      </div>}
     </article>
   );
 }
