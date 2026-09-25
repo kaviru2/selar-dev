@@ -122,7 +122,7 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
                                "text": "# Invented comparison notebook\nGradient descent optimization reduces a fabricated error score in a toy orchard.\n"})["document"]["id"]
         asyncio.run(_drain_job(prior))
         web = _request(client, "POST", f"{api}/api/documents/add", owner, expected=202,
-                       json={"source_type": "web", "source_url": ARTICLE_URL,
+                       json={"source_type": "web", "url": ARTICLE_URL,
                              "title": "Untrusted submitted title"})["document"]["id"]
         asyncio.run(_drain_job(web))
         assert requests == ["/robots.txt", "/fictional-garden", "/orchard.png"]
