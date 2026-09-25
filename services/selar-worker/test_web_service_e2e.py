@@ -22,6 +22,8 @@ ARTICLE_TEXT = ("Gradient descent optimization reduces a fabricated error score 
                 "The invented gardener measures twenty paper trees and repeats the same tiny "
                 "calculation for each imaginary season. No observations about real people or "
                 "real experiments are represented by this fictional article.")
+SUPPORTED_QUOTE = "Gradient descent optimization reduces a fabricated error score in a toy orchard."
+assert ARTICLE_TEXT.startswith(SUPPORTED_QUOTE)
 HTML = ("<html><head><title>Fabricated orchard article</title></head><body>"
         "<article><h1>Fabricated orchard article</h1><p>" + ARTICLE_TEXT +
         "</p><figure><img src='/orchard.png' alt='Toy orchard diagram'>"
@@ -176,7 +178,7 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
         assert link["status"] == "candidate" and link["link_type"] == "concept_overlap"
         assert link["target_document_id"] == prior
         assert link["source_evidence_chunk_id"] == str(article_chunk["id"])
-        assert link["source_quote"] == ARTICLE_TEXT and link["source_locator"] == locator
+        assert link["source_quote"] == SUPPORTED_QUOTE and link["source_locator"] == locator
         async def stored_witness():
             conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
             try:
@@ -187,8 +189,8 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
                 await conn.close()
         witness = asyncio.run(stored_witness())
         assert witness["asserting_source_id"] == web
-        assert witness["chunk_id"] == str(chunks[0]["id"])
-        assert witness["quote"] == ARTICLE_TEXT and witness["locator"] == locator
+        assert witness["chunk_id"] == str(article_chunk["id"])
+        assert witness["quote"] == SUPPORTED_QUOTE and witness["locator"] == locator
         assert witness["source_snapshot_hash"] == doc["content_hash"]
         assert len(doc["content_hash"]) == len(hashlib.sha256(b"").hexdigest())
         assert _request(client, "GET", f"{api}/api/mental-model-links", foreign) == []
