@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { clientFetch, type GraphData, type GraphNodeType, type ReplayReport } from "@/lib/api";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
 
 type ForceGraphComponent = (typeof import("react-force-graph-2d"))["default"];
@@ -36,6 +37,12 @@ interface GraphLinkMetadata {
   valid_to?: string;
   observed_at?: string;
   superseded_by?: string;
+  mental_link_id?: string;
+  source_document_id?: string;
+  target_document_id?: string;
+  source_quote?: string;
+  target_quote?: string;
+  review_revision?: number;
 }
 
 type RenderNode = NodeObject<GraphNode>;
@@ -179,6 +186,12 @@ export default function GraphPage() {
           valid_to: e.valid_to,
           observed_at: e.observed_at,
           superseded_by: e.superseded_by,
+          mental_link_id: e.mental_link_id,
+          source_document_id: e.source_document_id,
+          target_document_id: e.target_document_id,
+          source_quote: e.source_quote,
+          target_quote: e.target_quote,
+          review_revision: e.review_revision,
         }));
 
         setNodes(gNodes);
@@ -486,6 +499,7 @@ export default function GraphPage() {
             <Icon name="search" size={13} style={{ color: "var(--ink-3)" }} />
             <input
               type="text"
+              aria-label="Search graph nodes"
               placeholder="Search the knowledge graph..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -497,6 +511,8 @@ export default function GraphPage() {
             />
             {searchQuery && (
               <button
+                type="button"
+                aria-label="Clear graph search"
                 onClick={() => setSearchQuery("")}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)" }}
               >
@@ -515,7 +531,7 @@ export default function GraphPage() {
               maxHeight: 200, overflowY: "auto"
             }}>
               {filteredNodes.map((n) => (
-                <div
+                <button type="button"
                   key={n.id}
                   onClick={() => handleSearchSelect(n)}
                   style={{
@@ -528,7 +544,7 @@ export default function GraphPage() {
                 >
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: n.color }} />
                   <span style={{ fontWeight: 500 }}>{n.name}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -803,12 +819,6 @@ export default function GraphPage() {
                 return (
                   <div
                     key={l.id}
-                    onClick={() => {
-                      if (peerId) setSelId(peerId);
-                      if (fgRef.current && peer) {
-                        fgRef.current.centerAt(peer.x, peer.y, 600);
-                      }
-                    }}
                     style={{
                       display: "flex", flexDirection: "column", gap: 6,
                       padding: "10px 12px", borderRadius: "var(--r-md)", cursor: "pointer",
@@ -838,15 +848,21 @@ export default function GraphPage() {
                         {isOutgoing ? "outgoing →" : "← incoming"}
                       </span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>
-                      {peer?.name || "Loading peer..."}
-                    </span>
+                    <button type="button" onClick={() => {
+                      if (peerId) setSelId(peerId);
+                      if (fgRef.current && peer) fgRef.current.centerAt(peer.x, peer.y, 600);
+                    }} style={{ textAlign: "left", fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>
+                      Focus {peer?.name || "related node"}
+                    </button>
                     {l.created_via === "deterministic_chat" && (
                       <span style={{ color: "#7a8c5c", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         Adapted from grounded chat · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>
                     )}
-                    {l.created_via !== "deterministic_chat" && (
+                    {l.mental_link_id && <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9 }}>
+                      Learner-reviewed exact concept overlap; human note does not establish another relation.
+                    </span>}
+                    {l.created_via !== "deterministic_chat" && !l.mental_link_id && (
                       <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         PDF-derived knowledge · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>
@@ -856,6 +872,11 @@ export default function GraphPage() {
                         {l.explanation}
                       </span>
                     )}
+                    {l.mental_link_id && l.source_document_id && <div onClick={(event) => event.stopPropagation()}>
+                      <span>Reviewed assertion · revision {l.review_revision} · two-sided source support</span>
+                      <blockquote>{l.source_quote}</blockquote><blockquote>{l.target_quote}</blockquote>
+                      <Link href={`/reader?docId=${encodeURIComponent(l.source_document_id)}&linkId=${encodeURIComponent(l.mental_link_id)}`}>Open reviewed assertion in reader</Link>
+                    </div>}
                     {l.valid_to && (
                       <span style={{ color: "#a33b32", fontFamily: "var(--font-mono)", fontSize: 9 }}>
                         No longer active since {new Date(l.valid_to).toLocaleDateString()}

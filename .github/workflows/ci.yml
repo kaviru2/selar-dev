@@ -88,6 +88,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: services/selar-api/go.sum
+
       - name: Install dependencies
         run: pip install -r requirements.txt pytest
 
@@ -96,6 +101,10 @@ jobs:
           for migration in ../selar-api/internal/store/migrations/*.sql; do
             psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
           done
+
+      - name: Test real Go review store against Postgres
+        run: go test ./internal/store -run 'TestGroundedReview' -v -count=1
+        working-directory: services/selar-api
 
       - name: Syntax check
         run: python -m py_compile main.py

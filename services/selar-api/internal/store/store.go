@@ -611,6 +611,7 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 		        state, confidence, support_count, document_count, base_confidence, evidence_confidence,
 		        confirmed_at, valid_from, valid_to, observed_at, COALESCE(superseded_by::text, ''), created_at
 		 FROM concept_edges e WHERE user_id = $1
+		 AND NOT EXISTS (SELECT 1 FROM learning_events le WHERE le.concept_edge_id = e.id AND le.user_id = $1 AND le.event_type IN ('mental_link_graph_confirmed', 'suggestion_graph_confirmed'))
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.source_concept_id)
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.target_concept_id)
 		 ORDER BY created_at`, userID)
@@ -830,7 +831,7 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 		        ml.source_evidence->>'quote', ml.target_evidence->>'quote',
 		        ml.source_evidence->'locator', ml.target_evidence->'locator',
 		        ml.status, ml.created_via, ml.model_version, ml.prompt_version,
-		        ml.user_label, ml.suggested_at, ml.responded_at
+		        ml.user_label, ml.suggested_at, ml.responded_at, ml.review_revision
 		 FROM mental_model_links ml
 		 JOIN document_mental_models sm ON sm.id = ml.source_model_id
 		 JOIN document_mental_models tm ON tm.id = ml.target_model_id
@@ -840,9 +841,11 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 		 LEFT JOIN chunks tc ON tc.id = ml.target_evidence_chunk_id
 		 WHERE ml.user_id = $1
 		   AND ($2 = '' OR sm.document_id::text = $2 OR tm.document_id::text = $2)
-		   AND ml.status != 'archived'
+		   AND (ml.status != 'archived' OR ml.review_revision > 0)
 		   AND sd.status = 'ready' AND td.status = 'ready'
 		   AND valid_grounded_mental_link(ml)
+		   AND NOT EXISTS (SELECT 1 FROM document_mental_models newer WHERE newer.document_id = sm.document_id AND newer.version > sm.version AND newer.status = 'ready')
+		   AND NOT EXISTS (SELECT 1 FROM document_mental_models newer WHERE newer.document_id = tm.document_id AND newer.version > tm.version AND newer.status = 'ready')
 		 ORDER BY CASE ml.status WHEN 'candidate' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END,
 		          ml.confidence DESC, ml.suggested_at DESC`, userID, documentID)
 	if err != nil {
@@ -861,133 +864,12 @@ func (s *Store) ListMentalModelLinks(ctx context.Context, userID, documentID str
 			&link.SourceQuote, &link.TargetQuote, &link.SourceLocator, &link.TargetLocator,
 			&link.Status, &link.CreatedVia,
 			&link.ModelVersion, &link.PromptVersion, &link.UserLabel, &link.SuggestedAt,
-			&link.RespondedAt); err != nil {
+			&link.RespondedAt, &link.Revision); err != nil {
 			return nil, err
 		}
 		links = append(links, link)
 	}
 	return links, rows.Err()
-}
-
-func (s *Store) RespondToMentalModelLink(ctx context.Context, userID, id string, response model.MentalModelLinkResponse) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	createdVia := model.EdgeAISuggested
-	if response.Action == model.MentalLinkConfirmed || response.Action == model.MentalLinkRelabeled {
-		createdVia = model.EdgeUserConfirmed
-	}
-	command, err := tx.Exec(ctx,
-		`UPDATE mental_model_links
-		 SET status = $1, user_label = COALESCE(NULLIF($2, ''), user_label),
-		     created_via = $3, responded_at = now()
-		 WHERE id = $4 AND user_id = $5
-		   AND valid_grounded_mental_link(mental_model_links)`,
-		response.Action, response.Label, createdVia, id, userID)
-	if err != nil {
-		return fmt.Errorf("update mental-model link: %w", err)
-	}
-	if command.RowsAffected() == 0 {
-		return ErrMentalModelLinkNotFound
-	}
-
-	payload, _ := json.Marshal(map[string]any{"action": response.Action, "label": response.Label})
-	_, err = tx.Exec(ctx,
-		`INSERT INTO learning_events (user_id, event_type, mental_link_id, payload, idempotency_key)
-		 VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT (user_id, idempotency_key) DO NOTHING`,
-		userID, "mental_link_"+string(response.Action), id, payload,
-		"mental-link:"+id+":"+string(response.Action))
-	if err != nil {
-		return fmt.Errorf("record mental-model response: %w", err)
-	}
-	if response.Action == model.MentalLinkConfirmed || response.Action == model.MentalLinkRelabeled {
-		_, err = tx.Exec(ctx,
-			`INSERT INTO learner_concept_state (
-			    user_id, concept_id, mastery_estimate, half_life_seconds,
-			    last_retrieved_at, success_count, evidence_count, uncertainty
-			 )
-				 SELECT DISTINCT $1::uuid, cc.concept_id, 0.38, 172800, now(), 1, 1, 0.8
-			 FROM mental_model_links ml
-			 JOIN chunk_concepts cc ON cc.chunk_id IN (ml.source_evidence_chunk_id, ml.target_evidence_chunk_id)
-			 WHERE ml.id = $2::uuid AND ml.user_id = $1::uuid
-			 ON CONFLICT (user_id, concept_id) DO UPDATE SET
-			    mastery_estimate = LEAST(0.99, learner_concept_state.mastery_estimate + 0.1),
-			    half_life_seconds = LEAST(31536000, learner_concept_state.half_life_seconds * 1.7),
-			    last_retrieved_at = now(),
-			    success_count = learner_concept_state.success_count + 1,
-			    evidence_count = learner_concept_state.evidence_count + 1,
-			    uncertainty = GREATEST(0.05, learner_concept_state.uncertainty * 0.85),
-			    updated_at = now()`, userID, id)
-		if err != nil {
-			return fmt.Errorf("update learner projection from mental-model link: %w", err)
-		}
-
-		_, err = tx.Exec(ctx, `
-			WITH mental_link AS (
-			  SELECT ml.user_id, ml.id,
-			         CASE ml.link_type
-			           WHEN 'claim_extension' THEN 'extends'
-			           WHEN 'assumption_conflict' THEN 'contradicts'
-			           ELSE 'related_to'
-			         END AS relation,
-			         ml.source_evidence_chunk_id, ml.target_evidence_chunk_id,
-			         sc.document_id AS source_document_id,
-			         tc.document_id AS target_document_id
-			  FROM mental_model_links ml
-			  JOIN chunks sc ON sc.id = ml.source_evidence_chunk_id
-			  JOIN chunks tc ON tc.id = ml.target_evidence_chunk_id
-			  WHERE ml.id = $2::uuid AND ml.user_id = $1::uuid
-			), concept_pairs AS (
-			  SELECT DISTINCT link.user_id, link.id AS mental_link_id, link.relation,
-			    CASE WHEN link.relation IN ('related_to', 'contradicts')
-			              AND source_cc.concept_id::text > target_cc.concept_id::text
-			      THEN target_cc.concept_id ELSE source_cc.concept_id END AS source_concept_id,
-			    CASE WHEN link.relation IN ('related_to', 'contradicts')
-			              AND source_cc.concept_id::text > target_cc.concept_id::text
-			      THEN source_cc.concept_id ELSE target_cc.concept_id END AS target_concept_id,
-			    CASE WHEN link.source_document_id = link.target_document_id THEN 1 ELSE 2 END AS document_count
-			  FROM mental_link link
-			  JOIN chunk_concepts source_cc ON source_cc.chunk_id = link.source_evidence_chunk_id
-			  JOIN chunk_concepts target_cc ON target_cc.chunk_id = link.target_evidence_chunk_id
-			  WHERE source_cc.concept_id <> target_cc.concept_id
-			), reinforced AS (
-			  INSERT INTO concept_edges (
-			    user_id, source_concept_id, target_concept_id, relation,
-			    created_via, state, confidence, confirmed_at,
-			    base_confidence, evidence_confidence, support_count, document_count,
-			    last_adapted_at, valid_from, observed_at
-			  )
-			  SELECT user_id, source_concept_id, target_concept_id, relation,
-			         'user_confirmed', 'confirmed', 0.90, now(),
-			         0.90, 0.90, 1, document_count, now(), now(), now()
-			  FROM concept_pairs
-			  ON CONFLICT (source_concept_id, target_concept_id, relation) DO UPDATE SET
-			    created_via = 'user_confirmed', state = 'confirmed',
-			    confidence = GREATEST(concept_edges.confidence, 0.90),
-			    base_confidence = GREATEST(concept_edges.base_confidence, 0.90),
-			    evidence_confidence = GREATEST(concept_edges.evidence_confidence, 0.90),
-			    support_count = concept_edges.support_count + 1,
-			    document_count = GREATEST(concept_edges.document_count, EXCLUDED.document_count),
-			    confirmed_at = now(), last_adapted_at = now(), valid_to = NULL, observed_at = now()
-			  RETURNING id
-			)
-			INSERT INTO learning_events (
-			  user_id, event_type, mental_link_id, concept_edge_id, payload, source, idempotency_key
-			)
-			SELECT $1::uuid, 'mental_link_graph_confirmed', $2::uuid, id,
-			       jsonb_build_object('confidence', 0.90), 'deterministic_reducer',
-			       'mental-link-graph:' || $2::text || ':' || id::text
-			FROM reinforced
-			ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, id)
-		if err != nil {
-			return fmt.Errorf("reinforce graph from mental-model link: %w", err)
-		}
-	}
-	return tx.Commit(ctx)
 }
 
 func (s *Store) ListLearnerConceptState(ctx context.Context, userID string) ([]model.LearnerConceptState, error) {

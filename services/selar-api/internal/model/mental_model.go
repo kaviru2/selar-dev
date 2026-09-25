@@ -83,12 +83,33 @@ type MentalModelLink struct {
 	UserLabel             *string          `json:"user_label,omitempty"`
 	SuggestedAt           time.Time        `json:"suggested_at"`
 	RespondedAt           *time.Time       `json:"responded_at,omitempty"`
+	Revision              int64            `json:"revision"`
 }
 
 // MentalModelLinkResponse records a human-in-the-loop candidate decision.
 type MentalModelLinkResponse struct {
-	Action MentalLinkStatus `json:"action"`
-	Label  string           `json:"label,omitempty"`
+	Action         MentalLinkStatus `json:"action"`
+	Label          string           `json:"label,omitempty"`
+	Revision       *int64           `json:"revision"`
+	Reason         string           `json:"reason,omitempty"`
+	TargetRevision *int64           `json:"target_revision,omitempty"`
+}
+
+type MentalLinkReviewEvent struct {
+	Revision       int64            `json:"revision"`
+	Action         string           `json:"action"`
+	BeforeStatus   MentalLinkStatus `json:"before_status"`
+	AfterStatus    MentalLinkStatus `json:"after_status"`
+	BeforeLabel    *string          `json:"before_label,omitempty"`
+	AfterLabel     *string          `json:"after_label,omitempty"`
+	Reason         string           `json:"reason"`
+	TargetRevision *int64           `json:"target_revision,omitempty"`
+	OccurredAt     time.Time        `json:"occurred_at"`
+}
+
+type MentalLinkReviewPreview struct {
+	MentalModelLink
+	History []MentalLinkReviewEvent `json:"history"`
 }
 
 // LearningEvent is an immutable observation used by deterministic reducers.
@@ -141,16 +162,22 @@ type GraphNode struct {
 
 // GraphEdge is a unified projection across semantic and argument-level links.
 type GraphEdge struct {
-	ID           string     `json:"id"`
-	Source       string     `json:"source"`
-	Target       string     `json:"target"`
-	Relation     string     `json:"relation"`
-	State        string     `json:"state"`
-	Confidence   float32    `json:"confidence,omitempty"`
-	CreatedVia   string     `json:"created_via"`
-	Explanation  string     `json:"explanation,omitempty"`
-	ValidFrom    *time.Time `json:"valid_from,omitempty"`
-	ValidTo      *time.Time `json:"valid_to,omitempty"`
-	ObservedAt   *time.Time `json:"observed_at,omitempty"`
-	SupersededBy string     `json:"superseded_by,omitempty"`
+	ID               string     `json:"id"`
+	Source           string     `json:"source"`
+	Target           string     `json:"target"`
+	Relation         string     `json:"relation"`
+	State            string     `json:"state"`
+	Confidence       float32    `json:"confidence,omitempty"`
+	CreatedVia       string     `json:"created_via"`
+	Explanation      string     `json:"explanation,omitempty"`
+	ValidFrom        *time.Time `json:"valid_from,omitempty"`
+	ValidTo          *time.Time `json:"valid_to,omitempty"`
+	ObservedAt       *time.Time `json:"observed_at,omitempty"`
+	SupersededBy     string     `json:"superseded_by,omitempty"`
+	MentalLinkID     string     `json:"mental_link_id,omitempty"`
+	SourceDocumentID string     `json:"source_document_id,omitempty"`
+	TargetDocumentID string     `json:"target_document_id,omitempty"`
+	SourceQuote      string     `json:"source_quote,omitempty"`
+	TargetQuote      string     `json:"target_quote,omitempty"`
+	ReviewRevision   int64      `json:"review_revision,omitempty"`
 }

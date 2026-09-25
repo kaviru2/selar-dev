@@ -200,6 +200,12 @@ export interface GraphEdge {
   valid_to?: string;
   observed_at?: string;
   superseded_by?: string;
+  mental_link_id?: string;
+  source_document_id?: string;
+  target_document_id?: string;
+  source_quote?: string;
+  target_quote?: string;
+  review_revision?: number;
 }
 
 // --- Runtime mental-model types ---
@@ -253,6 +259,22 @@ export interface MentalModelLink {
   user_label?: string;
   suggested_at: string;
   responded_at?: string;
+  revision: number;
+}
+
+export interface MentalLinkReviewEvent {
+  revision: number;
+  action: string;
+  before_status: string;
+  after_status: string;
+  before_label?: string;
+  after_label?: string;
+  reason: string;
+  target_revision?: number;
+  occurred_at: string;
+}
+export interface MentalLinkReviewPreview extends MentalModelLink {
+  history: MentalLinkReviewEvent[];
 }
 
 export interface LearnerConceptState {
