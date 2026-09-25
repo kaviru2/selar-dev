@@ -222,10 +222,10 @@ export default function ChatPage() {
                 <Link className="chat-graph-update" href="/graph">
                   <span className="chat-graph-update-mark">↗</span>
                   <span>
-                    <strong>{message.graph_update.concepts_created > 0 ? "Candidate concept found in cited passage" : "Cited concept passages recorded"}</strong>
+                    <strong>{message.graph_update.concepts_created > 0 ? "Candidate concept found in cited passage" : "Citation-concept associations recorded"}</strong>
                     <small>
                       {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} candidate concept(s) from cited text · ` : ""}
-                      {message.graph_update.concepts_reinforced} existing concept(s) seen in citations · Relationships require separate review.
+                      {message.graph_update.concepts_reinforced} existing concept(s) associated with citations · Relationships require separate review.
                     </small>
                   </span>
                 </Link>

@@ -139,6 +139,13 @@ func TestChatGraphSafetyFeedbackAndLegacyProjection(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM concept_edges WHERE id=$1`, legacy).Scan(&retained); err != nil || retained != 1 {
 		t.Fatalf("audit row deleted: %d %v", retained, err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE concept_edges SET state='confirmed' WHERE id=$1`, legacy); err != nil {
+		t.Fatal(err)
+	}
+	edges, err = s.ListConceptEdges(ctx, owner)
+	if err != nil || len(edges) != 0 {
+		t.Fatalf("legacy row without explicit review visible: %+v %v", edges, err)
+	}
 	created := q(`INSERT INTO concept_edges(user_id,source_concept_id,target_concept_id,relation,created_via,state) VALUES ($1,$2,$3,'prerequisite_of','user_created','confirmed') RETURNING id`, owner, conceptA, conceptB)
 	edges, err = s.ListConceptEdges(ctx, owner)
 	if err != nil || len(edges) != 1 || edges[0].ID != created {

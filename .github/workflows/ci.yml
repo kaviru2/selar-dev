@@ -102,8 +102,8 @@ jobs:
             psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
           done
 
-      - name: Test real Go review store against Postgres
-        run: go test ./internal/store -run 'TestGroundedReview|TestChatGraphSafety' -v -count=1
+      - name: Test real Go graph and review store against Postgres
+        run: go test ./internal/store -run 'TestGroundedReview|TestGroundedChatConceptDiscoveryIntegration|TestChatGraphSafety' -v -count=1
         working-directory: services/selar-api
 
       - name: Syntax check
