@@ -611,6 +611,10 @@ func (s *Store) ListConceptEdges(ctx context.Context, userID string) ([]model.Co
 		        state, confidence, support_count, document_count, base_confidence, evidence_confidence,
 		        confirmed_at, valid_from, valid_to, observed_at, COALESCE(superseded_by::text, ''), created_at
 		 FROM concept_edges e WHERE user_id = $1
+		 AND (e.created_via <> 'deterministic_chat' OR
+		      (e.state = 'confirmed' AND EXISTS (
+		        SELECT 1 FROM graph_edge_actions a
+		        WHERE a.edge_id = e.id AND a.user_id = e.user_id AND a.action = 'confirmed')))
 		 AND NOT EXISTS (SELECT 1 FROM learning_events le WHERE le.concept_edge_id = e.id AND le.user_id = $1 AND le.event_type IN ('mental_link_graph_confirmed', 'suggestion_graph_confirmed'))
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.source_concept_id)
 		 AND EXISTS (SELECT 1 FROM chunk_concepts cc WHERE cc.concept_id = e.target_concept_id)

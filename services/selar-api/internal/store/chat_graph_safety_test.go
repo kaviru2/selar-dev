@@ -90,6 +90,10 @@ func TestChatGraphSafetyFeedbackAndLegacyProjection(t *testing.T) {
 	if feedbackCount != 3 {
 		t.Fatalf("feedback audit count=%d", feedbackCount)
 	}
+	var storedRelations int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM concept_edges WHERE user_id=$1`, owner).Scan(&storedRelations); err != nil || storedRelations != 0 {
+		t.Fatalf("co-citation created a stored relation: %d %v", storedRelations, err)
+	}
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM chat_concept_evidence WHERE message_id=$1`, message).Scan(&evidenceCount); err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +105,24 @@ func TestChatGraphSafetyFeedbackAndLegacyProjection(t *testing.T) {
 	}
 	if success != 0 || failure != 0 {
 		t.Fatalf("answer ratings masquerade as retrieval outcomes: success=%d failure=%d", success, failure)
+	}
+	// A replay must not turn retained answer ratings into retrieval outcomes.
+	if _, err := pool.Exec(ctx, `UPDATE chat_learner_projection SET success_count=1 WHERE user_id=$1`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReplayAdaptiveGraph(ctx, owner, true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(sum(success_count),0) FROM chat_learner_projection WHERE user_id=$1`, owner).Scan(&success); err != nil || success != 0 {
+		t.Fatalf("replay restored a fake success: %d %v", success, err)
+	}
+	// Historical counters remain in the audit table, not in the chat API's live summary.
+	if _, err := pool.Exec(ctx, `UPDATE chat_graph_updates SET links_observed=2,links_promoted=1 WHERE message_id=$1`, message); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := s.ListChatMessages(ctx, owner, thread)
+	if err != nil || len(messages) != 3 || messages[1].GraphUpdate == nil || messages[1].GraphUpdate.LinksObserved != 0 || messages[1].GraphUpdate.LinksPromoted != 0 {
+		t.Fatalf("historical relation counts leaked in chat: %+v %v", messages, err)
 	}
 
 	// Old deterministic_chat rows remain in the database as audit history, even
@@ -117,6 +139,11 @@ func TestChatGraphSafetyFeedbackAndLegacyProjection(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM concept_edges WHERE id=$1`, legacy).Scan(&retained); err != nil || retained != 1 {
 		t.Fatalf("audit row deleted: %d %v", retained, err)
 	}
+	created := q(`INSERT INTO concept_edges(user_id,source_concept_id,target_concept_id,relation,created_via,state) VALUES ($1,$2,$3,'prerequisite_of','user_created','confirmed') RETURNING id`, owner, conceptA, conceptB)
+	edges, err = s.ListConceptEdges(ctx, owner)
+	if err != nil || len(edges) != 1 || edges[0].ID != created {
+		t.Fatalf("user-created link hidden: %+v %v", edges, err)
+	}
 	if err := s.RespondToConceptEdge(ctx, other, legacy, model.EdgeActionRequest{Action: "confirm"}); err == nil {
 		t.Fatal("cross-owner edge confirmation succeeded")
 	}
@@ -124,7 +151,7 @@ func TestChatGraphSafetyFeedbackAndLegacyProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	edges, err = s.ListConceptEdges(ctx, owner)
-	if err != nil || len(edges) != 1 || edges[0].ID != legacy {
+	if err != nil || len(edges) != 2 || edges[0].ID != legacy || edges[1].ID != created {
 		t.Fatalf("explicit owner review lost: %+v %v", edges, err)
 	}
 	edges, err = s.ListConceptEdges(ctx, other)
