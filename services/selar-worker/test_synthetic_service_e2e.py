@@ -217,7 +217,12 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert reflection.get_by_role("textbox", name="Your explanation of how the claims connect").input_value() == ""
             assert reflection.get_by_role("textbox", name="Your optional recall of the relationship").input_value() == ""
             assert "No answer was saved" in reflection.get_by_role("status").inner_text()
-            review.get_by_role("button", name="confirmed").click()
+            with page.expect_response(lambda response: (
+                response.request.method == "POST"
+                and f"/api/mental-model-links/{link['id']}/respond" in response.url
+            )) as submitted_review:
+                review.get_by_role("button", name="confirmed").click()
+            assert submitted_review.value.status == 200
             page.get_by_text("confirmed", exact=True).first.wait_for(timeout=10000)
             browser.close()
         confirmed = _request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token)
