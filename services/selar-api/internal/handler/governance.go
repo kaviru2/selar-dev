@@ -139,16 +139,9 @@ func (h *Handler) RecordLearnerSignal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "concept_id, supported signal, and idempotency_id are required"})
 		return
 	}
-	err := h.store.RecordLearnerSignal(r.Context(), middleware.GetUserID(r.Context()), request)
-	if err == pgx.ErrNoRows {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "concept not found"})
-		return
-	}
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to record learner signal"})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
+	// The prototype has no validated quiz attempt/response workflow. Client-supplied
+	// outcomes must not become learner evidence even for an owned concept.
+	writeJSON(w, http.StatusConflict, map[string]string{"error": "assessment signals are unavailable until validated quiz attempts exist"})
 }
 
 func (h *Handler) ReplayAdaptiveGraph(w http.ResponseWriter, r *http.Request) {
