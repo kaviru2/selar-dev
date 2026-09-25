@@ -197,6 +197,29 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
         assert preview["source_quote"] and preview["target_quote"]
         reviewed_edge_id = f"reviewed:{link['id']}"
         assert not any(edge["id"] == reviewed_edge_id for edge in _request(client, "GET", f"{api}/api/graph", foreign)["edges"])
+        # An authenticated account must not self-report unfinished quiz outcomes.
+        async def owned_concept():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                return await conn.fetchval("SELECT id FROM concepts WHERE user_id=$1 LIMIT 1",
+                                           owner["user"]["id"])
+            finally:
+                await conn.close()
+        concept_id = asyncio.run(owned_concept())
+        assert concept_id is not None
+        for signal in ("quiz_success", "quiz_failure"):
+            _request(client, "POST", f"{api}/api/learner-signals", token, expected=409,
+                json={"concept_id": str(concept_id), "signal": signal,
+                      "idempotency_id": f"invented-{signal}"})
+        async def unverified_outcomes():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                return await conn.fetchval(
+                    "SELECT count(*) FROM learning_events WHERE user_id=$1 "
+                    "AND event_type IN ('quiz_success', 'quiz_failure')", owner["user"]["id"])
+            finally:
+                await conn.close()
+        assert asyncio.run(unverified_outcomes()) == 0
         # A similarity-only near negative may be retrieved; it must not become a
         # grounded candidate without a two-sided exact assertion.
         neg = _request(client, "POST", f"{api}/api/documents/add", token, expected=202,
@@ -267,6 +290,8 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             login = context.request.post(f"{console}/api/auth/login", data={
                 "email": f"owner-{suffix}@example.invalid", "password": PASSWORD})
             assert login.status == 200, login.text()
+            quiz = page.goto(f"{console}/quiz")
+            assert quiz is not None and quiz.status == 404
             page.goto(f"{console}/reader?docId={pdf_id}&page=1")
             page.locator(".pdf-page-container .textLayer").get_by_text(PDF_LINE).wait_for(timeout=20000)
             assert "1 / 1" in page.locator(".page-indicator").first.inner_text()
