@@ -29,7 +29,7 @@ jobs:
       DATABASE_URL: postgres://selar_e2e:synthetic_ci_only@localhost:5432/selar_e2e?sslmode=disable
       GEMINI_API_KEY: ""
       GOOGLE_API_KEY: ""
-      TEST_API_BINARY: ${{ runner.temp }}/selar-e2e-api
+      TEST_API_BINARY: ${{ github.workspace }}/services/selar-api/selar-e2e-api
       TEST_CONSOLE_DIR: ${{ github.workspace }}/services/selar-console
     steps:
       - uses: actions/checkout@v4
