@@ -90,6 +90,8 @@ class ChatRequest(BaseModel):
 
 def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: int = 6) -> List[Dict[str, Any]]:
     """Fuse independently ranked retrieval signals with fixed, replayable weights."""
+    if limit <= 0:
+        return []
     weights = {
         "vector": 0.40,
         "lexical": 0.25,
@@ -105,18 +107,21 @@ def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: 
             entry = fused.setdefault(chunk_id, {**candidate, "rrf_score": 0.0, "signals": {}})
             entry["rrf_score"] += weights.get(signal, 0) / (60 + rank)
             entry["signals"][signal] = {"rank": rank, "score": float(candidate.get("score", 0))}
-    # Diversity is retrieval only, not proof that a candidate is a primary source.
+    # Prefer diverse documents, then fill any unused slots with the next-best
+    # chunks. A one-document library must not lose most of its evidence.
     selected: List[Dict[str, Any]] = []
+    overflow: List[Dict[str, Any]] = []
     per_document: Counter = Counter()
     for item in sorted(fused.values(), key=lambda entry: (-entry["rrf_score"], entry["chunk_id"])):
         document = item.get("document_id") or item["chunk_id"]
         if per_document[document] >= 2:
+            overflow.append(item)
             continue
         selected.append(item)
         per_document[document] += 1
         if len(selected) == limit:
             break
-    return selected
+    return selected + overflow[:max(0, limit - len(selected))]
 
 
 def referenced_citation_ranks(answer: str, maximum: int) -> set[int]:

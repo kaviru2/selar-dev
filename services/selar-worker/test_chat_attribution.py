@@ -88,6 +88,19 @@ def test_retrieval_diversifies_sources_without_promoting_comparison_to_primary()
     assert fused[0]["document_id"] == "comparison-doc"
 
 
+def test_retrieval_preserves_full_budget_for_single_source_library():
+    one_source = [{"chunk_id": f"only-{index}", "document_id": "only-doc", "score": 1}
+                  for index in range(6)]
+    fused = main.reciprocal_rank_fusion({"vector": one_source}, limit=6)
+    assert [item["chunk_id"] for item in fused] == [f"only-{index}" for index in range(6)]
+
+
+def test_retrieval_zero_limit_returns_no_chunks():
+    assert main.reciprocal_rank_fusion({"vector": [
+        {"chunk_id": "one", "document_id": "one-doc", "score": 1},
+    ]}, limit=0) == []
+
+
 @pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="CI pgvector database required")
 def test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations(monkeypatch):
     """Actual migrated SQL/retrieval and fabricated documents; only Gemini stubbed."""
