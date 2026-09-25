@@ -204,6 +204,19 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             review = page.get_by_role("region", name="Grounded assertion review")
             review.get_by_text("not a retrieval success").wait_for(timeout=10000)
             assert "gradient descent optimization" in review.inner_text().lower()
+            reflection = page.get_by_role("region", name="Optional evidence reflection")
+            reflection.get_by_role("textbox", name="Your explanation of how the claims connect").fill(
+                "The two toy examples both describe gradient descent optimization.")
+            reflection.get_by_role("button", name="Try recalling the relationship").click()
+            assert reflection.locator("q").count() == 0
+            reflection.get_by_role("textbox", name="Your optional recall of the relationship").fill(
+                "Both fabricated examples reduce a toy error score.")
+            reflection.get_by_role("button", name="Revisit source quotes").click()
+            assert reflection.locator("q").count() == 2
+            reflection.get_by_role("button", name="Discard drafts").click()
+            assert reflection.get_by_role("textbox", name="Your explanation of how the claims connect").input_value() == ""
+            assert reflection.get_by_role("textbox", name="Your optional recall of the relationship").input_value() == ""
+            assert "No answer was saved" in reflection.get_by_role("status").inner_text()
             review.get_by_role("button", name="confirmed").click()
             page.get_by_text("confirmed", exact=True).first.wait_for(timeout=10000)
             browser.close()
