@@ -37,25 +37,6 @@ func TestGroundedConceptExtractionRequiresQuestionAndCitationMatch(t *testing.T)
 	}
 }
 
-func TestGroundedConceptPairsPreferNewCandidateAndAreBounded(t *testing.T) {
-	evidence := []chatConceptEvidence{
-		{conceptID: "realm", chunkID: "chunk-1"},
-		{conceptID: "rac", chunkID: "chunk-2"},
-		{conceptID: "failure", chunkID: "chunk-3"},
-		{conceptID: "agent", chunkID: "chunk-4"},
-		{conceptID: "extra", chunkID: "chunk-5"},
-	}
-	pairs := boundedChatEvidencePairs(evidence, map[string]bool{"realm": true}, 3)
-	if len(pairs) != 3 {
-		t.Fatalf("got %d candidate relationships, want 3", len(pairs))
-	}
-	for _, pair := range pairs {
-		if pair[0].conceptID != "realm" && pair[1].conceptID != "realm" {
-			t.Fatalf("relationship did not include the grounded candidate: %#v", pair)
-		}
-	}
-}
-
 func TestGroundedChatConceptDiscoveryIntegration(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {

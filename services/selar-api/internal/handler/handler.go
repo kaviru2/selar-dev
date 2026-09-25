@@ -6,7 +6,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
@@ -398,8 +397,10 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, edge := range edges {
 		explanation := ""
-		if edge.SupportCount > 0 {
-			explanation = fmt.Sprintf("Adapted deterministically from %d grounded chat answer(s) across %d document(s).", edge.SupportCount, edge.DocumentCount)
+		if edge.CreatedVia == model.EdgeDeterministicChat {
+			explanation = "Explicitly confirmed by the owner; earlier chat co-citations are not relationship proof."
+		} else if edge.SupportCount > 0 {
+			explanation = "Earlier chat co-citations were recorded as observations, not relationship proof."
 		}
 		validFrom := edge.ValidFrom
 		observedAt := edge.ObservedAt

@@ -166,7 +166,7 @@ export default function ChatPage() {
         </div>
         <div className="chat-policy-note">
           <strong>Evidence-first</strong>
-          <span>Only explicit helpful feedback may request candidate graph updates; source facts always require cited evidence.</span>
+          <span>Answer ratings are feedback, not confirmation of a concept relationship. Review source passages before accepting a connection.</span>
         </div>
       </aside>
 
@@ -222,11 +222,10 @@ export default function ChatPage() {
                 <Link className="chat-graph-update" href="/graph">
                   <span className="chat-graph-update-mark">↗</span>
                   <span>
-                    <strong>{message.graph_update.concepts_created > 0 ? "Feedback-approved grounded candidate added" : "Feedback-approved graph evidence reinforced"}</strong>
+                    <strong>{message.graph_update.concepts_created > 0 ? "Candidate concept found in cited passage" : "Citation-concept associations recorded"}</strong>
                     <small>
-                      {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} new from cited evidence · ` : ""}
-                      {message.graph_update.concepts_reinforced} existing concepts reinforced · {message.graph_update.links_observed} candidate relationships observed
-                      {message.graph_update.links_promoted > 0 ? ` · ${message.graph_update.links_promoted} promoted to supported` : ""}
+                      {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} candidate concept(s) from cited text · ` : ""}
+                      {message.graph_update.concepts_reinforced} existing concept(s) associated with citations · Relationships require separate review.
                     </small>
                   </span>
                 </Link>
@@ -313,7 +312,7 @@ export default function ChatPage() {
             }} />
             <button type="submit" disabled={!input.trim() || sending}>Ask</button>
           </form>
-          <span className="chat-disclaimer">Answers and graph adaptation are limited to retrieved, cited library evidence.</span>
+          <span className="chat-disclaimer">Answers cite retrieved passages; co-retrieval and ratings do not verify relationships.</span>
         </div>
       </main>
     </div>

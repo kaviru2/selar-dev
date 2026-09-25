@@ -214,26 +214,7 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 		if err != nil {
 			return nil, err
 		}
-		if request.Action == "helpful" || request.Action == "unhelpful" {
-			success, failure, delta := 0, 0, 0.08
-			if request.Action == "helpful" {
-				success = 1
-			} else {
-				failure, delta = 1, -0.05
-			}
-			_, err = tx.Exec(ctx, `
-				INSERT INTO chat_learner_projection (
-					user_id, concept_id, success_count, failure_count, interest_score, updated_at
-				) VALUES ($1, $2, $3, $4, GREATEST(0, $5::real), now())
-				ON CONFLICT (user_id, concept_id) DO UPDATE SET
-					success_count = chat_learner_projection.success_count + $3,
-					failure_count = chat_learner_projection.failure_count + $4,
-					interest_score = LEAST(1, GREATEST(0, chat_learner_projection.interest_score + $5::real)),
-					updated_at = now()`, userID, conceptID, success, failure, delta)
-			if err != nil {
-				return nil, err
-			}
-		}
+
 	}
 
 	if feedbackPermitsGraphReduction(request.Action) {
@@ -612,8 +593,8 @@ func (s *Store) ReplayAdaptiveGraph(ctx context.Context, userID string, apply bo
 		), signals AS (
 			SELECT concept_id,
 			 count(*) FILTER (WHERE event_type = 'citation_opened')::int AS retrieval_count,
-			 count(*) FILTER (WHERE event_type IN ('chat_feedback_helpful', 'quiz_success'))::int AS success_count,
-			 count(*) FILTER (WHERE event_type IN ('chat_feedback_unhelpful', 'quiz_failure'))::int AS failure_count
+			 count(*) FILTER (WHERE event_type = 'quiz_success')::int AS success_count,
+			 count(*) FILTER (WHERE event_type = 'quiz_failure')::int AS failure_count
 			FROM learning_events WHERE user_id = $1 AND concept_id IS NOT NULL GROUP BY concept_id
 		), ids AS (
 			SELECT concept_id FROM exposures UNION SELECT concept_id FROM signals
