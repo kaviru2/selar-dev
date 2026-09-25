@@ -387,7 +387,7 @@ export default function ReaderPage() {
               })}
               {mentalLinks.map(link => <div key={`review-${link.id}`}>
                 <button type="button" onClick={() => previewMentalLink(link.id)} aria-label={`Preview grounded assertion from ${link.source_document_title} to ${link.target_document_title}`}>Review assertion · {link.source_document_title} → {link.target_document_title}</button>
-                {reviewPreview?.id === link.id && <ReviewAssertion preview={reviewPreview} label={reviewLabel} reason={reviewReason} busy={reviewBusy} onLabel={setReviewLabel} onReason={setReviewReason} onAct={respondToMentalLink} />}
+                {reviewPreview?.id === link.id && (docId === link.source_document_id || docId === link.target_document_id) && <ReviewAssertion preview={reviewPreview} documentId={docId} label={reviewLabel} reason={reviewReason} busy={reviewBusy} onLabel={setReviewLabel} onReason={setReviewReason} onAct={respondToMentalLink} />}
               </div>)}
             </>
           ) : (
