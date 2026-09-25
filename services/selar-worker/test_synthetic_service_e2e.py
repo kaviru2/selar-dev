@@ -49,6 +49,8 @@ def services():
     db = os.environ.get("TEST_DATABASE_URL")
     binary = os.environ.get("TEST_API_BINARY")
     console = os.environ.get("TEST_CONSOLE_DIR")
+    if os.environ.get("SELAR_SYNTHETIC_E2E") != "1":
+        pytest.skip("dedicated pgvector/API/Next/Chromium job runs this service E2E")
     if not all((db, binary, console)):
         pytest.fail("real synthetic E2E requires TEST_DATABASE_URL, TEST_API_BINARY, TEST_CONSOLE_DIR")
     assert "selar_e2e" in db, "only use the isolated CI database"
@@ -149,6 +151,8 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert "gradient descent optimization" in evidence["quote"].lower()
             assert evidence["source_snapshot_hash"] and evidence["chunk_id"]
         assert _request(client, "GET", f"{api}/api/mental-model-links", foreign) == []
+        _request(client, "POST", f"{api}/api/mental-model-links/{link['id']}/respond", foreign,
+                 expected=404, json={"action": "confirmed"})
         assert not any(edge["id"] == link["id"] for edge in _request(client, "GET", f"{api}/api/graph", foreign)["edges"])
         # A similarity-only near negative may be retrieved; it must not become a
         # grounded candidate without a two-sided exact assertion.
@@ -171,6 +175,14 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert card.count() == 1
             card.get_by_text("View both source passages").click()
             assert "gradient descent optimization" in card.inner_text().lower()
+            page.goto(f"{console}/library")
+            page.get_by_role("button", name="Add content").click()
+            disclosure = page.locator("dialog[open] .processing-disclosure")
+            assert "SELAR server" in disclosure.inner_text()
+            assert "Google Gemini" in disclosure.inner_text()
+            assert "Data export and account data removal are not available" in disclosure.inner_text()
+            page.goto(f"{console}/reader?docId={latest}")
+            card = page.locator(".mental-link-card").filter(has_text="concept overlap")
             card.get_by_role("button", name="Confirm").click()
             page.get_by_text("confirmed", exact=True).wait_for(timeout=10000)
             browser.close()
