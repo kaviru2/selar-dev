@@ -21,6 +21,25 @@ func TestCanonicalizeURLMatchesWorkerRules(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeURLKeepsIPv6AuthorityForWorker(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"https://[2606:4700:4700::1111]:443/article", "https://[2606:4700:4700::1111]/article"},
+		{"https://[2606:4700:4700::1111]:8443/article", "https://[2606:4700:4700::1111]:8443/article"},
+	}
+	for _, tc := range cases {
+		got, err := canonicalizeURL(tc.input)
+		if err != nil {
+			t.Fatalf("canonicalizeURL(%q) returned error: %v", tc.input, err)
+		}
+		if got != tc.want {
+			t.Errorf("canonicalizeURL(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestCanonicalizeURLRejectsCredentials(t *testing.T) {
 	if _, err := canonicalizeURL("https://user:password@example.com/article"); err == nil {
 		t.Fatal("canonicalizeURL should reject URLs containing credentials")

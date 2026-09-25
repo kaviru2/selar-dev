@@ -50,6 +50,8 @@ func canonicalizeURL(raw string) (string, error) {
 	port := parsed.Port()
 	if port != "" && !((parsed.Scheme == "http" && port == "80") || (parsed.Scheme == "https" && port == "443")) {
 		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
 	}
 	parsed.Host = host
 	if parsed.Path == "" {
