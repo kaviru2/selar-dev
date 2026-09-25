@@ -103,7 +103,7 @@ jobs:
           done
 
       - name: Test real Go review store against Postgres
-        run: go test ./internal/store -run 'TestGroundedReview' -v -count=1
+        run: go test ./internal/store -run 'TestGroundedReview|TestChatGraphSafety' -v -count=1
         working-directory: services/selar-api
 
       - name: Syntax check
