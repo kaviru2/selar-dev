@@ -144,12 +144,22 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
         link = links[0]
         assert link["status"] == "candidate" and link["link_type"] == "concept_overlap"
         assert link["source_document_id"] == latest and link["target_document_id"] == prior
-        for side, doc_id in (("source", latest), ("target", prior)):
-            evidence = json.loads(link[f"{side}_evidence"])
+        async def stored_witnesses():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                row = await conn.fetchrow(
+                    "SELECT source_evidence, target_evidence FROM mental_model_links WHERE id=$1 AND user_id=$2",
+                    link["id"], owner["user"]["id"])
+                assert row is not None
+                return [json.loads(row["source_evidence"]), json.loads(row["target_evidence"])]
+            finally:
+                await conn.close()
+        witnesses = asyncio.run(stored_witnesses())
+        for side, doc_id, evidence in zip(("source", "target"), (latest, prior), witnesses):
             assert evidence["asserting_source_id"] == doc_id
-            assert evidence["quote"] == link[f"{side}_quote"]
+            assert evidence["quote"] == link[f"{side}_quote"] == link[f"{side}_evidence"]
             assert "gradient descent optimization" in evidence["quote"].lower()
-            assert evidence["source_snapshot_hash"] and evidence["chunk_id"]
+            assert evidence["source_snapshot_hash"] and evidence["chunk_id"] == link[f"{side}_evidence_chunk_id"]
         assert _request(client, "GET", f"{api}/api/mental-model-links", foreign) == []
         _request(client, "GET", f"{api}/api/mental-model-links/{link['id']}/preview", foreign, expected=404)
         _request(client, "POST", f"{api}/api/mental-model-links/{link['id']}/respond", foreign,
