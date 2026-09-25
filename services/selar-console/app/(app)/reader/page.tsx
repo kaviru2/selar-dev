@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
+import { groundedLinkPresentation } from "@/lib/link-evidence";
 import {
   clientFetch,
   type Annotation,
@@ -24,6 +25,7 @@ const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
 });
 
 const RELATION_LABELS: Record<string, string> = {
+  unclassified: "unclassified passage match",
   related_to: "related to",
   prerequisite_of: "prerequisite of",
   sub_concept_of: "sub-concept of",
@@ -324,6 +326,8 @@ export default function ReaderPage() {
               <div className="match-group-lbl">Argument-level candidates · {loading ? "…" : mentalLinks.length}</div>
               {!loading && mentalLinks.length === 0 && <PanelEmpty message="No argument-level links yet. They appear after at least two documents have mental models." />}
               {mentalLinks.map((link) => {
+                const pair = groundedLinkPresentation(link);
+                if (!pair) return null;
                 const otherTitle = link.source_document_id === docId ? link.target_document_title : link.source_document_title;
                 return (
                   <ConnectionCard
@@ -331,8 +335,8 @@ export default function ReaderPage() {
                     relation={link.link_type}
                     score={link.confidence}
                     source={otherTitle}
-                    explanation={link.bridge_explanation}
-                    evidence={link.target_evidence || link.source_evidence}
+                    explanation={pair.prompt}
+                    evidence={pair.evidence}
                     status={link.status}
                     onConfirm={() => respondToMentalLink(link.id, "confirmed")}
                     onReject={() => respondToMentalLink(link.id, "rejected")}
@@ -349,10 +353,12 @@ export default function ReaderPage() {
               {suggestions.map((suggestion) => (
                 <ConnectionCard
                   key={suggestion.id}
-                  relation={suggestion.relation}
+                  relation="unclassified"
                   score={suggestion.similarity}
-                  source={`${suggestion.tgt_doc || "Unknown source"} · p.${suggestion.tgt_page}`}
-                  explanation={suggestion.summary || suggestion.tgt_text}
+                  source={`${suggestion.src_doc} · p.${suggestion.src_page} → ${suggestion.tgt_doc} · p.${suggestion.tgt_page}`}
+                  explanation="Similarity-only passage match; not a verified relationship. Compare the two sources before drawing a conclusion."
+                  evidence={`${suggestion.src_doc} · p.${suggestion.src_page}: “${suggestion.src_text}”\n${suggestion.tgt_doc} · p.${suggestion.tgt_page}: “${suggestion.tgt_text}”`}
+                  allowConfirm={false}
                   status={suggestion.status}
                   onConfirm={() => respondToPassage(suggestion.id, "confirmed")}
                   onReject={() => respondToPassage(suggestion.id, "rejected")}
@@ -388,7 +394,7 @@ function MentalModelSummary({ model }: { model: DocumentMentalModel }) {
   );
 }
 
-function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject, onReveal }: {
+function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject, onReveal, allowConfirm = true }: {
   relation: string;
   score: number;
   source: string;
@@ -398,6 +404,7 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
   onConfirm: () => void;
   onReject: () => void;
   onReveal?: () => void;
+  allowConfirm?: boolean;
 }) {
   const relationColor = RELATION_COLORS[relation] || "var(--ink-4)";
   const reviewed = status === "confirmed" || status === "rejected" || status === "relabeled";
@@ -410,15 +417,15 @@ function ConnectionCard({ relation, score, source, explanation, evidence, status
       </div>
       <div className="connection-source">{source}</div>
       <p className="connection-explanation">{explanation}</p>
-      {evidence && <details className="connection-evidence"><summary>View supporting passage</summary><p>{evidence}</p></details>}
+      {evidence && <details className="connection-evidence"><summary>View both source passages</summary><p style={{ whiteSpace: "pre-line" }}>{evidence}</p></details>}
       <div className="foot">
         {onReveal && <button className="reveal" onClick={onReveal}><Icon name="eye" size={11} /> Show highlight</button>}
         {reviewed ? (
           <span className={`review-state ${status}`}><Icon name={status === "rejected" ? "x" : "check"} size={11} /> {status}</span>
         ) : (
           <>
-            <button className="confirm" onClick={onConfirm}><Icon name="check" size={11} /> Confirm</button>
-            <button onClick={onReject}><Icon name="x" size={11} /> Reject</button>
+            {allowConfirm && <button className="confirm" onClick={onConfirm}><Icon name="check" size={11} /> Confirm</button>}
+            <button onClick={onReject}><Icon name="x" size={11} /> {allowConfirm ? "Reject" : "Dismiss"}</button>
           </>
         )}
       </div>

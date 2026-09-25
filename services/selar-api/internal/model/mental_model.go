@@ -72,6 +72,10 @@ type MentalModelLink struct {
 	TargetEvidenceChunkID *string          `json:"target_evidence_chunk_id,omitempty"`
 	SourceEvidence        string           `json:"source_evidence,omitempty"`
 	TargetEvidence        string           `json:"target_evidence,omitempty"`
+	SourceQuote           string           `json:"source_quote,omitempty"`
+	TargetQuote           string           `json:"target_quote,omitempty"`
+	SourceLocator         json.RawMessage  `json:"source_locator,omitempty"`
+	TargetLocator         json.RawMessage  `json:"target_locator,omitempty"`
 	Status                MentalLinkStatus `json:"status"`
 	CreatedVia            EdgeCreatedVia   `json:"created_via"`
 	ModelVersion          string           `json:"model_version"`

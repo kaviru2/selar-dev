@@ -15,11 +15,11 @@ Deliver more than a requirements audit: versioned survey analysis where authoriz
 
 ## Phase 1 — traceability baseline / documentation PR
 
-Status: branch `docs/formative-requirements-traceability`, PR/CI/merge pending. Acceptance: each visible question appears in a grouped trace row; no fabricated response finding; canonical vs proposal and privacy boundaries explicit. Next: review, run doc checks and merge if green. No milestone notification until verified merge.
+Status: merged PR #29 at `279a8804d374b1bca080103205633bbfec922d62`. The traceability matrix covers visible question groups; every respondent-derived finding remains pending response review. No current response rows were accessible, so this is not survey-results analysis.
 
 ## Phase 2 — source-grounded link to learner prompt
 
-Status: pending repository read-only flow audit. Reuse offline evidence evaluator from merged PR #28 and keep reranker disabled. Build the smallest exact two-sided source-locator contract and one compare/explain/retrieve UI path that invites learner action but does not automatically confirm facts. TDD and synthetic negative/missing-support/cross-user cases; reviewable PR and CI; record actual outputs.
+Status: implementation on `feat/grounded-candidate-contract` (PR/CI/merge not yet verified at this revision). Targeted RED→GREEN: worker witness `test_exact_two_sided_owner_matched_overlap_keeps_a_candidate` failed missing asserted concept then passed; asyncpg JSON locator failed then passed; Go evidence payload and unclassified constant failed compilation then passed; console evidence presenter failed missing module then passed. Full local checks: worker `55 passed, 2 skipped` (including live DB test skipped: local Postgres unavailable), Go `go test ./... -count=1` and `go vet ./...` passed, console Vitest `14 passed` and production `pnpm build` passed. CI's pgvector/Postgres worker job will exercise actual witness INSERT/trigger rejection if this branch reaches PR; no Docker installed or started here. The worker now keeps only exact two-sided overlap witnesses as a directed new→prior candidate; distance-only passage matches remain unclassified and dismissible, not confirmable. Neither the disabled reranker nor the frozen splits changed. Next: review CI DB boundary, record PR/merge SHA only after verified remote readback; then Phase 3 persisted review/correction/retraction. Limits: overlap-only conservative classifier, local live DB/service E2E unrun, historical ungrounded legacy records not upgraded, no participant study.
 
 ## Phase 3 — human review and graph corrections
 

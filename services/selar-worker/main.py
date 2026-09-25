@@ -16,6 +16,7 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from ingestion import extract_source
+from candidate_contract import persist_grounded_overlap
 
 # Load root .env.development
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env.development'))
@@ -650,7 +651,7 @@ async def process_document_task(
         # this avoids an unbounded all-pairs comparison as the library grows.
         res1 = await conn.execute("""
             INSERT INTO link_suggestions (user_id, source_chunk_id, target_chunk_id, similarity, relation, status)
-            SELECT $2, new_chunk.id, match.id, 1 - match.distance, 'related_to', 'pending'
+            SELECT $2, new_chunk.id, match.id, 1 - match.distance, 'unclassified', 'pending'
             FROM chunks new_chunk
             CROSS JOIN LATERAL (
                 SELECT existing.id,
@@ -803,45 +804,12 @@ Rules:
                                 ON CONFLICT (chunk_id, concept_id) DO UPDATE SET confidence = EXCLUDED.confidence
                             """, doc_id, row['id'], c_vec)
 
-                        # Incremental nearest-neighbour graph growth; never compare every pair.
-                        await conn.execute("""
-                            INSERT INTO concept_edges (
-                                user_id, source_concept_id, target_concept_id, relation,
-                                created_via, state, confidence, base_confidence
-                            )
-                            SELECT $1, $2, existing.id, 'related_to', 'ai_suggested', 'candidate',
-                                   1 - (existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072)),
-                                   1 - (existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072))
-                            FROM concepts existing
-                            WHERE existing.user_id = $1 AND existing.id != $2
-                              AND existing.embedding IS NOT NULL
-                              AND existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072) < 0.25
-                            ORDER BY existing.embedding::halfvec(3072) <=> $3::vector(3072)::halfvec(3072)
-                            LIMIT 3
-                            ON CONFLICT (source_concept_id, target_concept_id, relation) DO NOTHING
-                        """, user_id, row['id'], c_vec)
+                        # Concept membership is not a verified cross-concept assertion.
+                        # Keep chunk_concepts for retrieval; no edge is promoted here.
 
-                edge_count = 0
-                for edge in mental_model.get('concept_edges', []):
-                    src_id = name_to_uuid.get(edge.get('source'))
-                    tgt_id = name_to_uuid.get(edge.get('target'))
-
-                    if src_id and tgt_id and src_id != tgt_id:
-                        rel = edge.get('relation', 'related_to')
-                        if rel not in ['prerequisite_of', 'related_to', 'sub_concept_of', 'contradicts', 'extends']:
-                            rel = 'related_to'
-
-                        await conn.execute("""
-                            INSERT INTO concept_edges (
-                                user_id, source_concept_id, target_concept_id, relation,
-                                created_via, state, confidence, base_confidence
-                            )
-                            VALUES ($1, $2, $3, $4, 'ai_suggested', 'supported', 0.75, 0.75)
-                            ON CONFLICT (source_concept_id, target_concept_id, relation) DO NOTHING
-                        """, user_id, src_id, tgt_id, rel)
-                        edge_count += 1
-
-                print(f"Mental model -> Concepts: {len(name_to_uuid)}, Edges: {edge_count}")
+                # Generated concept_edges lack pair-specific asserting-source
+                # evidence; preserve extracted concepts but do not persist edges.
+                print(f"Mental model -> Concepts: {len(name_to_uuid)}, unverified edges deferred")
                 await conn.execute("UPDATE documents SET progress = 0.88 WHERE id = $1", doc_id)
 
             # ── Phase 6: Bounded document-to-library mental-model linking ──
@@ -862,63 +830,38 @@ Rules:
             """, user_id, doc_id, model_vector)
 
             if prior_models:
-                source_evidence = await conn.fetchrow("""
-                    SELECT id, content FROM chunks
-                    WHERE document_id = $1 AND embedding IS NOT NULL
-                    ORDER BY embedding::halfvec(3072) <=> $2::vector(3072)::halfvec(3072)
-                    LIMIT 1
-                """, doc_id, model_vector)
-                source_evidence_chunk_id = source_evidence["id"] if source_evidence else None
-                prior_evidence_ids = []
-                for prior in prior_models:
-                    evidence = await conn.fetchrow("""
-                        SELECT c.id, c.content
-                        FROM chunks c
-                        JOIN document_mental_models mm ON mm.document_id = c.document_id
-                        WHERE mm.id = $1 AND c.embedding IS NOT NULL
-                        ORDER BY c.embedding::halfvec(3072) <=> mm.embedding::halfvec(3072)
-                        LIMIT 1
-                    """, prior["id"])
-                    prior_evidence_ids.append(evidence["id"] if evidence else None)
+                # Similarity orders candidate documents; it never asserts a relation.
+                # Search actual owner-matched passages for exact, unambiguous
+                # instances of a named current-document concept on both sides.
+                source_rows = await conn.fetch("""
+                    SELECT c.id, c.user_id, c.document_id, c.content, c.locator,
+                           d.title, d.content_hash
+                    FROM chunks c JOIN documents d ON d.id = c.document_id
+                    WHERE c.document_id = $1 AND c.user_id = $2 AND d.user_id = $2
+                    ORDER BY c.chunk_index LIMIT 40
+                """, doc_id, user_id)
                 created_links = 0
-                for prior_index, prior in enumerate(prior_models):
-                    prior_model = {
-                        "main_claim": prior["main_claim"],
-                        "key_concepts": list(prior["key_concepts"]),
-                        "assumptions": list(prior["assumptions"]),
-                        "open_questions": list(prior["open_questions"]),
-                        "domain": prior["domain"],
-                    }
-                    classified = deterministic_model_link(
-                        mental_model, prior_model, float(prior["similarity"])
-                    )
-                    if not classified:
-                        continue
-                    link_type = classified["link_type"]
-                    confidence = classified["confidence"]
-                    target_chunk_id = prior_evidence_ids[prior_index]
-                    await conn.execute("""
-                        INSERT INTO mental_model_links (
-                            user_id, source_model_id, target_model_id, link_type,
-                            similarity, confidence, bridge_explanation,
-                            source_evidence_chunk_id, target_evidence_chunk_id,
-                            status, created_via, model_version, prompt_version
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-                                  'candidate', 'ai_suggested', $10, 'deterministic-link-v1')
-                        ON CONFLICT (source_model_id, target_model_id, link_type) DO UPDATE SET
-                            similarity = EXCLUDED.similarity,
-                            confidence = EXCLUDED.confidence,
-                            bridge_explanation = EXCLUDED.bridge_explanation,
-                            source_evidence_chunk_id = EXCLUDED.source_evidence_chunk_id,
-                            target_evidence_chunk_id = EXCLUDED.target_evidence_chunk_id,
-                            model_version = EXCLUDED.model_version,
-                            prompt_version = EXCLUDED.prompt_version
-                    """, user_id, mental_model_id, prior["id"], link_type,
-                        float(prior["similarity"]), confidence,
-                        str(classified["bridge_explanation"])[:500],
-                        source_evidence_chunk_id, target_chunk_id, "deterministic-v1")
-                    created_links += 1
-                print(f"Mental-model candidate links: {created_links}")
+                for prior in prior_models:
+                    target_rows = await conn.fetch("""
+                        SELECT c.id, c.user_id, c.document_id, c.content, c.locator,
+                               d.title, d.content_hash
+                        FROM chunks c JOIN documents d ON d.id = c.document_id
+                        WHERE c.document_id = $1 AND c.user_id = $2 AND d.user_id = $2
+                        ORDER BY c.chunk_index LIMIT 40
+                    """, prior["document_id"], user_id)
+                    for source_row in source_rows:
+                        for target_row in target_rows:
+                            if await persist_grounded_overlap(
+                                conn, mental_model, dict(source_row), dict(target_row),
+                                user_id, doc_id, prior["document_id"], mental_model_id,
+                                prior["id"], float(prior["similarity"])
+                            ):
+                                created_links += 1
+                                break
+                        else:
+                            continue
+                        break
+                print(f"Grounded mental-model candidate links: {created_links}")
             await conn.execute("UPDATE documents SET progress = 0.96 WHERE id = $1", doc_id)
         except Exception as e:
             print(f"Failed to generate mental model for {doc_id}: {e}")

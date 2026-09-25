@@ -24,6 +24,7 @@ const (
 type RelationType string
 
 const (
+	RelationUnclassified   RelationType = "unclassified" // similarity-only, not an assertion
 	RelationRelatedTo      RelationType = "related_to"
 	RelationPrerequisiteOf RelationType = "prerequisite_of"
 	RelationSubConceptOf   RelationType = "sub_concept_of"
