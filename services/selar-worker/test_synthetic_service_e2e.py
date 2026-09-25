@@ -258,7 +258,7 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             page.locator(".pdf-page-container .textLayer").get_by_text(PDF_LINE).wait_for(timeout=20000)
             assert "1 / 1" in page.locator(".page-indicator").first.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
-            card = page.locator(".mental-link-card").filter(has_text="concept overlap")
+            card = page.locator(".mental-link-card").filter(has_text="Fabricated notebook A")
             card.wait_for(timeout=20000)
             assert card.count() == 1
             card.get_by_text("View both source passages").click()
@@ -270,7 +270,7 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert "Google Gemini" in disclosure.inner_text()
             assert "Data export and account data removal are not available" in disclosure.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
-            card = page.locator(".mental-link-card").filter(has_text="concept overlap")
+            card = page.locator(".mental-link-card").filter(has_text="Fabricated notebook A")
             page.get_by_role("button", name=(
                 f"Preview grounded assertion from {link['source_document_title']} "
                 f"to {link['target_document_title']}")).click()
