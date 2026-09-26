@@ -140,7 +140,19 @@ def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: 
     selected: List[Dict[str, Any]] = []
     overflow: List[Dict[str, Any]] = []
     per_document: Counter = Counter()
+    seen_passages = set()
     for item in sorted(fused.values(), key=lambda entry: (-entry["rrf_score"], entry["chunk_id"])):
+        # Only identical normalized text within the same known document is
+        # interchangeable. Keep the best-ranked chunk's ID and locator intact.
+        content = item.get("content")
+        document_id = item.get("document_id")
+        if document_id and isinstance(content, str):
+            normalized = " ".join(content.split()).casefold()
+            if normalized:
+                passage = (document_id, normalized)
+                if passage in seen_passages:
+                    continue
+                seen_passages.add(passage)
         document = item.get("document_id") or item["chunk_id"]
         if per_document[document] >= 2:
             overflow.append(item)

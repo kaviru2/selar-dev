@@ -147,6 +147,87 @@ def test_retrieval_preserves_full_budget_for_single_source_library():
     fused = main.reciprocal_rank_fusion({"vector": one_source}, limit=6)
     assert [item["chunk_id"] for item in fused] == [f"only-{index}" for index in range(6)]
 
+def test_retrieval_collapses_normalized_duplicates_without_spending_single_document_budget():
+    chunks = [
+        {"chunk_id": "best", "document_id": "cedar-doc", "content": "Cedar  reports\n a result.",
+         "locator": {"heading": "best locator"}, "score": 1},
+        {"chunk_id": "copy", "document_id": "cedar-doc", "content": "  cedar reports a RESULT.  ",
+         "locator": {"heading": "copy locator"}, "score": .9},
+    ] + [
+        {"chunk_id": f"distinct-{i}", "document_id": "cedar-doc",
+         "content": f"Independent passage {i}.", "score": .8 - i * .1}
+        for i in range(5)
+    ]
+    fused = main.reciprocal_rank_fusion({"vector": chunks}, limit=6)
+    assert [item["chunk_id"] for item in fused] == ["best"] + [f"distinct-{i}" for i in range(5)]
+    assert fused[0]["locator"] == {"heading": "best locator"}
+
+def test_retrieval_preserves_identical_text_as_independent_evidence_in_other_document():
+    chunks = [
+        {"chunk_id": "first", "document_id": "cedar-doc", "content": "A reported result.",
+         "locator": {"heading": "cedar"}, "score": 1},
+        {"chunk_id": "same-doc-copy", "document_id": "cedar-doc", "content": "a  reported RESULT.",
+         "locator": {"heading": "copy"}, "score": .9},
+        {"chunk_id": "other-source", "document_id": "birch-doc", "content": "A reported result.",
+         "locator": {"heading": "birch"}, "score": .8},
+    ]
+    fused = main.reciprocal_rank_fusion({"vector": chunks}, limit=3)
+    assert [(item["chunk_id"], item["document_id"], item["locator"]) for item in fused] == [
+        ("first", "cedar-doc", {"heading": "cedar"}),
+        ("other-source", "birch-doc", {"heading": "birch"}),
+    ]
+
+def test_retrieval_does_not_collapse_missing_or_blank_evidence():
+    chunks = [
+        {"chunk_id": "no-document-1", "content": "Shared text"},
+        {"chunk_id": "no-document-2", "content": "Shared text"},
+        {"chunk_id": "blank-1", "document_id": "cedar-doc", "content": "   "},
+        {"chunk_id": "blank-2", "document_id": "cedar-doc", "content": "\n"},
+    ]
+    assert {item["chunk_id"] for item in main.reciprocal_rank_fusion({"vector": chunks}, limit=4)} == {
+        item["chunk_id"] for item in chunks
+    }
+
+def test_grounded_chat_citations_use_retained_chunk_and_owner_scoped_source(monkeypatch):
+    rows = [
+        {"chunk_id": "cedar-best", "document_id": "cedar-doc", "document_title": "Cedar report",
+         "page": 4, "content": "Cedar found an effect.", "locator": {"page": 4},
+         "source_type": "pdf", "score": 1},
+        {"chunk_id": "cedar-copy", "document_id": "cedar-doc", "document_title": "Cedar report",
+         "page": 5, "content": " cedar found an EFFECT. ", "locator": {"page": 5},
+         "source_type": "pdf", "score": .9},
+        {"chunk_id": "birch-independent", "document_id": "birch-doc", "document_title": "Birch report",
+         "page": 7, "content": "Cedar found an effect.", "locator": {"page": 7},
+         "source_type": "pdf", "score": .8},
+    ]
+    class Connection:
+        async def fetch(self, sql, *args):
+            assert args[0] == "invented-owner"
+            assert "c.user_id = $1" in sql and "d.user_id = $1" in sql
+            return rows if "c.embedding IS NOT NULL" in sql else []
+        async def close(self):
+            pass
+    async def connect(_):
+        return Connection()
+    class Models:
+        def generate_content(self, **kwargs):
+            prompt = kwargs["contents"]
+            assert "[S1] Cedar report, page 4" in prompt
+            assert "[S2] Birch report, page 7" in prompt
+            assert "page 5" not in prompt
+            return SimpleNamespace(text="Two documents contain this passage [S1][S2].")
+    monkeypatch.setattr(main.asyncpg, "connect", connect)
+    monkeypatch.setattr(main, "embed_query_text", lambda _: [0.0] * 3072)
+    monkeypatch.setattr(main, "client", SimpleNamespace(models=Models()))
+    result = asyncio.run(main.grounded_chat(main.ChatRequest(
+        user_id="invented-owner", thread_id="invented-thread", question="What did Cedar report?")))
+    assert [(c["chunk_id"], c["document_id"], c["page"], c["locator"], c["rank"])
+            for c in result["citations"]] == [
+                ("cedar-best", "cedar-doc", 4, {"page": 4}, 1),
+                ("birch-independent", "birch-doc", 7, {"page": 7}, 2),
+            ]
+    assert [c["chunk_id"] for c in result["candidates"]] == ["cedar-best", "birch-independent"]
+
 
 def test_retrieval_zero_limit_returns_no_chunks():
     assert main.reciprocal_rank_fusion({"vector": [
@@ -185,15 +266,17 @@ def test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations(monkeypat
             foreign = await conn.fetchval(
                 "INSERT INTO documents(user_id,title,status,source_type) "
                 "VALUES ($1,'Foreign benchmark paper','ready','pdf') RETURNING id", owners[1])
+            chunk_ids = []
             for index, (owner, doc, text) in enumerate((
                 (owners[0], comparison, "Birch compared a modified CedarAgent baseline on BeaconBench."),
+                (owners[0], comparison, " birch  COMPARED a modified CedarAgent baseline on BeaconBench. "),
                 (owners[0], primary, "CedarAgent introduces an agent architecture for tools."),
                 (owners[1], foreign, "Foreign owner compared CedarAgent on BeaconBench."),
             )):
-                await conn.execute(
+                chunk_ids.append(await conn.fetchval(
                     "INSERT INTO chunks(user_id,document_id,chunk_index,content,embedding) "
-                    "VALUES ($1,$2,$3,$4,$5::vector)", owner, doc, index, text,
-                    str([1.0] + [0.0] * 3071))
+                    "VALUES ($1,$2,$3,$4,$5::vector) RETURNING id", owner, doc, index, text,
+                    str([1.0] + [0.0] * 3071)))
             owner_id = str(owners[0])
             thread_id = str(uuid.uuid4())
             for question in (
@@ -212,6 +295,9 @@ def test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations(monkeypat
             assert "Foreign owner" not in generation[0]
             assert "Original CedarAgent paper" in generation[0]
             assert ordinary["citations"] and ordinary["citations"][0]["document_id"] == str(comparison)
+            assert len({candidate["chunk_id"] for candidate in ordinary["candidates"]}
+                       & {str(chunk_ids[0]), str(chunk_ids[1])}) == 1
+            assert str(chunk_ids[3]) not in {c["chunk_id"] for c in ordinary["candidates"]}
             assert all(c["document_id"] != str(foreign) for c in ordinary["citations"])
             assert all(c["document_id"] != str(foreign) for c in disputed["citations"])
         finally:
