@@ -393,9 +393,20 @@ def extract_pdf(file_path: str, doc_id: str, word_limit: int, merge_bboxes, titl
             words = page.extract_words(use_text_flow=True, x_tolerance=1, y_tolerance=3)
             if not words:
                 continue
-            for offset in range(0, len(words), word_limit):
-                group = words[offset:offset + word_limit]
-                text = clean_text(" ".join(word["text"] for word in group))
+            # A line-end hyphen may be a lexical hyphen or a discretionary wrap.
+            # Keep both extracted tokens verbatim and do not cite an inferred join.
+            start = 0
+            for end in range(1, len(words) + 1):
+                line_end_hyphen = (
+                    end < len(words)
+                    and words[end - 1]["text"].endswith("-")
+                    and words[end]["top"] >= words[end - 1]["bottom"]
+                )
+                if not (line_end_hyphen or end - start >= word_limit or end == len(words)):
+                    continue
+                group = words[start:end]
+                text = " ".join(word["text"] for word in group).strip()
+                start = end
                 if not text:
                     continue
                 block_index = len(blocks)
