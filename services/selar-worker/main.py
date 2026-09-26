@@ -142,7 +142,12 @@ def requires_primary_source_verification(question: str) -> bool:
     original = re.search(r"\boriginal(?:ly)?\b", words)
     benchmark_or_method = re.search(r"\b\w*bench\w*\b|\b(?:method|algorithm|technique)\w*\b", words)
     direct_question = re.search(r"^\s*(?:did|does|do|was|were|has|have|whether)\b", words)
-    return bool(predicate and (original or (direct_question and benchmark_or_method)))
+    # Reporting results on a benchmark implies original-study use, even when
+    # the question does not literally say "use" or "evaluate". Keep this
+    # extension tied to an explicit original-source question so an ordinary
+    # comparison paper's reported results remain answerable.
+    reported_original_results = original and re.search(r"\breport(?:ed|s|ing)?\s+results?\s+on\b", words)
+    return bool(reported_original_results or (predicate and (original or (direct_question and benchmark_or_method))))
 
 
 def safe_parse_json(text: str) -> Any:
