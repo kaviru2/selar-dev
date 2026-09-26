@@ -88,6 +88,62 @@ class ChatRequest(BaseModel):
     history: List[ChatHistoryItem] = Field(default_factory=list)
 
 
+def is_explicit_graph_command(question: str) -> bool:
+    """Route only direct mutation requests, not questions about graph concepts."""
+    return bool(re.match(
+        r"^\s*(?:(?:please|could you|can you|would you)\s+)*"
+        r"(?:update|correct|fix|change|modify|edit)\s+"
+        r"(?:(?:my|the|this)\s+)?(?:knowledge\s+)?graph\b",
+        question, re.I,
+    ))
+
+
+async def graph_command_response(owner: str, started: float) -> Dict[str, Any]:
+    # Reuse only live two-sided, owner-scoped candidates. This is not a new
+    # mutation preview and an unrelated candidate cannot resolve a correction.
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        candidate = await conn.fetchrow("""
+            SELECT ml.id, sm.document_id
+            FROM mental_model_links ml
+            JOIN document_mental_models sm ON sm.id = ml.source_model_id
+            JOIN document_mental_models tm ON tm.id = ml.target_model_id
+            JOIN documents sd ON sd.id = sm.document_id
+            JOIN documents td ON td.id = tm.document_id
+            WHERE ml.user_id = $1 AND sm.user_id = $1 AND tm.user_id = $1
+              AND sd.user_id = $1 AND td.user_id = $1
+              AND ml.status = 'candidate' AND sd.status = 'ready' AND td.status = 'ready'
+              AND valid_grounded_mental_link(ml)
+              AND NOT EXISTS (SELECT 1 FROM document_mental_models newer
+                              WHERE newer.document_id = sm.document_id AND newer.version > sm.version AND newer.status = 'ready')
+              AND NOT EXISTS (SELECT 1 FROM document_mental_models newer
+                              WHERE newer.document_id = tm.document_id AND newer.version > tm.version AND newer.status = 'ready')
+            ORDER BY ml.suggested_at DESC, ml.id LIMIT 1
+        """, owner)
+    finally:
+        await conn.close()
+
+    answer = ("No graph change was made, and no preview was created for this request. "
+              "Chat cannot verify or apply a graph correction. ")
+    if candidate:
+        url = f"/reader?docId={candidate['document_id']}&linkId={candidate['id']}"
+        answer += (f"An existing two-sided candidate has its own [review preview]({url}); "
+                   "inspect both source quotes there before deciding. It may not address this correction.")
+    else:
+        answer += ("No preview is available for this request. If a two-sided candidate "
+                   "becomes available, review its source and target quotes in the reader; "
+                   "do not infer a new relation from chat citations.")
+    return {
+        "answer": answer,
+        "model_version": "deterministic-graph-command-boundary-v1",
+        "ranking_policy": "no-research-retrieval-graph-command-v1",
+        "citations": [], "candidates": [],
+        "metrics": {"embedding_ms": 0, "retrieval_ms": 0, "generation_ms": 0,
+                    "total_ms": (time.perf_counter() - started) * 1000,
+                    "candidate_count": 0, "model_calls": 0},
+    }
+
+
 def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: int = 6) -> List[Dict[str, Any]]:
     """Fuse independently ranked retrieval signals with fixed, replayable weights."""
     if limit <= 0:
@@ -1128,6 +1184,8 @@ async def grounded_chat(req: ChatRequest):
     question = req.question.strip()
     if not question or len(question) > 4000:
         raise HTTPException(status_code=400, detail="question must contain 1 to 4000 characters")
+    if is_explicit_graph_command(question):
+        return await graph_command_response(req.user_id, total_started)
     if not client:
         raise HTTPException(status_code=503, detail="Gemini client is not configured")
 
