@@ -98,41 +98,13 @@ def is_explicit_graph_command(question: str) -> bool:
     ))
 
 
-async def graph_command_response(owner: str, started: float) -> Dict[str, Any]:
-    # Reuse only live two-sided, owner-scoped candidates. This is not a new
-    # mutation preview and an unrelated candidate cannot resolve a correction.
-    conn = await asyncpg.connect(DATABASE_URL)
-    try:
-        candidate = await conn.fetchrow("""
-            SELECT ml.id, sm.document_id
-            FROM mental_model_links ml
-            JOIN document_mental_models sm ON sm.id = ml.source_model_id
-            JOIN document_mental_models tm ON tm.id = ml.target_model_id
-            JOIN documents sd ON sd.id = sm.document_id
-            JOIN documents td ON td.id = tm.document_id
-            WHERE ml.user_id = $1 AND sm.user_id = $1 AND tm.user_id = $1
-              AND sd.user_id = $1 AND td.user_id = $1
-              AND ml.status = 'candidate' AND sd.status = 'ready' AND td.status = 'ready'
-              AND valid_grounded_mental_link(ml)
-              AND NOT EXISTS (SELECT 1 FROM document_mental_models newer
-                              WHERE newer.document_id = sm.document_id AND newer.version > sm.version AND newer.status = 'ready')
-              AND NOT EXISTS (SELECT 1 FROM document_mental_models newer
-                              WHERE newer.document_id = tm.document_id AND newer.version > tm.version AND newer.status = 'ready')
-            ORDER BY ml.suggested_at DESC, ml.id LIMIT 1
-        """, owner)
-    finally:
-        await conn.close()
-
+def graph_command_response(started: float) -> Dict[str, Any]:
+    # Without a reviewed, request-matched witness, a random existing candidate
+    # would be a misleading suggestion for this particular correction.
     answer = ("No graph change was made, and no preview was created for this request. "
-              "Chat cannot verify or apply a graph correction. ")
-    if candidate:
-        url = f"/reader?docId={candidate['document_id']}&linkId={candidate['id']}"
-        answer += (f"An existing two-sided candidate has its own [review preview]({url}); "
-                   "inspect both source quotes there before deciding. It may not address this correction.")
-    else:
-        answer += ("No preview is available for this request. If a two-sided candidate "
-                   "becomes available, review its source and target quotes in the reader; "
-                   "do not infer a new relation from chat citations.")
+              "Chat cannot verify or apply a graph correction. To inspect an existing "
+              "two-sided candidate, open its document in the reader and check both source "
+              "quotes before deciding; a chat citation alone does not establish a relation.")
     return {
         "answer": answer,
         "model_version": "deterministic-graph-command-boundary-v1",
@@ -1185,7 +1157,7 @@ async def grounded_chat(req: ChatRequest):
     if not question or len(question) > 4000:
         raise HTTPException(status_code=400, detail="question must contain 1 to 4000 characters")
     if is_explicit_graph_command(question):
-        return await graph_command_response(req.user_id, total_started)
+        return graph_command_response(total_started)
     if not client:
         raise HTTPException(status_code=503, detail="Gemini client is not configured")
 
