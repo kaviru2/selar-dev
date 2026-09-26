@@ -39,6 +39,22 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); storageSpy.mockRestore(); vi.unstubAllGlobals(); });
 
 describe("optional reflection at the verified review seam", () => {
+  it("moves focus to the named review heading when an assertion preview opens", async () => {
+    const opener = document.createElement("button");
+    opener.textContent = "Preview grounded assertion";
+    document.body.append(opener);
+    opener.focus();
+    try {
+      await render();
+      const heading = container.querySelector("h3");
+      expect(heading?.textContent).toContain("Review concept overlap");
+      expect(heading?.getAttribute("tabindex")).toBe("-1");
+      expect(document.activeElement).toBe(heading);
+      expect(container.querySelector('section[aria-label="Grounded assertion review"]')?.contains(heading as Node)).toBe(true);
+    } finally {
+      opener.remove();
+    }
+  });
   it("lets a learner draft an explanation without saving or submitting it", async () => {
     await render();
     const field = container.querySelector('textarea[aria-label="Your explanation of how the claims connect"]') as HTMLTextAreaElement;
