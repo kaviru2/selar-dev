@@ -11,6 +11,54 @@ import main
 
 
 @pytest.mark.parametrize("question", [
+    "Update the graph",
+    "Please correct the knowledge graph based on that answer.",
+    "Can you update my graph?",
+])
+def test_explicit_graph_action_skips_research_retrieval_and_generation(monkeypatch, question):
+    async def connect(_):
+        pytest.fail("graph command cannot select an unrelated candidate or retrieve passages")
+    monkeypatch.setattr(main.asyncpg, "connect", connect)
+    monkeypatch.setattr(main, "embed_query_text", lambda _: pytest.fail("no embedding on graph command"))
+    monkeypatch.setattr(main, "client", None)
+    result = asyncio.run(main.grounded_chat(main.ChatRequest(
+        user_id="fabricated-owner", thread_id="fabricated-thread", question=question)))
+    assert "no graph change" in result["answer"].lower()
+    assert "no preview" in result["answer"].lower()
+    assert result["citations"] == [] and result["candidates"] == []
+    assert result["metrics"]["model_calls"] == 0
+
+
+def test_graph_action_without_relevance_evidence_does_not_link_random_candidate(monkeypatch):
+    """A live candidate can be unrelated to the requested graph correction."""
+    class Connection:
+        async def fetchrow(self, *_):
+            return {"id": uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                    "document_id": uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")}
+        async def close(self):
+            pass
+    async def connect(_):
+        return Connection()
+    monkeypatch.setattr(main.asyncpg, "connect", connect)
+    monkeypatch.setattr(main, "client", None)
+    result = asyncio.run(main.grounded_chat(main.ChatRequest(
+        user_id="fabricated-owner", thread_id="fabricated-thread",
+        question="Update the graph based on that correction.")))
+    assert "no graph change" in result["answer"].lower()
+    assert "linkId=" not in result["answer"]
+    assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" not in result["answer"]
+
+
+@pytest.mark.parametrize("question", [
+    "What does 'update the graph' mean?",
+    "How did the authors update the graph in their paper?",
+    "What is a knowledge graph?",
+])
+def test_research_questions_remain_outside_graph_command_boundary(question):
+    assert not main.is_explicit_graph_command(question)
+
+
+@pytest.mark.parametrize("question", [
     "Did the original CedarAgent paper use BeaconBench?",
     "Did CedarAgent use BeaconBench?",
     "Did CedarAgent originally evaluate on BeaconBench?",

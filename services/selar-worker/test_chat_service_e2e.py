@@ -19,6 +19,38 @@ COMPARISON = "# Birch comparison paper\nBirch compared a modified CedarAgent bas
 
 
 @pytest.mark.timeout(120)
+def test_graph_command_does_not_search_or_pretend_to_create_preview(services):
+    api, _ = services
+    with httpx.Client() as client:
+        owner = _request(client, "POST", f"{api}/auth/register", expected=201,
+                         json={"email": f"graph-command-{uuid.uuid4().hex}@example.invalid",
+                               "password": PASSWORD})
+        token = owner["token"]
+        thread = _request(client, "POST", f"{api}/api/chat/threads", token, expected=201)
+        result = _request(client, "POST", f"{api}/api/chat/threads/{thread['id']}/messages",
+                          token, expected=201, json={"content": "Update the graph based on that."})
+        assert result["model_version"] == "deterministic-graph-command-boundary-v1"
+        assert "no graph change" in result["content"].lower()
+        assert "no preview" in result["content"].lower()
+        assert result["citations"] == []
+        assert not any(edge.get("created_via") == "deterministic_chat" for edge in
+                       _request(client, "GET", f"{api}/api/graph", token)["edges"])
+        async def trace():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                return await conn.fetchrow(
+                    "SELECT t.ranking_policy,t.candidates,m.values AS metrics "
+                    "FROM retrieval_traces t JOIN evaluation_metrics m ON m.chat_message_id=t.assistant_message_id "
+                    "WHERE t.assistant_message_id=$1 AND t.user_id=$2", result["id"], owner["user"]["id"])
+            finally:
+                await conn.close()
+        row = asyncio.run(trace())
+        assert row["ranking_policy"] == "no-research-retrieval-graph-command-v1"
+        assert json.loads(row["candidates"]) == []
+        assert json.loads(row["metrics"])["model_calls"] == 0
+
+
+@pytest.mark.timeout(120)
 def test_original_source_question_abstains_through_api_worker_and_database(services, monkeypatch):
     import main
 

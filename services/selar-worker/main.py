@@ -88,6 +88,34 @@ class ChatRequest(BaseModel):
     history: List[ChatHistoryItem] = Field(default_factory=list)
 
 
+def is_explicit_graph_command(question: str) -> bool:
+    """Route only direct mutation requests, not questions about graph concepts."""
+    return bool(re.match(
+        r"^\s*(?:(?:please|could you|can you|would you)\s+)*"
+        r"(?:update|correct|fix|change|modify|edit)\s+"
+        r"(?:(?:my|the|this)\s+)?(?:knowledge\s+)?graph\b",
+        question, re.I,
+    ))
+
+
+def graph_command_response(started: float) -> Dict[str, Any]:
+    # Without a reviewed, request-matched witness, a random existing candidate
+    # would be a misleading suggestion for this particular correction.
+    answer = ("No graph change was made, and no preview was created for this request. "
+              "Chat cannot verify or apply a graph correction. To inspect an existing "
+              "two-sided candidate, open its document in the reader and check both source "
+              "quotes before deciding; a chat citation alone does not establish a relation.")
+    return {
+        "answer": answer,
+        "model_version": "deterministic-graph-command-boundary-v1",
+        "ranking_policy": "no-research-retrieval-graph-command-v1",
+        "citations": [], "candidates": [],
+        "metrics": {"embedding_ms": 0, "retrieval_ms": 0, "generation_ms": 0,
+                    "total_ms": (time.perf_counter() - started) * 1000,
+                    "candidate_count": 0, "model_calls": 0},
+    }
+
+
 def reciprocal_rank_fusion(result_sets: Dict[str, List[Dict[str, Any]]], limit: int = 6) -> List[Dict[str, Any]]:
     """Fuse independently ranked retrieval signals with fixed, replayable weights."""
     if limit <= 0:
@@ -1128,6 +1156,8 @@ async def grounded_chat(req: ChatRequest):
     question = req.question.strip()
     if not question or len(question) > 4000:
         raise HTTPException(status_code=400, detail="question must contain 1 to 4000 characters")
+    if is_explicit_graph_command(question):
+        return graph_command_response(total_started)
     if not client:
         raise HTTPException(status_code=503, detail="Gemini client is not configured")
 
