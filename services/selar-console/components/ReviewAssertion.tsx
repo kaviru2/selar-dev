@@ -33,13 +33,15 @@ export function ReviewAssertion({preview,documentId,label,reason,busy,onLabel,on
  preview:MentalLinkReviewPreview;documentId?:string;label:string;reason:string;busy:boolean;
  onLabel:(value:string)=>void;onReason:(value:string)=>void;onAct:(action:ReviewAction)=>void;
 }) {
+ const headingRef = useRef<HTMLHeadingElement>(null);
+ useEffect(() => { headingRef.current?.focus(); }, [preview.id]);
  const hasLocator = (locator: MentalLinkReviewPreview["source_locator"]) => locator && (Number.isInteger(locator.page) || Number.isInteger(locator.block_index));
  if (!preview.id || !preview.source_document_id || !preview.target_document_id || !preview.source_quote?.trim() || !preview.target_quote?.trim() || !hasLocator(preview.source_locator) || !hasLocator(preview.target_locator)) {
   return <section aria-label="Grounded assertion review" className="connection-evidence"><p role="alert">Two exact source quotes and their locations are unavailable. This assertion cannot be reviewed or used for reflection. Refresh the evidence preview.</p></section>;
  }
  const actions=reviewActions(preview.status,preview.revision);
  return <section aria-label="Grounded assertion review" className="connection-evidence">
-  <h3>Review concept overlap · Revision {preview.revision}</h3>
+  <h3 ref={headingRef} tabIndex={-1}>Review concept overlap · Revision {preview.revision}</h3>
   <p>This is exact concept overlap in two documents, not proof of extension or contradiction. Your review is not a retrieval success.</p>
   <EvidenceReflection key={`${documentId ?? preview.source_document_id}:${preview.id}`} preview={preview} />
   {preview.user_label && <p>Human note: {preview.user_label}</p>}

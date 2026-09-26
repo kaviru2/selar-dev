@@ -317,11 +317,18 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert "Data export and account data removal are not available" in disclosure.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
             card = page.locator(".mental-link-card").filter(has_text="Fabricated notebook A")
-            page.get_by_role("button", name=(
+            preview_button = page.get_by_role("button", name=(
                 f"Preview grounded assertion from {link['source_document_title']} "
-                f"to {link['target_document_title']}")).click()
+                f"to {link['target_document_title']}"))
+            preview_button.focus()
+            preview_button.press("Enter")
             review = page.get_by_role("region", name="Grounded assertion review")
             review.get_by_text("not a retrieval success").wait_for(timeout=10000)
+            heading = review.get_by_role("heading", name="Review concept overlap · Revision 0")
+            assert heading.evaluate("element => element === document.activeElement"), "keyboard-opened review must receive focus"
+            page.keyboard.press("Tab")
+            assert review.get_by_role("link", name="Open source in reader").evaluate(
+                "element => element === document.activeElement"), "source witness must be next in keyboard order"
             assert "gradient descent optimization" in review.inner_text().lower()
             reflection = page.get_by_role("region", name="Optional evidence reflection")
             reflection.get_by_role("textbox", name="Your explanation of how the claims connect").fill(
