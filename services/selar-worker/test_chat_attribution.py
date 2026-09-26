@@ -16,6 +16,7 @@ import main
     "Did CedarAgent originally evaluate on BeaconBench?",
     "Whether the original CedarAgent system used the BeaconBench method?",
     "Was BeaconBench used in CedarAgent's original paper?",
+    "Did the original CedarAgent paper report results on BeaconBench?",
 ])
 def test_original_source_question_abstains_without_primary_verification(monkeypatch, question):
     calls = []
@@ -50,7 +51,11 @@ def test_original_source_question_abstains_without_primary_verification(monkeypa
     assert "generation" not in calls
 
 
-def test_comparison_question_keeps_citation_bound_to_retrieved_chunk(monkeypatch):
+@pytest.mark.parametrize("question", [
+    "What did Birch compare?",
+    "What results did Birch report on BeaconBench?",
+])
+def test_comparison_question_keeps_citation_bound_to_retrieved_chunk(monkeypatch, question):
     class Connection:
         async def fetch(self, sql, *args):
             assert args[0] == "owner"
@@ -73,7 +78,7 @@ def test_comparison_question_keeps_citation_bound_to_retrieved_chunk(monkeypatch
     monkeypatch.setattr(main, "embed_query_text", lambda _: [0.0] * 3072)
     monkeypatch.setattr(main, "client", SimpleNamespace(models=Models()))
     result = asyncio.run(main.grounded_chat(main.ChatRequest(
-        user_id="owner", thread_id="thread", question="What did Birch compare?")))
+        user_id="owner", thread_id="thread", question=question)))
     assert result["answer"] == "Birch reports a modified comparison baseline [S1]."
     assert [(c["chunk_id"], c["document_id"], c["rank"]) for c in result["citations"]] == [
         ("comparison-chunk", "comparison-doc", 1)]
@@ -141,14 +146,20 @@ def test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations(monkeypat
                     "INSERT INTO chunks(user_id,document_id,chunk_index,content,embedding) "
                     "VALUES ($1,$2,$3,$4,$5::vector)", owner, doc, index, text,
                     str([1.0] + [0.0] * 3071))
-            request = dict(user_id=str(owners[0]), thread_id=str(uuid.uuid4()))
-            disputed = await main.grounded_chat(main.ChatRequest(
-                **request, question="Did the original CedarAgent paper use BeaconBench?"))
-            assert not generation and disputed["citations"] == []
-            assert "cannot verify" in disputed["answer"].lower()
-            assert disputed["metrics"]["candidate_count"] >= 2
+            owner_id = str(owners[0])
+            thread_id = str(uuid.uuid4())
+            for question in (
+                "Did the original CedarAgent paper use BeaconBench?",
+                "Did the original CedarAgent paper report results on BeaconBench?",
+            ):
+                disputed = await main.grounded_chat(main.ChatRequest(
+                    user_id=owner_id, thread_id=thread_id, question=question))
+                assert not generation and disputed["citations"] == []
+                assert "cannot verify" in disputed["answer"].lower()
+                assert disputed["metrics"]["candidate_count"] >= 2
             ordinary = await main.grounded_chat(main.ChatRequest(
-                **request, question="What did Birch compare on BeaconBench?"))
+                user_id=owner_id, thread_id=thread_id,
+                question="What results did Birch report on BeaconBench?"))
             assert len(generation) == 1
             assert "Foreign owner" not in generation[0]
             assert "Original CedarAgent paper" in generation[0]
