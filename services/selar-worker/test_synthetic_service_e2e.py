@@ -316,7 +316,7 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             disclosure = page.locator("dialog[open] .processing-disclosure")
             assert "SELAR server" in disclosure.inner_text()
             assert "Google Gemini" in disclosure.inner_text()
-            assert "Data export and account data removal are not available" in disclosure.inner_text()
+            assert "You can export your data or delete your account" in disclosure.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
             card = page.get_by_role("region", name="Review a suggested connection")
             card.get_by_text("Fabricated notebook A").wait_for(timeout=20000)
