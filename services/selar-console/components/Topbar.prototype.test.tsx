@@ -15,3 +15,11 @@ describe("pre-study prototype navigation", () => {
     expect(html).toContain('href="/reader"');
   });
 });
+
+describe("quiz navigation", () => {
+  it("links learners to /quizzes and hides the admin link by default", () => {
+    const html = renderToStaticMarkup(<Topbar />);
+    expect(html).toContain('href="/quizzes"');
+    expect(html).not.toContain('href="/admin/quizzes"');
+  });
+});
