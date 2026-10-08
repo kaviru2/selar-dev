@@ -185,4 +185,7 @@ type GraphEdge struct {
 	AssertionID            string `json:"assertion_id,omitempty"`
 	AssertionScope         string `json:"assertion_scope,omitempty"`
 	AssertingDocumentTitle string `json:"asserting_document_title,omitempty"`
+	// CandidateLinkID identifies an unreviewed machine-proposed mental link
+	// (state "candidate"); it is never set together with MentalLinkID.
+	CandidateLinkID string `json:"candidate_link_id,omitempty"`
 }

@@ -513,6 +513,13 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to project reviewed passage links"})
 		return
 	}
+	// Machine-proposed grounded candidates awaiting the learner's review (#117).
+	// Drawn as distinct "candidate" edges; never confirmable from the graph.
+	candidateEdges, err := h.store.ListCandidateMentalLinkEdges(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list candidate links"})
+		return
+	}
 
 	graphNodes := make([]model.GraphNode, 0, len(concepts)+len(mentalModels)*4)
 	graphEdges := make([]model.GraphEdge, 0, len(edges)+len(mentalLinks)+len(documentConceptEdges)+len(reviewedSuggestionEdges)+len(mentalModels)*4)
@@ -571,6 +578,7 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	graphEdges = append(graphEdges, mentalLinks...)
 	graphEdges = append(graphEdges, documentConceptEdges...)
 	graphEdges = append(graphEdges, reviewedSuggestionEdges...)
+	graphEdges = append(graphEdges, candidateEdges...)
 
 	assertions, err := h.store.ListConfirmedResearchAssertionEdges(r.Context(), userID)
 	if err != nil {
