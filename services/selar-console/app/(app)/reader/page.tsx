@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
+import { nextMatchLabel } from "@/lib/format";
 import {
   clientFetch,
   type Annotation,
@@ -221,8 +222,8 @@ export default function ReaderPage() {
               aria-label="Go to next suggested passage"
               disabled={visibleSuggestions.length === 0}
               onClick={goToNextSuggestion}
-              title={currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} suggestion(s) on this page` : "Go to the next page with a suggestion"}
-            >{currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} highlighted · Next ›` : "Next match ›"}</button>
+              title={visibleSuggestions.length === 0 ? "No suggested passages for this document" : currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} suggestion(s) on this page` : "Go to the next page with a suggestion"}
+            >{nextMatchLabel(visibleSuggestions.length, currentPageSuggestionCount)}</button>
           </div>
           <div className="tool-spacer" />
           {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
