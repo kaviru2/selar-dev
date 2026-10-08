@@ -51,22 +51,87 @@ func boolean(v any) (any, error) {
 	return b, nil
 }
 
-// Zoom bounds match the Reader's zoom buttons (60%–180%).
+// Reader defaults live in one object under the "reader" key, the shape the
+// console's Reader reads (lib/reader/position.ts, readerPreferences):
+//
+//	{"defaultZoom": "fit-width" | "fit-page" | 0.25–4, "rememberPosition": bool,
+//	 "showThumbnails": bool, "highlightColor": "yellow"|"green"|"blue"|"pink"|"purple"}
 const (
-	MinZoom = 0.6
-	MaxZoom = 1.8
+	MinZoom = 0.25
+	MaxZoom = 4.0
 )
 
 func zoom(v any) (any, error) {
+	if s, ok := v.(string); ok {
+		if s == "fit-width" || s == "fit-page" {
+			return s, nil
+		}
+		return nil, fmt.Errorf("%w: zoom must be fit-width, fit-page or a number", ErrInvalid)
+	}
 	f, ok := v.(float64)
 	if !ok || math.IsNaN(f) || math.IsInf(f, 0) {
-		return nil, fmt.Errorf("%w: zoom must be a number", ErrInvalid)
+		return nil, fmt.Errorf("%w: zoom must be fit-width, fit-page or a number", ErrInvalid)
 	}
 	f = math.Round(f*100) / 100
 	if f < MinZoom || f > MaxZoom {
-		return nil, fmt.Errorf("%w: zoom must be between %.1f and %.1f", ErrInvalid, MinZoom, MaxZoom)
+		return nil, fmt.Errorf("%w: zoom must be between %.2f and %.0f", ErrInvalid, MinZoom, MaxZoom)
 	}
 	return f, nil
+}
+
+var readerFields = map[string]spec{
+	"defaultZoom":      {def: "fit-width", validate: zoom},
+	"rememberPosition": {def: true, validate: boolean},
+	"showThumbnails":   {def: false, validate: boolean},
+	"highlightColor":   {def: "yellow", validate: oneOf("yellow", "green", "blue", "pink", "purple")},
+}
+
+func readerDefaults() map[string]any {
+	out := make(map[string]any, len(readerFields))
+	for k, f := range readerFields {
+		out[k] = f.def
+	}
+	return out
+}
+
+// reader validates a (partial) reader object strictly.
+func reader(v any) (any, error) {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) == 0 {
+		return nil, fmt.Errorf("%w: reader must be an object with at least one field", ErrInvalid)
+	}
+	out := make(map[string]any, len(m))
+	for k, raw := range m {
+		f, ok := readerFields[k]
+		if !ok {
+			return nil, fmt.Errorf("%w: unknown reader setting %q", ErrInvalid, k)
+		}
+		n, err := f.validate(raw)
+		if err != nil {
+			return nil, fmt.Errorf("reader.%s: %w", k, err)
+		}
+		out[k] = n
+	}
+	return out, nil
+}
+
+// MergeReader overlays a validated partial reader patch on the stored
+// object, dropping stored fields that are unknown or no longer valid.
+func MergeReader(stored any, patch map[string]any) map[string]any {
+	out := map[string]any{}
+	if m, ok := stored.(map[string]any); ok {
+		for k, raw := range m {
+			if f, ok := readerFields[k]; ok {
+				if n, err := f.validate(raw); err == nil {
+					out[k] = n
+				}
+			}
+		}
+	}
+	for k, v := range patch {
+		out[k] = v
+	}
+	return out
 }
 
 var specs = map[string]spec{
@@ -76,9 +141,7 @@ var specs = map[string]spec{
 	// Light-mode paper tint. "dark" is accepted for accounts saved before the
 	// colour scheme had its own key; the console maps it to colorScheme.
 	"theme":                    {def: "paper", validate: oneOf("paper", "warm", "sage", "dark")},
-	"reader.zoom":              {def: 1.0, validate: zoom},
-	"reader.page_fit":          {def: "actual", validate: oneOf("actual", "width")},
-	"reader.highlight_color":   {def: "yellow", validate: oneOf("yellow", "green", "blue", "pink")},
+	"reader":                   {def: nil, validate: reader},
 	"suggestions.show_on_open": {def: true, validate: boolean, lockable: true},
 }
 
@@ -98,6 +161,7 @@ func Defaults() map[string]any {
 	for k, s := range specs {
 		out[k] = s.def
 	}
+	out["reader"] = readerDefaults()
 	return out
 }
 
@@ -159,6 +223,10 @@ func SanitizeLegacy(patch map[string]any, locked []string) map[string]any {
 func Effective(stored, locks map[string]any) (map[string]any, []string) {
 	values := Defaults()
 	for k, v := range stored {
+		if k == "reader" {
+			values["reader"] = mergeOver(readerDefaults(), MergeReader(v, nil))
+			continue
+		}
 		if normalised, err := Validate(k, v); err == nil {
 			values[k] = normalised
 		}
@@ -236,4 +304,11 @@ func CheckPasswordStrength(password, email string) error {
 		return fmt.Errorf("%w: password must not contain your email address", ErrInvalid)
 	}
 	return nil
+}
+
+func mergeOver(base, top map[string]any) map[string]any {
+	for k, v := range top {
+		base[k] = v
+	}
+	return base
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -158,4 +159,40 @@ func (s *Store) UpdatePassword(ctx context.Context, userID, hash string) (int, e
 		return 0, ErrUserNotFound
 	}
 	return version, err
+}
+
+// CohortSettingLock is one administrator-pinned setting.
+type CohortSettingLock struct {
+	Cohort    string
+	Key       string
+	Value     any
+	Reason    string
+	UpdatedAt time.Time
+}
+
+// ListCohortSettingLocks returns every lock, ordered by cohort and key.
+func (s *Store) ListCohortSettingLocks(ctx context.Context) ([]CohortSettingLock, error) {
+	rows, err := s.pool.Query(ctx, `SELECT cohort, setting_key, value, COALESCE(reason, ''), updated_at
+		FROM cohort_setting_locks ORDER BY cohort, setting_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CohortSettingLock
+	for rows.Next() {
+		var l CohortSettingLock
+		var raw []byte
+		if err := rows.Scan(&l.Cohort, &l.Key, &raw, &l.Reason, &l.UpdatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(raw, &l.Value)
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// DeleteCohortSettingLock removes a lock; false when there was none.
+func (s *Store) DeleteCohortSettingLock(ctx context.Context, cohort, key string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM cohort_setting_locks WHERE cohort = $1 AND setting_key = $2`, cohort, key)
+	return tag.RowsAffected() > 0, err
 }

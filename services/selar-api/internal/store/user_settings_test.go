@@ -41,14 +41,14 @@ func TestAccountMergeUserSettingsKeepsOtherKeys(t *testing.T) {
 	if err := s.MergeUserSettings(ctx, a, map[string]any{"theme": "dark"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MergeUserSettings(ctx, a, map[string]any{"reader.zoom": 1.2}); err != nil {
+	if err := s.MergeUserSettings(ctx, a, map[string]any{"reader": map[string]any{"defaultZoom": 1.2}}); err != nil {
 		t.Fatal(err)
 	}
 	stored, cohort, _, err := s.GetUserSettings(ctx, a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored["theme"] != "dark" || stored["reader.zoom"] != 1.2 || cohort != "control" {
+	if stored["theme"] != "dark" || stored["reader"].(map[string]any)["defaultZoom"] != 1.2 || cohort != "control" {
 		t.Fatalf("merge lost a key: %#v cohort=%s", stored, cohort)
 	}
 }
@@ -128,5 +128,31 @@ func TestAccountDisplayNameRoundTrip(t *testing.T) {
 	u, err := s.GetUserByID(ctx, a)
 	if err != nil || u.DisplayName != "Synthetic Tester" {
 		t.Fatalf("display name = %q, %v", u.DisplayName, err)
+	}
+}
+
+func TestAccountListAndDeleteCohortSettingLocks(t *testing.T) {
+	s, ctx, _, _ := settingsFixture(t)
+	if err := s.SetCohortSettingLock(ctx, "treatment_auto", "test.list", "x", "synthetic"); err != nil {
+		t.Fatal(err)
+	}
+	locks, err := s.ListCohortSettingLocks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, l := range locks {
+		if l.Cohort == "treatment_auto" && l.Key == "test.list" && l.Value == "x" && l.Reason == "synthetic" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("lock not listed: %#v", locks)
+	}
+	if ok, err := s.DeleteCohortSettingLock(ctx, "treatment_auto", "test.list"); err != nil || !ok {
+		t.Fatalf("delete: %v %v", ok, err)
+	}
+	if ok, _ := s.DeleteCohortSettingLock(ctx, "treatment_auto", "test.list"); ok {
+		t.Fatal("second delete must report no lock")
 	}
 }

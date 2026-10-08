@@ -16,12 +16,12 @@ func decode(t *testing.T, raw string) map[string]any {
 }
 
 func TestValidatePatchAcceptsKnownKeys(t *testing.T) {
-	got, err := ValidatePatch(decode(t, `{"colorScheme":"dark","theme":"warm","reader.zoom":1.25,"reader.page_fit":"width","reader.highlight_color":"green","suggestions.show_on_open":false}`))
+	got, err := ValidatePatch(decode(t, `{"colorScheme":"dark","theme":"warm","reader":{"defaultZoom":1.25,"highlightColor":"green"},"suggestions.show_on_open":false}`))
 	if err != nil {
 		t.Fatalf("valid patch rejected: %v", err)
 	}
-	if got["colorScheme"] != "dark" || got["theme"] != "warm" || got["reader.zoom"] != 1.25 || got["reader.page_fit"] != "width" ||
-		got["reader.highlight_color"] != "green" || got["suggestions.show_on_open"] != false {
+	if got["colorScheme"] != "dark" || got["theme"] != "warm" ||
+		readerField(got, "defaultZoom") != 1.25 || readerField(got, "highlightColor") != "green" || got["suggestions.show_on_open"] != false {
 		t.Fatalf("unexpected normalised patch: %#v", got)
 	}
 }
@@ -33,11 +33,16 @@ func TestValidatePatchRejectsUnknownAndInvalidValues(t *testing.T) {
 		`{"colorScheme":"neon"}`,
 		`{"colorScheme":3}`,
 		`{"theme":"neon"}`,
-		`{"reader.zoom":5}`,
-		`{"reader.zoom":0.1}`,
-		`{"reader.zoom":"1"}`,
-		`{"reader.page_fit":"stretch"}`,
-		`{"reader.highlight_color":"#ff0000"}`,
+		`{"reader.zoom":1}`,
+		`{"reader":"fit-width"}`,
+		`{"reader":{}}`,
+		`{"reader":{"defaultZoom":5}}`,
+		`{"reader":{"defaultZoom":0.1}}`,
+		`{"reader":{"defaultZoom":"1"}}`,
+		`{"reader":{"defaultZoom":"stretch"}}`,
+		`{"reader":{"highlightColor":"#ff0000"}}`,
+		`{"reader":{"rememberPosition":"yes"}}`,
+		`{"reader":{"unknown":true}}`,
 		`{"suggestions.show_on_open":"no"}`,
 		`{"cohort":"control"}`,
 	} {
@@ -47,15 +52,40 @@ func TestValidatePatchRejectsUnknownAndInvalidValues(t *testing.T) {
 	}
 }
 
-func TestValidatePatchRoundsZoomToWholePercent(t *testing.T) {
-	got, err := ValidatePatch(decode(t, `{"reader.zoom":1.2345}`))
-	if err != nil || got["reader.zoom"] != 1.23 {
-		t.Fatalf("zoom = %#v, %v", got["reader.zoom"], err)
+func readerField(m map[string]any, k string) any {
+	r, _ := m["reader"].(map[string]any)
+	return r[k]
+}
+
+func TestValidatePatchRoundsZoomAndAcceptsFitModes(t *testing.T) {
+	got, err := ValidatePatch(decode(t, `{"reader":{"defaultZoom":1.2345}}`))
+	if err != nil || readerField(got, "defaultZoom") != 1.23 {
+		t.Fatalf("zoom = %#v, %v", got, err)
+	}
+	for _, mode := range []string{"fit-width", "fit-page"} {
+		got, err := ValidatePatch(map[string]any{"reader": map[string]any{"defaultZoom": mode, "rememberPosition": false, "showThumbnails": true, "highlightColor": "purple"}})
+		if err != nil || readerField(got, "defaultZoom") != mode || readerField(got, "highlightColor") != "purple" {
+			t.Fatalf("%s: %#v %v", mode, got, err)
+		}
+	}
+}
+
+func TestMergeReaderKeepsEarlierFieldsAndDropsInvalidStored(t *testing.T) {
+	stored := map[string]any{"defaultZoom": 9.0, "highlightColor": "blue", "junk": 1}
+	merged := MergeReader(stored, map[string]any{"showThumbnails": true})
+	if merged["highlightColor"] != "blue" || merged["showThumbnails"] != true {
+		t.Fatalf("merged = %#v", merged)
+	}
+	if _, ok := merged["defaultZoom"]; ok {
+		t.Fatal("invalid stored zoom must be dropped")
+	}
+	if _, ok := merged["junk"]; ok {
+		t.Fatal("unknown stored field must be dropped")
 	}
 }
 
 func TestEffectiveAppliesDefaultsDropsUnknownAndLocksWin(t *testing.T) {
-	stored := map[string]any{"colorScheme": "dark", "density": "compact", "reader.zoom": 9.0, "suggestions.show_on_open": false}
+	stored := map[string]any{"colorScheme": "dark", "density": "compact", "reader": map[string]any{"defaultZoom": 9.0, "highlightColor": "pink"}, "suggestions.show_on_open": false}
 	locks := map[string]any{"suggestions.show_on_open": true}
 	values, locked := Effective(stored, locks)
 	if values["colorScheme"] != "dark" || values["theme"] != "paper" {
@@ -64,8 +94,8 @@ func TestEffectiveAppliesDefaultsDropsUnknownAndLocksWin(t *testing.T) {
 	if _, ok := values["density"]; ok {
 		t.Fatal("unknown legacy key must not be exposed")
 	}
-	if values["reader.zoom"] != Defaults()["reader.zoom"] {
-		t.Fatalf("invalid stored zoom must fall back to the default, got %#v", values["reader.zoom"])
+	if readerField(values, "defaultZoom") != "fit-width" || readerField(values, "highlightColor") != "pink" {
+		t.Fatalf("reader must merge per field over defaults, got %#v", values["reader"])
 	}
 	if values["suggestions.show_on_open"] != true {
 		t.Fatal("cohort lock must override the learner's stored value")
@@ -73,7 +103,7 @@ func TestEffectiveAppliesDefaultsDropsUnknownAndLocksWin(t *testing.T) {
 	if len(locked) != 1 || locked[0] != "suggestions.show_on_open" {
 		t.Fatalf("locked keys = %#v", locked)
 	}
-	if values["reader.highlight_color"] != "yellow" || values["reader.page_fit"] != "actual" {
+	if readerField(values, "rememberPosition") != true || readerField(values, "showThumbnails") != false {
 		t.Fatalf("defaults missing: %#v", values)
 	}
 }
@@ -115,7 +145,7 @@ func TestPasswordRules(t *testing.T) {
 
 func TestSanitizeLegacyDropsUnknownInvalidAndLockedKeys(t *testing.T) {
 	got := SanitizeLegacy(map[string]any{
-		"colorScheme": "dark", "density": "compact", "reader.zoom": 99.0, "suggestions.show_on_open": false,
+		"colorScheme": "dark", "density": "compact", "reader": map[string]any{"defaultZoom": 99.0, "highlightColor": "green"}, "suggestions.show_on_open": false,
 	}, []string{"suggestions.show_on_open"})
 	if len(got) != 1 || got["colorScheme"] != "dark" {
 		t.Fatalf("legacy sanitise = %#v", got)
