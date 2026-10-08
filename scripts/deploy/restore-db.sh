@@ -48,8 +48,8 @@ if [ "$LIST" = "1" ]; then
 fi
 
 require_cmds age pg_restore psql python3
-[ -n "$IDENTITY" ] && [ -r "$IDENTITY" ] || die "--identity FILE (age private key) is required and must be readable"
-[ "$(file_mode "$IDENTITY")" = "600" ] || [ "$(file_mode "$IDENTITY")" = "400" ] || die "$IDENTITY must be mode 600 or 400"
+if [ -z "$IDENTITY" ] || [ ! -r "$IDENTITY" ]; then die "--identity FILE (age private key) is required and must be readable"; fi
+case "$(file_mode "$IDENTITY")" in 600|400) ;; *) die "$IDENTITY must be mode 600 or 400" ;; esac
 [ -n "$TARGET" ] || die "--target URL is required"
 n=0; [ -n "$OBJECT" ] && n=$((n+1)); [ -n "$FILE" ] && n=$((n+1)); [ "$LATEST" = "1" ] && n=$((n+1))
 [ "$n" = "1" ] || die "choose exactly one of --object, --latest, --file"
