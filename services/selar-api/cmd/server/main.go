@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/handler"
 	"github.com/selar-dev/selar-api/internal/linktoken"
 	"github.com/selar-dev/selar-api/internal/middleware"
+	"github.com/selar-dev/selar-api/internal/notify"
 	"github.com/selar-dev/selar-api/internal/recaptcha"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
@@ -119,6 +121,11 @@ func main() {
 		ConsoleURL:   getEnv("PUBLIC_CONSOLE_URL", firstOrigin(corsOrigins)),
 	})
 	log.Printf("calendar feed: %s", calendarGate.Describe())
+	// Optional email notices (#114): dry-run unless NOTIFY_EMAIL_ENABLED=true, the
+	// address is in NOTIFY_EMAIL_ALLOWLIST and SMTP is fully configured.
+	notifier := buildNotifier(st, linktoken.New(linkTokenSecret(jwtSecret)), getEnv("PUBLIC_CONSOLE_URL", firstOrigin(corsOrigins)))
+	h.SetNotifier(notifier, os.Getenv("WORKER_TRIGGER_SECRET"))
+	log.Printf("email notices: %s; transport: %s", notifier.Mode(), notifier.TransportMode())
 
 	// Router
 	r := chi.NewRouter()
@@ -142,6 +149,8 @@ func main() {
 	r.Post("/auth/google", h.GoogleSignIn)
 	// Token-authenticated calendar feed (no session; see handler/calendar.go).
 	r.Get("/calendar/{token}", h.ServeCalendarFeed)
+	// Signed unsubscribe links and the secret-authenticated scheduler hook.
+	h.MountNotificationPublic(r)
 
 	// Protected API routes
 	r.Route("/api", func(r chi.Router) {
@@ -158,6 +167,7 @@ func main() {
 		r.Get("/users/me/export", h.ExportMyData)
 		r.Post("/users/me/delete", h.DeleteAccount)
 		h.MountCalendarRoutes(r)
+		h.MountNotificationRoutes(r)
 
 		// Documents
 		r.Get("/documents", h.ListDocuments)
@@ -235,6 +245,7 @@ func main() {
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.RequireAdmin(h.RoleLookup()))
 			h.MountAdmin(r)
+			h.MountNotificationAdmin(r)
 		})
 	})
 
@@ -284,6 +295,42 @@ func linkTokenSecret(jwtSecret string) string {
 		return v
 	}
 	return jwtSecret
+}
+
+// buildNotifier reads the NOTIFY_* environment. Real sending needs all of
+// NOTIFY_EMAIL_ENABLED=true, a non-empty NOTIFY_EMAIL_ALLOWLIST and complete
+// NOTIFY_SMTP_* settings; anything less keeps every message in dry-run.
+func buildNotifier(st *store.Store, signer *linktoken.Signer, consoleURL string) *notify.Notifier {
+	cfg := notify.Config{
+		Live:         allowlist.Flag(os.Getenv("NOTIFY_EMAIL_ENABLED")),
+		Allow:        allowlist.Parse(os.Getenv("NOTIFY_EMAIL_ALLOWLIST")),
+		Signer:       signer,
+		PublicAPIURL: os.Getenv("PUBLIC_API_URL"),
+		ConsoleURL:   consoleURL,
+	}
+	if tz := os.Getenv("NOTIFY_TIMEZONE"); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			cfg.Location = loc
+		} else {
+			log.Printf("NOTIFY_TIMEZONE %q not recognised; using UTC", tz)
+		}
+	} else if loc, err := time.LoadLocation("Asia/Colombo"); err == nil {
+		cfg.Location = loc
+	}
+	if cfg.Live {
+		port, _ := strconv.Atoi(os.Getenv("NOTIFY_SMTP_PORT"))
+		smtpT, err := notify.NewSMTP(notify.SMTPConfig{
+			Host: os.Getenv("NOTIFY_SMTP_HOST"), Port: port,
+			Username: os.Getenv("NOTIFY_SMTP_USERNAME"), Password: os.Getenv("NOTIFY_SMTP_PASSWORD"),
+			From: os.Getenv("NOTIFY_EMAIL_FROM"), ReplyTo: os.Getenv("NOTIFY_EMAIL_REPLY_TO"),
+		})
+		if err != nil {
+			log.Printf("NOTIFY_EMAIL_ENABLED is set but SMTP is incomplete (%v); staying in dry-run", err)
+		} else {
+			cfg.Real = smtpT
+		}
+	}
+	return notify.New(st, cfg)
 }
 
 func firstOrigin(origins []string) string {

@@ -55,3 +55,91 @@ A participant sees the toggle only when the master switch is on **and** their
 address matches the allowlist. Otherwise Settings says the feature is not
 switched on for this study, and every feed URL returns an empty calendar.
 Turning the master switch off later empties every feed on the next refresh.
+
+## Email study notices (issue #114)
+
+The API can email three kinds of notice:
+
+- **A quiz is open.** Sent when a window opens, but only within 6 hours of the
+  opening time. A late-joining learner is never told about a window that
+  opened long ago.
+- **A quiz closes soon.** Sent within the last 24 hours of a window. Windows
+  shorter than 24 hours get only the opening notice.
+- **Account security.** Sent when the password or sign-in email changes. An
+  email-change notice goes to the *previous* address.
+
+Templates live in `services/selar-api/internal/notify/templates.go`. They are
+plain text and say SELAR is a research prototype. They make no claims about
+memory, learning or grades, include no quiz title, cohort or group, and are
+word-for-word the same for every study arm. Tests check all of these.
+
+### What stops a real email from going out
+
+The default configuration sends nothing. Every message goes through a
+`Transport`:
+
+| Condition | Result |
+|---|---|
+| Account not in `NOTIFY_EMAIL_ALLOWLIST` (default: empty) | No notice at all, and Settings shows "not switched on for this study". |
+| Allowlisted, learner opted in, `NOTIFY_EMAIL_ENABLED` unset or false | **Dry-run.** An audit row is written with `transport='dry-run'` and the API log gets a redacted line. Nothing is sent. |
+| Above, plus `NOTIFY_EMAIL_ENABLED=true` but SMTP incomplete | Dry-run. The startup log says SMTP is incomplete. |
+| Above, plus complete `NOTIFY_SMTP_*` | Sent over SMTP with STARTTLS or implicit TLS. Without TLS the transport refuses to send. |
+
+Other protections:
+
+- **Opt-in per learner.** Quiz emails and security emails are separate
+  switches under **Settings › Reminders**, both off by default. Opting out
+  always works.
+- **Unsubscribe.** Every email has a signed link, plus `List-Unsubscribe` and
+  one-click (RFC 8058) headers. A GET only shows a confirmation button, since
+  mail scanners open links. The POST turns every notice off and invalidates
+  the link.
+- **Idempotency.** Each notice claims a unique `dedupe_key` in
+  `notification_log` (kind, learner, quiz, window start and end) *before*
+  sending. Concurrent or repeated runs cannot double-send. A failed send is
+  recorded and not retried for that window. If an admin moves a window, it
+  counts as a new window and can be announced once more.
+- **Rate limits.** At most 3 notices per learner per 24 hours, 200 in total
+  per 24 hours, and 50 per run.
+- **Audit.** `notification_log` (migration 019, additive) stores the kind,
+  quiz, window, transport, subject, status and a salted hash of the recipient,
+  never the address. Rows are deleted with the account and included in
+  *Export my data*. Admins can read `GET /api/admin/notifications/log`.
+
+**Why not the Gmail API.** Sending from a mailbox through the Gmail API needs an
+OAuth refresh token for that mailbox (`gmail.send` scope). By decision this is
+not set up for Kaviru's personal mailbox. The SMTP transport works with a
+dedicated project mailbox (Gmail or Workspace app password) or any provider.
+A Gmail-API transport can be added behind the same `Transport` interface if the
+team later creates a dedicated sender account.
+
+**Scheduling.** Modal's `notifications` function (every 15 minutes, see
+`services/selar-worker/modal_app.py`) POSTs to `/internal/notifications/run`
+with `X-Selar-Worker-Secret`. It does nothing unless `SELAR_API_URL` is set in
+the Modal secret.
+
+### Switches (API environment unless noted)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NOTIFY_EMAIL_ALLOWLIST` | empty | Who may opt in and receive notices: addresses, `@domain`, or `*`. |
+| `NOTIFY_EMAIL_ENABLED` | unset | Only `true` permits real sending. Without it everything is dry-run. |
+| `NOTIFY_SMTP_HOST`, `NOTIFY_SMTP_PORT` (587 or 465), `NOTIFY_SMTP_USERNAME`, `NOTIFY_SMTP_PASSWORD`, `NOTIFY_EMAIL_FROM`, `NOTIFY_EMAIL_REPLY_TO` | unset | SMTP sender. All except reply-to are required. |
+| `NOTIFY_TIMEZONE` | `Asia/Colombo` | Time zone used for times in the email text. |
+| `PUBLIC_API_URL` | none | Needed for unsubscribe links. Without it, emails have no link (so do not enable live sending without it). |
+| `WORKER_TRIGGER_SECRET` | existing | Authenticates the scheduler call. |
+| `SELAR_API_URL` (Modal secret) | unset | API origin the schedule calls. Unset means the schedule is idle. |
+
+### Switching on, step by step (for the research team)
+
+1. Agree the protocol: which notices, for which phase, identical for all arms,
+   and whether the ethics approval covers contacting participants by email.
+2. Set `PUBLIC_API_URL` and `NOTIFY_EMAIL_ALLOWLIST=<one team test address>`,
+   and leave `NOTIFY_EMAIL_ENABLED` unset. Opt that account in, run the
+   schedule, and read `GET /api/admin/notifications/log`. Every row should say
+   `dry-run`.
+3. To send for real, set the `NOTIFY_SMTP_*` variables and
+   `NOTIFY_EMAIL_ENABLED=true`, still with the one-address allowlist, and
+   check a real message arrives.
+4. Widen `NOTIFY_EMAIL_ALLOWLIST` to the participant list or `*`.
+   Participants still have to opt in themselves.

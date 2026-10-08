@@ -14,6 +14,8 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 const ok = (body: CalendarSettingsView) => ({ ok: true, json: async () => body });
+// The embedded email-notice component fetches separately; keep it out of these tests.
+vi.mock("@/components/EmailNoticeSettings", () => ({ EmailNoticeSettings: () => null }));
 const enabledView: CalendarSettingsView = {
   available: true, enabled: true,
   feed_url: "https://api.test/calendar/TOKEN.ics",

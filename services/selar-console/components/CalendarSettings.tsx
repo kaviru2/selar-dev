@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { clientFetch } from "@/lib/api";
+import { EmailNoticeSettings } from "@/components/EmailNoticeSettings";
 
 export interface CalendarEventView {
   summary: string;
@@ -139,6 +140,7 @@ export function CalendarSettings() {
         </>
       )}
       {error && <p role="alert" style={{ color: "#c0443a", fontSize: "var(--t-sm)" }}>{error}</p>}
+      <EmailNoticeSettings />
     </section>
   );
 }
