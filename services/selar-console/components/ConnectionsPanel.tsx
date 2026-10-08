@@ -173,7 +173,7 @@ export function ConnectionsPanel({ docId, links, loading, mentalModel, reloadLin
                 <strong>{links.length ? "Nothing left to review" : "No suggested connections yet"}</strong>
                 <span>{links.length
                   ? "Your kept links are in the Kept links tab and in the graph."
-                  : "SELAR suggests connections once at least two of your readings have been processed."}</span>
+                  : "SELAR suggests a link only when this reading and another one both name the same concept in their own text. Similar passages are listed under About this reading; they are not links."}</span>
                 {kept.length > 0 && <button type="button" className="cx-btn cx-sec" onClick={() => setTab("kept")}>See kept links</button>}
               </div>
             )

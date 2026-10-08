@@ -210,6 +210,8 @@ export interface GraphEdge {
   assertion_id?: string;
   assertion_scope?: "own_work" | "reported_about_other";
   asserting_document_title?: string;
+  /** Set only on an unreviewed SELAR suggestion (state "candidate"); never with mental_link_id. */
+  candidate_link_id?: string;
 }
 
 // --- Runtime mental-model types ---
