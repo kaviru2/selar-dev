@@ -91,16 +91,20 @@ func (c *Client) Notify(ctx context.Context, jobID string) error {
 	return nil
 }
 
-// NotifyAsync sends the notification in the background, detached from the
-// request context, and only logs failures (the scheduled sweep retries).
-func (c *Client) NotifyAsync(ctx context.Context, jobID string) {
+// NotifyBestEffort sends the notification synchronously, bounded by the
+// client timeout, and only logs failures (the scheduled sweep retries).
+//
+// It must not be fire-and-forget: on serverless runtimes such as Vercel the
+// function instance is frozen as soon as the response is written, so a
+// goroutine started by the handler never gets to send the request. Waiting
+// for at most WORKER_TRIGGER_TIMEOUT keeps the upload responsive while making
+// sure the worker actually hears about the job. The request context's
+// cancellation is detached so a client disconnect does not drop the trigger.
+func (c *Client) NotifyBestEffort(ctx context.Context, jobID string) {
 	if !c.Enabled() {
 		return
 	}
-	detached := context.WithoutCancel(ctx)
-	go func() {
-		if err := c.Notify(detached, jobID); err != nil {
-			log.Printf("worker trigger for job %s not delivered (sweep will retry): %v", jobID, err)
-		}
-	}()
+	if err := c.Notify(context.WithoutCancel(ctx), jobID); err != nil {
+		log.Printf("worker trigger for job %s not delivered (sweep will retry): %v", jobID, err)
+	}
 }
