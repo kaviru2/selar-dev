@@ -218,7 +218,16 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
-              {message.graph_update && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
+              {message.graph_update?.retracted && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
+                <div className="chat-graph-update chat-graph-update-retracted" role="status">
+                  <span className="chat-graph-update-mark">↺</span>
+                  <span>
+                    <strong>Citation-concept associations withdrawn</strong>
+                    <small>Your feedback retracted this answer&apos;s evidence; it no longer shapes your graph or retrieval.</small>
+                  </span>
+                </div>
+              )}
+              {message.graph_update && !message.graph_update.retracted && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
                 <Link className="chat-graph-update" href="/graph">
                   <span className="chat-graph-update-mark">↗</span>
                   <span>

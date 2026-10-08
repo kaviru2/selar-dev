@@ -1293,6 +1293,10 @@ async def grounded_chat(req: ChatRequest):
             JOIN documents d ON d.id = c.document_id
             WHERE m.user_id = $1 AND c.user_id = $1 AND d.user_id = $1
               AND d.status = 'ready' AND m.status <> 'superseded'
+              -- Negatively rated answers must not keep reinforcing their passages.
+              AND NOT EXISTS (SELECT 1 FROM chat_message_feedback f
+                              WHERE f.message_id = m.id AND f.user_id = $1
+                                AND f.action IN ('unhelpful', 'correction'))
             GROUP BY c.id, c.document_id, d.title, c.page_start, c.content, c.locator, d.source_type
             ORDER BY score DESC, c.id LIMIT 20
         """, req.user_id)

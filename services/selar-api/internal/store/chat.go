@@ -433,10 +433,12 @@ func (s *Store) loadChatGraphUpdate(ctx context.Context, messageID string) (*mod
 	err := s.pool.QueryRow(ctx,
 		// Retain old counters in storage for audit, but never present historical
 		// co-citation observations/promotions as live relationship claims.
-		`SELECT concepts_created, concepts_reinforced, 0, 0, reducer_version
-		 FROM chat_graph_updates WHERE message_id = $1`, messageID).Scan(
+		`SELECT u.concepts_created, u.concepts_reinforced, 0, 0, u.reducer_version,
+		        EXISTS (SELECT 1 FROM learning_events e
+		                WHERE e.chat_message_id = u.message_id AND e.event_type = 'chat_graph_evidence_retracted')
+		 FROM chat_graph_updates u WHERE u.message_id = $1`, messageID).Scan(
 		&update.ConceptsCreated, &update.ConceptsReinforced, &update.LinksObserved,
-		&update.LinksPromoted, &update.ReducerVersion)
+		&update.LinksPromoted, &update.ReducerVersion, &update.Retracted)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -471,25 +473,8 @@ func reduceChatGraph(ctx context.Context, tx pgx.Tx, userID, messageID, query st
 			JOIN chunk_concepts cc ON cc.chunk_id = mc.chunk_id
 			JOIN concepts concept ON concept.id = cc.concept_id AND concept.user_id = $2
 			WHERE mc.message_id = $1 AND concept.state NOT IN ('rejected', 'archived')
-
-			UNION ALL
-
-			SELECT nearest.concept_id, mc.chunk_id, c.document_id, mc.rank, mc.score,
-			       'embedding_fallback'::text, nearest.similarity::real
-			FROM message_citations mc
-			JOIN chunks c ON c.id = mc.chunk_id AND c.user_id = $2
-			CROSS JOIN LATERAL (
-				SELECT concept.id AS concept_id,
-				       1 - (concept.embedding::halfvec(3072) <=> c.embedding::halfvec(3072)) AS similarity
-				FROM concepts concept
-				WHERE concept.user_id = $2 AND concept.embedding IS NOT NULL
-				  AND concept.state NOT IN ('rejected', 'archived')
-				ORDER BY concept.embedding::halfvec(3072) <=> c.embedding::halfvec(3072), concept.id
-				LIMIT 2
-			) nearest
-			WHERE mc.message_id = $1 AND c.embedding IS NOT NULL
-			  AND nearest.similarity >= 0.65
-			  AND NOT EXISTS (SELECT 1 FROM chunk_concepts existing WHERE existing.chunk_id = mc.chunk_id)
+			-- No embedding-proximity fallback: similarity alone bound cited
+			-- passages to unrelated concepts (issue #9) and is not evidence.
 		),
 		ranked AS (
 			SELECT concept_id, chunk_id, document_id, rank, score, binding_method, binding_confidence,
