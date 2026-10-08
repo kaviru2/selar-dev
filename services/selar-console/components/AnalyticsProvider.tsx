@@ -20,12 +20,14 @@ interface ConsentUser {
 interface ConsentState {
   consented: boolean;
   serverEnabled: boolean;
+  /** True while the one-time optional prompt should be shown. */
+  promptVisible: boolean;
   setConsent: (granted: boolean, via: "prompt" | "settings") => Promise<boolean>;
   /** Apply a consent change saved elsewhere (e.g. the Settings page). */
   sync: (consented: boolean) => void;
 }
 
-const ConsentContext = createContext<ConsentState>({ consented: false, serverEnabled: false, setConsent: async () => false, sync: () => undefined });
+const ConsentContext = createContext<ConsentState>({ consented: false, serverEnabled: false, promptVisible: false, setConsent: async () => false, sync: () => undefined });
 export const useAnalyticsConsent = () => useContext(ConsentContext);
 
 export function AnalyticsProvider({ user, children }: { user: ConsentUser | null; children: ReactNode }) {
@@ -101,22 +103,27 @@ export function AnalyticsProvider({ user, children }: { user: ConsentUser | null
   }, []);
 
   return (
-    <ConsentContext.Provider value={{ consented, serverEnabled, setConsent, sync }}>
+    <ConsentContext.Provider value={{ consented, serverEnabled, promptVisible: Boolean(user) && serverEnabled && !decided, setConsent, sync }}>
       {children}
-      {user && serverEnabled && !decided && <ConsentPrompt onAnswer={(granted) => setConsent(granted, "prompt")} />}
     </ConsentContext.Provider>
   );
 }
 
-function ConsentPrompt({ onAnswer }: { onAnswer: (granted: boolean) => Promise<boolean> }) {
+/**
+ * The one-time optional prompt, rendered in the page flow (below the top bar)
+ * so it never covers app controls. It is not modal: the app stays usable.
+ */
+export function ConsentBanner() {
+  const { promptVisible, setConsent } = useAnalyticsConsent();
   const [busy, setBusy] = useState(false);
+  if (!promptVisible) return null;
   const answer = async (granted: boolean) => {
     setBusy(true);
-    const ok = await onAnswer(granted);
+    const ok = await setConsent(granted, "prompt");
     if (!ok) setBusy(false);
   };
   return (
-    <div role="dialog" aria-labelledby="consent-title" aria-describedby="consent-body" className="consent-prompt">
+    <section role="region" aria-labelledby="consent-title" aria-describedby="consent-body" className="consent-prompt">
       <h2 id="consent-title">Help improve SELAR?</h2>
       <p id="consent-body">
         SELAR is a university research prototype. If you agree, we record how you use the app: which pages you open, how
@@ -128,6 +135,6 @@ function ConsentPrompt({ onAnswer }: { onAnswer: (granted: boolean) => Promise<b
         <button type="button" className="ui-btn ui-btn--sm" disabled={busy} onClick={() => answer(true)}>Yes, record my usage</button>
         <button type="button" className="ui-btn ui-btn--sm" disabled={busy} onClick={() => answer(false)}>No thanks</button>
       </div>
-    </div>
+    </section>
   );
 }

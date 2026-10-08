@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analytics } from "@/lib/analytics";
-import { AnalyticsProvider } from "./AnalyticsProvider";
+import { AnalyticsProvider, ConsentBanner } from "./AnalyticsProvider";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/library" }));
 
@@ -11,10 +11,10 @@ let container: HTMLDivElement;
 let root: Root;
 
 const settle = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); });
-const dialog = () => container.querySelector('[role="dialog"]');
+const dialog = () => container.querySelector('[role="region"][aria-labelledby="consent-title"]');
 const button = (name: RegExp) => Array.from(container.querySelectorAll("button")).find((b) => name.test(b.textContent || "")) as HTMLButtonElement | undefined;
 const mount = async (user: { id: string; consented_at: string | null; consent_decided_at: string | null }) => {
-  await act(async () => root.render(<AnalyticsProvider user={user}><p>app</p></AnalyticsProvider>));
+  await act(async () => root.render(<AnalyticsProvider user={user}><ConsentBanner /><p>app</p></AnalyticsProvider>));
   await settle();
 };
 

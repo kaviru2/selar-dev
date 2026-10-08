@@ -215,8 +215,12 @@
   .ui-theme-toggle button { width: 40px; height: 40px; }
 }
 
-/* One-time optional research-usage consent prompt (AnalyticsProvider). */
-.consent-prompt { position: fixed; right: 20px; bottom: 20px; z-index: 50; width: min(440px, calc(100vw - 40px)); padding: 18px 20px; border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--bg-raised); color: var(--ink); box-shadow: var(--shadow-3); }
-.consent-prompt h2 { margin: 0 0 8px; font: 600 17px/1.3 var(--font-display); }
-.consent-prompt p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
-.consent-actions { display: flex; gap: 8px; }
+/* One-time optional research-usage consent prompt (AnalyticsProvider).
+   In page flow under the top bar so it never covers app controls. */
+.consent-prompt { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 10px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--rule); background: var(--tint-sky); color: var(--ink); }
+.consent-prompt h2 { margin: 0; font: 600 14.5px/1.3 var(--font-display); }
+.consent-prompt p { flex: 1 1 520px; margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.consent-actions { display: flex; gap: 8px; flex: none; }
+/* While the consent banner is shown, fixed-height views must shrink to the
+   remaining space instead of overflowing (e.g. the chat composer). */
+.selar-app:has(> .consent-prompt) > .chat-layout { height: auto; flex: 1; min-height: 0; }
