@@ -8,6 +8,7 @@
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
+import { CalendarSettings } from "@/components/CalendarSettings";
 import { useAnalyticsConsent } from "@/components/AnalyticsProvider";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Button } from "@/components/ui/Button";
@@ -321,6 +322,8 @@ export default function SettingsPage() {
             </Row>
           )}
         </Group>
+
+        <CalendarSettings />
 
         <Group title="Local evaluation">
           <Row k="Grounded chat" sub="Prototype interaction measurements">

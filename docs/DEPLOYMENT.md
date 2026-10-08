@@ -350,6 +350,8 @@ already taken; they age out within 30 days.
 | `INGESTION_LEASE_SECONDS`, `INGESTION_WORKER_ID` | | ✓ | | `300`, hostname-pid |
 | `RECAPTCHA_PROJECT_ID`, `RECAPTCHA_SITE_KEY`, `RECAPTCHA_API_KEY`, `RECAPTCHA_MIN_SCORE` | ✓ | | | unset = no reCAPTCHA check (see §6) |
 | `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | | | ✓ | build time; unset = no script on `/register` |
+| `CALENDAR_FEED_ENABLED`, `CALENDAR_FEED_ALLOWLIST` | ✓ | | | off / nobody: optional quiz-window calendar, see [REMINDERS.md](REMINDERS.md) |
+| `PUBLIC_API_URL`, `PUBLIC_CONSOLE_URL`, `LINK_TOKEN_SECRET` | ✓ | | | origins used in signed links; link key defaults to `JWT_SECRET` |
 
 Generate secrets with `openssl rand -base64 48`. Never commit them; `.env*` files other than `.env.example` are git-ignored.
 

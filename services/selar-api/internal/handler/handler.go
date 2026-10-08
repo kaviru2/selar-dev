@@ -42,6 +42,9 @@ type Handler struct {
 	analyticsOff bool
 	// captcha verifies reCAPTCHA tokens on account creation (nil = off).
 	captcha recaptcha.Verifier
+
+	// calendar configures the optional quiz-window calendar feed (calendar.go).
+	calendar *CalendarConfig
 }
 
 // New creates a new Handler with the given store. Upload storage defaults to
