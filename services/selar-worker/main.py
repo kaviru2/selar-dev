@@ -16,7 +16,7 @@ from google.genai import types
 from dotenv import load_dotenv
 from ingestion import extract_source
 from storage import asset_prefix, get_storage
-from candidate_contract import persist_grounded_overlap
+from candidate_generation import link_pair
 
 # Load root .env.development
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env.development'))
@@ -908,6 +908,7 @@ Rules:
                 await conn.execute("UPDATE documents SET progress = 0.88 WHERE id = $1", doc_id)
 
             # ── Phase 6: Bounded document-to-library mental-model linking ──
+            current_link_source = None
             await conn.execute("""
                 DELETE FROM mental_model_links
                 WHERE source_model_id = $1 AND status = 'candidate' AND review_revision = 0
@@ -926,37 +927,11 @@ Rules:
 
             if prior_models:
                 # Similarity orders candidate documents; it never asserts a relation.
-                # Search actual owner-matched passages for exact, unambiguous
-                # instances of a named current-document concept on both sides.
-                source_rows = await conn.fetch("""
-                    SELECT c.id, c.user_id, c.document_id, c.content, c.locator,
-                           d.title, d.content_hash
-                    FROM chunks c JOIN documents d ON d.id = c.document_id
-                    WHERE c.document_id = $1 AND c.user_id = $2 AND d.user_id = $2
-                    ORDER BY c.chunk_index LIMIT 40
-                """, doc_id, user_id)
-                created_links = 0
-                for prior in prior_models:
-                    target_rows = await conn.fetch("""
-                        SELECT c.id, c.user_id, c.document_id, c.content, c.locator,
-                               d.title, d.content_hash
-                        FROM chunks c JOIN documents d ON d.id = c.document_id
-                        WHERE c.document_id = $1 AND c.user_id = $2 AND d.user_id = $2
-                        ORDER BY c.chunk_index LIMIT 40
-                    """, prior["document_id"], user_id)
-                    for source_row in source_rows:
-                        for target_row in target_rows:
-                            if await persist_grounded_overlap(
-                                conn, mental_model, dict(source_row), dict(target_row),
-                                user_id, doc_id, prior["document_id"], mental_model_id,
-                                prior["id"], float(prior["similarity"])
-                            ):
-                                created_links += 1
-                                break
-                        else:
-                            continue
-                        break
-                print(f"Grounded mental-model candidate links: {created_links}")
+                # Linking runs after this document is marked ready (below): the
+                # write trigger only accepts a ready target document, and #117
+                # tests both directions of each pair.
+                current_link_source = {"model_id": mental_model_id, "document_id": doc_id,
+                                       "key_concepts": mental_model["key_concepts"]}
             await conn.execute("UPDATE documents SET progress = 0.96 WHERE id = $1", doc_id)
         except Exception as e:
             print(f"Failed to generate mental model for {doc_id}: {e}")
@@ -966,6 +941,26 @@ Rules:
         await conn.execute("""
             UPDATE documents SET status = 'ready', progress = 1, processed_at = NOW() WHERE id = $1
         """, doc_id)
+
+        # ── Phase 6b: grounded candidates in both directions (issue #117) ──
+        # A named concept of EITHER reading that both state verbatim can witness
+        # a candidate, so results no longer depend on ingestion order or on the
+        # first 40 passages. Rows are candidates awaiting learner review only.
+        if prior_models and current_link_source:
+            rows_cache = {}
+            created_links = 0
+            for prior in prior_models:
+                other = {"model_id": prior["id"], "document_id": prior["document_id"],
+                         "key_concepts": prior["key_concepts"]}
+                try:
+                    if await link_pair(conn, user_id, current_link_source, other, rows_cache,
+                                       float(prior["similarity"])):
+                        created_links += 1
+                except asyncpg.PostgresError as link_error:
+                    # Fail closed: the trigger refused this pair (e.g. the other
+                    # reading is mid re-ingestion). No candidate; reading stays ready.
+                    print(f"Grounded candidate skipped for {doc_id}<->{prior['document_id']}: {link_error}")
+            print(f"Grounded mental-model candidate links: {created_links}")
         if source_id:
             await conn.execute("""
                 UPDATE content_sources SET title = $2, canonical_uri = CASE WHEN $3 = '' THEN canonical_uri ELSE $3 END,
