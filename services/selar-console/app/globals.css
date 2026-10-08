@@ -2220,3 +2220,13 @@ body.is-resizing-panel .pdf-container { pointer-events: none; }
 .ui-mark-dark { display: none; }
 [data-theme="dark"] .ui-mark-light { display: none; }
 [data-theme="dark"] .ui-mark-dark { display: inline-block; }
+
+/* Learner-authored, source-scoped graph correction (issue #9) */
+.graph-correction { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 10px 12px; border: 1px dashed var(--rule); border-radius: var(--r-md, 6px); font-size: 12px; color: var(--ink-3); }
+.graph-correction label { display: flex; flex-direction: column; gap: 3px; }
+.graph-correction textarea, .graph-correction input, .graph-correction select { font: inherit; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--ink-2); }
+.graph-correction-triple { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; }
+.graph-correction-actions { display: flex; gap: 6px; }
+.graph-correction button { align-self: flex-start; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--ink-2); cursor: pointer; }
+.graph-correction button:disabled { cursor: default; opacity: .45; }
+.graph-correction blockquote { margin: 0; padding-left: 8px; border-left: 2px solid var(--rule); }

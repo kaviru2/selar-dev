@@ -5,6 +5,11 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { clientFetch, type ChatMessage, type ChatThread } from "@/lib/api";
+import { GraphCorrectionProposal } from "@/components/GraphCorrectionProposal";
+
+// The worker answers explicit "update the graph" commands with this boundary
+// version instead of a library search (issue #9).
+const GRAPH_COMMAND_VERSION = "deterministic-graph-command-boundary-v1";
 
 export default function ChatPage() {
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -217,6 +222,9 @@ export default function ChatPage() {
                     </Link>
                   ))}
                 </div>
+              )}
+              {message.role === "assistant" && message.model_version === GRAPH_COMMAND_VERSION && (
+                <GraphCorrectionProposal messages={messages.slice(0, messages.indexOf(message))} sourceMessageId={message.id} />
               )}
               {message.graph_update?.retracted && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
                 <div className="chat-graph-update chat-graph-update-retracted" role="status">

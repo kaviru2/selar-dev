@@ -49,3 +49,29 @@ it("shows retracted chat evidence as withdrawn instead of linking it into the gr
     expect(container.querySelector('a[href="/graph"].chat-graph-update')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
+
+it("routes a graph-command answer to a source-scoped proposal form, not to a library answer", async () => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  HTMLElement.prototype.scrollTo = vi.fn();
+  clientFetch.mockImplementation(async (path: string) => path === "/api/chat/threads"
+    ? [{ id: "thread", title: "Example" }]
+    : [
+      { id: "a1", role: "assistant", status: "complete", content: "Comparison answer", citations: [
+        { id: "c", chunk_id: "chunk", document_id: "doc", document_title: "Later paper", source_type: "pdf", page: 2, rank: 1, quote: "A later paper reports a modified baseline." },
+      ] },
+      { id: "q2", role: "user", status: "complete", content: "Update the graph", citations: [] },
+      { id: "a2", role: "assistant", status: "complete", model_version: "deterministic-graph-command-boundary-v1",
+        content: "No graph change was made, and no preview was created for this request.", citations: [] },
+    ]);
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => { root.render(<ChatPage />); });
+    await act(async () => { await Promise.resolve(); });
+    const forms = container.querySelectorAll('form[aria-label="Propose a graph correction"]');
+    expect(forms.length).toBe(1);
+    expect(forms[0].closest("article")?.textContent).toContain("No graph change was made");
+    expect(forms[0].textContent).toContain("Later paper");
+    expect(clientFetch.mock.calls.every(([, init]) => !init || init.method !== "POST")).toBe(true);
+  } finally { await act(async () => root.unmount()); }
+});

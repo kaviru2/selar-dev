@@ -332,6 +332,31 @@ export interface ChatMessage {
   supersedes_message_id?: string;
 }
 
+/** A provenance-aware research assertion (issue #9). Always proposed first. */
+export interface ResearchAssertion {
+  id: string;
+  subject: string;
+  subject_key: string;
+  subject_qualifier?: string;
+  predicate: string;
+  object: string;
+  object_key: string;
+  object_qualifier?: string;
+  asserting_document_id: string;
+  asserting_document_title: string;
+  scope: "own_work" | "reported_about_other";
+  experiment_context?: string;
+  confidence: number;
+  created_via: "user_proposed" | "chat_proposal";
+  state: "proposed" | "confirmed" | "rejected" | "retracted" | "superseded";
+  superseded_by?: string;
+  source_message_id?: string;
+  revision: number;
+  evidence: { chunk_id: string; quote: string; page?: number }[];
+  created_at: string;
+  reviewed_at?: string;
+}
+
 export interface ChatFeedback {
   id: string;
   message_id: string;

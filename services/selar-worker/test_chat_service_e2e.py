@@ -185,3 +185,75 @@ def test_original_source_question_abstains_through_api_worker_and_database(servi
                 await conn.close()
         state = asyncio.run(graph_state())
         assert tuple(state) == (0, 0, 3, 0, 0), dict(state)
+
+
+@pytest.mark.timeout(180)
+def test_graph_correction_is_a_reviewed_source_scoped_assertion(services, monkeypatch):
+    """Acceptance #4/#5 at the API/DB boundary with fabricated documents.
+
+    The learner proposes what the *comparison* paper asserts about a modified
+    baseline; nothing reaches the graph until the exact revision is confirmed,
+    and the original paper never receives the benchmark relation.
+    """
+    import main
+
+    assert os.environ.get("SELAR_SYNTHETIC_E2E") == "1"
+    monkeypatch.setattr(main, "DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setattr(main, "embed_text_documents", lambda texts, title="": [[1.0] + [0.0] * 3071 for _ in texts])
+    class Models:
+        def generate_content(self, **_):
+            return type("Result", (), {"text": json.dumps({
+                "main_claim": "A fabricated research example.", "key_concepts": [], "assumptions": [],
+                "open_questions": [], "domain": "synthetic example", "concept_edges": []})})()
+    monkeypatch.setattr(main, "client", type("Client", (), {"models": Models()})())
+
+    api, _ = services
+    with httpx.Client() as client:
+        owner = _request(client, "POST", f"{api}/auth/register", expected=201,
+                         json={"email": f"assert-{uuid.uuid4().hex}@example.invalid", "password": PASSWORD})
+        other = _request(client, "POST", f"{api}/auth/register", expected=201,
+                         json={"email": f"assert-other-{uuid.uuid4().hex}@example.invalid", "password": PASSWORD})
+        token = owner["token"]
+        docs = {}
+        for title, text in (("Original CedarAgent paper", PRIMARY), ("Birch comparison paper", COMPARISON)):
+            docs[title] = _request(client, "POST", f"{api}/api/documents/add", token, expected=202,
+                                   json={"source_type": "text", "title": title, "text": text})["document"]["id"]
+            asyncio.run(_drain_job(docs[title]))
+        comparison = docs["Birch comparison paper"]
+
+        async def chunk_of(document_id):
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                return str(await conn.fetchval(
+                    "SELECT id FROM chunks WHERE document_id=$1 AND content LIKE '%modified CedarAgent%'", document_id))
+            finally:
+                await conn.close()
+        chunk = asyncio.run(chunk_of(comparison))
+        proposal = {"subject": "modified CedarAgent", "predicate": "evaluated_on", "object": "BeaconBench",
+                    "scope": "reported_about_other", "experiment_context": "Birch comparison baseline",
+                    "asserting_document_id": comparison,
+                    "evidence": [{"chunk_id": chunk, "quote": "Birch compared a modified CedarAgent baseline on BeaconBench."}]}
+        # The comparison quote cannot be attributed to the original paper.
+        _request(client, "POST", f"{api}/api/research-assertions", token, expected=422,
+                 json={**proposal, "asserting_document_id": docs["Original CedarAgent paper"], "scope": "own_work"})
+        _request(client, "POST", f"{api}/api/research-assertions", other["token"], expected=404, json=proposal)
+        created = _request(client, "POST", f"{api}/api/research-assertions", token, expected=201, json=proposal)
+        assert created["state"] == "proposed" and created["asserting_document_title"] == "Birch comparison paper"
+        graph = _request(client, "GET", f"{api}/api/graph", token)
+        assert not any(e.get("assertion_id") for e in graph["edges"])  # proposal alone changes nothing
+        _request(client, "POST", f"{api}/api/research-assertions/{created['id']}/respond", other["token"],
+                 expected=404, json={"action": "confirm", "revision": 1})
+        _request(client, "POST", f"{api}/api/research-assertions/{created['id']}/respond", token,
+                 expected=409, json={"action": "confirm", "revision": 99})
+        confirmed = _request(client, "POST", f"{api}/api/research-assertions/{created['id']}/respond", token,
+                             json={"action": "confirm", "revision": 1})
+        assert confirmed["state"] == "confirmed" and confirmed["revision"] == 2
+        edges = [e for e in _request(client, "GET", f"{api}/api/graph", token)["edges"] if e.get("assertion_id")]
+        assert len(edges) == 1
+        edge = edges[0]
+        assert edge["relation"] == "evaluated_on" and edge["assertion_scope"] == "reported_about_other"
+        assert edge["source_document_id"] == comparison and edge["source"] == "entity:cedaragent:modified"
+        assert edge["asserting_document_title"] == "Birch comparison paper"
+        assert not any(e.get("source") == "entity:cedaragent" for e in edges)
+        assert _request(client, "GET", f"{api}/api/graph", other["token"])["edges"] == [] or not any(
+            e.get("assertion_id") for e in _request(client, "GET", f"{api}/api/graph", other["token"])["edges"])
