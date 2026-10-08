@@ -87,6 +87,7 @@ func main() {
 	log.Printf("worker trigger enabled: %t", trigger.Enabled())
 	log.Printf("upload storage backend: %s", uploads.Backend())
 	auth := middleware.NewAuth(jwtSecret)
+	auth.SetSessionVersionLookup(handler.SessionVersionLookup(st))
 	h.SetAuth(auth)
 	// Quiz admin routes. Interim allowlist until the shared users.role admin
 	// check lands; an empty ADMIN_EMAILS denies admin access to everyone.
@@ -125,6 +126,11 @@ func main() {
 		// Users
 		r.Get("/users/me", h.GetCurrentUser)
 		r.Patch("/users/me/preferences", h.UpdatePreferences)
+		r.Get("/users/me/settings", h.GetSettings)
+		r.Patch("/users/me/settings", h.UpdateSettings)
+		r.Patch("/users/me/profile", h.UpdateProfile)
+		r.Post("/users/me/email", h.ChangeEmail)
+		r.Post("/users/me/password", h.ChangePassword)
 
 		// Documents
 		r.Get("/documents", h.ListDocuments)

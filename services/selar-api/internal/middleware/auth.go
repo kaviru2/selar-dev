@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -20,9 +21,24 @@ type contextKey string
 
 const UserIDKey contextKey = "user_id"
 
+// ErrSessionUserGone tells Verify that the token's user no longer exists.
+var ErrSessionUserGone = errors.New("user no longer exists")
+
+// SessionVersionLookup returns the user's current session version.
+type SessionVersionLookup func(ctx context.Context, userID string) (int, error)
+
 // Auth provides JWT-based authentication middleware.
 type Auth struct {
-	secret []byte
+	secret        []byte
+	sessionLookup SessionVersionLookup
+}
+
+// SetSessionVersionLookup enables server-side session revocation: a token
+// whose "sv" claim is older than the user's current session version (or whose
+// user was deleted) is rejected. Without a lookup only signature and expiry
+// are checked.
+func (a *Auth) SetSessionVersionLookup(lookup SessionVersionLookup) {
+	a.sessionLookup = lookup
 }
 
 // NewAuth creates a new Auth middleware with the given JWT secret.
@@ -51,15 +67,38 @@ func (a *Auth) Verify(next http.Handler) http.Handler {
 			return
 		}
 
+		if a.sessionLookup != nil {
+			current, err := a.sessionLookup(r.Context(), claims.Sub)
+			if errors.Is(err, ErrSessionUserGone) {
+				http.Error(w, `{"error":"account no longer exists"}`, http.StatusUnauthorized)
+				return
+			}
+			if err != nil {
+				http.Error(w, `{"error":"session check unavailable"}`, http.StatusServiceUnavailable)
+				return
+			}
+			if claims.SV < current {
+				http.Error(w, `{"error":"session ended"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
 		ctx := context.WithValue(r.Context(), UserIDKey, claims.Sub)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// GenerateToken creates a signed JWT for the given user ID.
+// GenerateToken creates a signed JWT for the given user ID at session
+// version 0 (an account whose password has never been changed).
 func (a *Auth) GenerateToken(userID string) (string, error) {
+	return a.GenerateSessionToken(userID, 0)
+}
+
+// GenerateSessionToken creates a signed JWT bound to a session version.
+func (a *Auth) GenerateSessionToken(userID string, sessionVersion int) (string, error) {
 	header := base64URLEncode([]byte(`{"alg":"HS256","typ":"JWT"}`))
 	claims := jwtClaims{
+		SV:  sessionVersion,
 		Sub: userID,
 		Iat: time.Now().Unix(),
 		Exp: time.Now().Add(7 * 24 * time.Hour).Unix(),
@@ -86,8 +125,11 @@ func GetUserID(ctx context.Context) string {
 
 type jwtClaims struct {
 	Sub string `json:"sub"`
-	Iat int64  `json:"iat"`
-	Exp int64  `json:"exp"`
+	// SV is the session version; absent in tokens issued before revocation
+	// existed, which therefore decode as 0.
+	SV  int   `json:"sv,omitempty"`
+	Iat int64 `json:"iat"`
+	Exp int64 `json:"exp"`
 }
 
 func (a *Auth) validateToken(token string) (*jwtClaims, error) {
