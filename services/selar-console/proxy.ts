@@ -1,5 +1,6 @@
 // proxy.ts — Next.js 16 proxy (formerly middleware) for route protection.
-// - Signed-out visitors are sent to /login (with from= for deep links).
+// - Signed-out visitors see the landing page at / (and /about); other
+//   pages send them to /login (with from= for deep links).
 // - Signed-in visitors (selar_token present) hitting /, /login or /register
 //   are sent into the app: to a validated same-origin from=, else /library.
 // The cookie is only checked for presence here. When the Go API rejects it,
@@ -35,9 +36,12 @@ export function proxy(request: NextRequest) {
       const from = pathname === "/" ? null : request.nextUrl.searchParams.get("from");
       return NextResponse.redirect(new URL(safeRedirectPath(from), request.url));
     }
-    if (pathname === "/") {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
+    // Signed-out visitors see the public landing page at "/".
+    return NextResponse.next();
+  }
+
+  // Public marketing page, reachable signed in or out.
+  if (pathname === "/about") {
     return NextResponse.next();
   }
 
