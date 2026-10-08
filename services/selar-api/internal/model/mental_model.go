@@ -180,4 +180,9 @@ type GraphEdge struct {
 	SourceQuote      string     `json:"source_quote,omitempty"`
 	TargetQuote      string     `json:"target_quote,omitempty"`
 	ReviewRevision   int64      `json:"review_revision,omitempty"`
+	// Research assertion provenance (issue #9): who asserted the edge and whether
+	// it is the asserting document's own work or something it reports about another.
+	AssertionID            string `json:"assertion_id,omitempty"`
+	AssertionScope         string `json:"assertion_scope,omitempty"`
+	AssertingDocumentTitle string `json:"asserting_document_title,omitempty"`
 }

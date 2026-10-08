@@ -562,6 +562,15 @@ func (h *Handler) GetGraph(w http.ResponseWriter, r *http.Request) {
 	graphEdges = append(graphEdges, documentConceptEdges...)
 	graphEdges = append(graphEdges, reviewedSuggestionEdges...)
 
+	assertions, err := h.store.ListConfirmedResearchAssertionEdges(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to project research assertions"})
+		return
+	}
+	assertionNodes, assertionEdges := researchAssertionGraph(assertions)
+	graphNodes = append(graphNodes, assertionNodes...)
+	graphEdges = append(graphEdges, assertionEdges...)
+
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": graphNodes, "edges": graphEdges})
 }
 
