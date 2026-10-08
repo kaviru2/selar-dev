@@ -30,6 +30,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # Applies ordered migrations with checksum tracking. On a fresh volume the
+  # initdb scripts above create 001-009; the runner adopts them and applies
+  # every later migration. Existing volumes are adopted the same way.
+  selar-migrate:
+    container_name: selar-migrate
+    build:
+      context: ./services/selar-api
+      dockerfile: Dockerfile
+    entrypoint: ["selar-migrate"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-selar}:${POSTGRES_PASSWORD:-selar_dev}@postgres:5432/${POSTGRES_DB:-selar}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   selar-api:
     container_name: selar-api
     build:
@@ -50,6 +66,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      selar-migrate:
+        condition: service_completed_successfully
       selar-worker:
         condition: service_started
     healthcheck:

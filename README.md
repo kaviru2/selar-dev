@@ -122,17 +122,9 @@ Create the database and install the pgvector extension:
 ```bash
 # macOS / Linux
 createdb selar
-psql -d selar -c "CREATE EXTENSION IF NOT EXISTS vector;"
-psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql
-psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql
-psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental_model.sql
-psql -d selar -f services/selar-api/internal/store/migrations/004_adaptive_chat.sql
-psql -d selar -f services/selar-api/internal/store/migrations/005_chat_graph_reducer.sql
-psql -d selar -f services/selar-api/internal/store/migrations/006_graph_governance.sql
-psql -d selar -f services/selar-api/internal/store/migrations/007_multimodal_sources.sql
-psql -d selar -f services/selar-api/internal/store/migrations/008_grounded_chat_concepts.sql
-psql -d selar -f services/selar-api/internal/store/migrations/009_durable_ingestion_jobs.sql
+# Applies every migration in order and records checksums in schema_migrations.
+# Safe to re-run; databases created by the old psql steps are adopted.
+(cd services/selar-api && DATABASE_URL="postgres://localhost:5432/selar?sslmode=disable" go run ./cmd/migrate)
 ```
 
 On Windows, use `psql` from the PostgreSQL installation directory, or pgAdmin.
@@ -188,7 +180,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts Postgres (with pgvector and initialization migrations), the Python worker, the Go API, and the Next.js console. Run `make migrate` after pulling new migrations into an existing database volume.
+This starts Postgres (with pgvector and initialization migrations), the Python worker, the Go API, and the Next.js console. A one-shot `selar-migrate` service applies pending migrations (checksum-tracked) before the API starts; `make migrate` runs it on demand.
 
 ### Adding and managing research sources
 

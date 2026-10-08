@@ -1,7 +1,7 @@
 # SELAR — Development Makefile
 # Convenience targets for local development with Docker Compose.
 
-.PHONY: dev down logs build migrate replay clean api-dev console-dev
+.PHONY: dev down logs build migrate migrate-url replay clean api-dev console-dev
 
 # Start all services in development mode
 dev:
@@ -23,17 +23,13 @@ logs:
 build:
 	docker compose build
 
-# Run database migration manually
+# Apply pending migrations (checksum-tracked, adopts initdb-created databases)
 migrate:
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/001_init.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/002_add_summary.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/003_runtime_mental_model.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/004_adaptive_chat.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/005_chat_graph_reducer.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/006_graph_governance.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/007_multimodal_sources.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/008_grounded_chat_concepts.sql
-	docker compose exec postgres psql -U selar -d selar -f /docker-entrypoint-initdb.d/009_durable_ingestion_jobs.sql
+	docker compose run --rm --build selar-migrate
+
+# Apply migrations to any DATABASE_URL / MIGRATION_DATABASE_URL (e.g. Neon direct URL)
+migrate-url:
+	cd services/selar-api && go run ./cmd/migrate
 
 # Verify deterministic projections. Use APPLY=1 to rebuild them.
 replay:

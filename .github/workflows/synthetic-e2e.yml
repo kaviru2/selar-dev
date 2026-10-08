@@ -49,9 +49,7 @@ jobs:
           version: 11.5.1
       - name: Apply every production migration to isolated pgvector
         run: |
-          for migration in services/selar-api/internal/store/migrations/*.sql; do
-            psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
-          done
+          (cd services/selar-api && DATABASE_URL="$TEST_DATABASE_URL" go run ./cmd/migrate)
       - name: Build real API and console
         run: |
           (cd services/selar-api && go build -o "$TEST_API_BINARY" ./cmd/server)

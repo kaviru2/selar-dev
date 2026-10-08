@@ -11,7 +11,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /selar-api ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /selar-api ./cmd/server \
+ && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /selar-migrate ./cmd/migrate
 
 # --- Runtime ---
 FROM alpine:3.21
@@ -19,6 +20,7 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates wget
 
 COPY --from=builder /selar-api /usr/local/bin/selar-api
+COPY --from=builder /selar-migrate /usr/local/bin/selar-migrate
 
 EXPOSE 8080
 
