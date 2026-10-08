@@ -70,6 +70,16 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); storageSpy.mockRestore(); vi.unstubAllGlobals(); });
 
 describe("guided connections sidebar", () => {
+  it("with no linked readings, explains the exact-concept rule instead of blaming processing (#117)", async () => {
+    links = [];
+    await render();
+    const text = container.textContent || "";
+    expect(text).toContain("No suggested connections yet");
+    expect(text).not.toMatch(/at least two of your readings have been processed/);
+    expect(text).toMatch(/both name the same concept/);
+    expect(text).toMatch(/Similar passages/);
+  });
+
   it("step 1 states the suggestion in plain words without quotes or a percentage", async () => {
     await render();
     const text = container.textContent || "";

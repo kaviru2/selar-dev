@@ -10,6 +10,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AssertionProvenance } from "@/components/AssertionProvenance";
 import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
+import { candidateReviewURL, crossReadingNotice, crossReadingSummary, isCandidateLink, linkDash, linkLayer } from "@/lib/graph-links";
 
 type ForceGraphComponent = (typeof import("react-force-graph-2d"))["default"];
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false }) as ForceGraphComponent;
@@ -47,6 +48,7 @@ interface GraphLinkMetadata {
   assertion_id?: string;
   assertion_scope?: "own_work" | "reported_about_other";
   asserting_document_title?: string;
+  candidate_link_id?: string;
 }
 
 type RenderNode = NodeObject<GraphNode>;
@@ -58,7 +60,7 @@ function endpointId(endpoint: GraphLink["source"]): string | undefined {
 }
 
 function isInteractionLink(link: GraphLinkMetadata): boolean {
-  return ["deterministic_chat", "user_confirmed", "user_created", "user_reviewed"].includes(link.created_via);
+  return linkLayer(link) === "yours";
 }
 
 const REL_COLORS: Record<string, string> = {
@@ -97,18 +99,19 @@ export default function GraphPage() {
   const [reconciling, setReconciling] = useState(false);
   const [showPdfKnowledge, setShowPdfKnowledge] = useState(true);
   const [showInteractionChanges, setShowInteractionChanges] = useState(true);
+  const [showCandidates, setShowCandidates] = useState(true);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
   const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLinkMetadata> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const visibleLinks = useMemo(() => links.filter((link) => (
-    isInteractionLink(link)
-      ? showInteractionChanges
-      : showPdfKnowledge
-  )), [links, showInteractionChanges, showPdfKnowledge]);
+  const visibleLinks = useMemo(() => links.filter((link) => {
+    const layer = linkLayer(link);
+    return layer === "candidate" ? showCandidates : layer === "yours" ? showInteractionChanges : showPdfKnowledge;
+  }), [links, showCandidates, showInteractionChanges, showPdfKnowledge]);
 
   const visibleNodes = useMemo(() => {
     if (showPdfKnowledge) return nodes;
-    if (!showInteractionChanges) return [];
+    if (!showInteractionChanges && !showCandidates) return [];
     const connected = new Set<string>();
     for (const link of visibleLinks) {
       const source = endpointId(link.source);
@@ -117,13 +120,18 @@ export default function GraphPage() {
       if (target) connected.add(target);
     }
     return nodes.filter((node) => connected.has(node.id));
-  }, [nodes, showInteractionChanges, showPdfKnowledge, visibleLinks]);
+  }, [nodes, showCandidates, showInteractionChanges, showPdfKnowledge, visibleLinks]);
 
   const graphData = useMemo(() => ({ nodes: visibleNodes, links: visibleLinks }), [visibleNodes, visibleLinks]);
   const provenanceCounts = useMemo(() => ({
-    pdf: links.filter((link) => !isInteractionLink(link)).length,
-    interaction: links.filter(isInteractionLink).length,
+    pdf: links.filter((link) => linkLayer(link) === "pdf").length,
+    interaction: links.filter((link) => linkLayer(link) === "yours").length,
+    candidate: links.filter((link) => linkLayer(link) === "candidate").length,
   }), [links]);
+  const readingNotice = useMemo(() => crossReadingNotice(crossReadingSummary(
+    nodes.map((n) => ({ id: n.id, node_type: n.nodeType })),
+    links.map((l) => ({ source: endpointId(l.source) ?? "", target: endpointId(l.target) ?? "", state: l.state, created_via: l.created_via, candidate_link_id: l.candidate_link_id })),
+  ), showCandidates), [nodes, links, showCandidates]);
   const interactionNodeImpact = useMemo(() => {
     const impact = new Map<string, "active" | "rolled-back">();
     for (const link of links.filter(isInteractionLink)) {
@@ -200,6 +208,7 @@ export default function GraphPage() {
           assertion_id: e.assertion_id,
           assertion_scope: e.assertion_scope,
           asserting_document_title: e.asserting_document_title,
+          candidate_link_id: e.candidate_link_id,
         }));
 
         setNodes(gNodes);
@@ -421,15 +430,21 @@ export default function GraphPage() {
     const isDimmed = hoverNode !== null && !isHoveredPath;
     const isInactive = ["rejected", "archived", "superseded"].includes(link.state);
     const isInteraction = isInteractionLink(link);
+    const isCandidate = isCandidateLink(link);
 
     ctx.save();
 
     ctx.beginPath();
     ctx.moveTo(src.x, src.y);
     ctx.lineTo(tgt.x, tgt.y);
-    ctx.setLineDash(isInactive || link.state === "candidate" || isInteraction ? [4 / globalScale, 4 / globalScale] : []);
+    // Reviewed links are solid; unreviewed SELAR suggestions and inactive links are dashed (#117).
+    ctx.setLineDash(linkDash(link).map((d) => d / globalScale));
 
-    if (isInactive) {
+    if (isCandidate) {
+      ctx.strokeStyle = "#b0782a";
+      ctx.globalAlpha = isDimmed ? 0.25 : isSelectedPath || isHoveredPath ? 1 : 0.85;
+      ctx.lineWidth = (isSelectedPath || isHoveredPath ? 2.2 : 1.5) / globalScale;
+    } else if (isInactive) {
       ctx.strokeStyle = isInteraction ? "#b35b43" : "#b9b1a8";
       ctx.globalAlpha = isInteraction ? 0.65 : 0.16;
       ctx.lineWidth = (isInteraction ? 1.4 : 0.6) / globalScale;
@@ -469,8 +484,8 @@ export default function GraphPage() {
       ctx.fillStyle = "rgba(250, 249, 247, 0.9)";
       ctx.fillRect(midX - labelWidth / 2 - 2, midY - fontSize / 2 - 1, labelWidth + 4, fontSize + 2);
 
-      ctx.fillStyle = isInteraction ? (isInactive ? "#b35b43" : "#7a8c5c") : (REL_COLORS[link.relation] || "#c96442");
-      ctx.fillText(labelText, midX, midY);
+      ctx.fillStyle = isCandidate ? "#b0782a" : isInteraction ? (isInactive ? "#b35b43" : "#7a8c5c") : (REL_COLORS[link.relation] || "#c96442");
+      ctx.fillText(isCandidate ? `${labelText} · to review` : labelText, midX, midY);
     }
 
     ctx.restore();
@@ -616,7 +631,15 @@ export default function GraphPage() {
             <span className="graph-layer-dot interaction" />
             Your changes <small>{provenanceCounts.interaction}</small>
           </label>
-          <span className="graph-layer-key"><i className="active" /> added <i className="rolled-back" /> rolled back</span>
+          <label title="Links SELAR suggests because both readings name the same concept. Not reviewed by you.">
+            <input type="checkbox" checked={showCandidates} onChange={(event) => {
+              setShowCandidates(event.target.checked);
+              setSelId(null);
+            }} />
+            <span className="graph-layer-dot candidate" />
+            To review <small>{provenanceCounts.candidate}</small>
+          </label>
+          <span className="graph-layer-key"><i className="active" /> added <i className="rolled-back" /> rolled back <i className="candidate" /> suggested, not reviewed</span>
         </div>
       </div>
 
@@ -637,6 +660,16 @@ export default function GraphPage() {
           </div>
         )}
 
+        {!loading && readingNotice && !noticeDismissed && (
+          <div role="status" className="graph-reading-notice">
+            <strong>{readingNotice.title}</strong>
+            <span>{readingNotice.body}</span>
+            <button type="button" aria-label="Dismiss explanation" onClick={() => setNoticeDismissed(true)}>
+              <Icon name="x" size={11} />
+            </button>
+          </div>
+        )}
+
         {!loading && visibleNodes.length === 0 && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 5 }}>
             <div style={{ textAlign: "center", maxWidth: 280, padding: 24 }}>
@@ -647,7 +680,7 @@ export default function GraphPage() {
               <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-3)", lineHeight: 1.5 }}>
                 {nodes.length === 0
                   ? "Process documents to create evidence-backed claims, concepts, assumptions, and open questions."
-                  : "Turn on PDF knowledge or Your changes to inspect that layer."}
+                  : "Turn on PDF knowledge, Your changes or To review to inspect that layer."}
               </div>
             </div>
           </div>
@@ -871,7 +904,17 @@ export default function GraphPage() {
                       Learner-reviewed exact concept overlap; human note does not establish another relation.
                     </span>}
                     {l.assertion_id && <AssertionProvenance link={l} />}
-                    {l.created_via !== "deterministic_chat" && !l.mental_link_id && !l.assertion_id && (
+                    {isCandidateLink(l) && (
+                      <div onClick={(event) => event.stopPropagation()} className="graph-candidate-card">
+                        <span style={{ color: "#8a5a1a", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
+                          Suggested by SELAR · not reviewed · not part of your knowledge until you decide
+                        </span>
+                        {l.source_quote && <blockquote>{l.source_quote}</blockquote>}
+                        {l.target_quote && <blockquote>{l.target_quote}</blockquote>}
+                        {candidateReviewURL(l) && <Link href={candidateReviewURL(l)!}>Compare and decide in the Reader</Link>}
+                      </div>
+                    )}
+                    {l.created_via !== "deterministic_chat" && !l.mental_link_id && !l.assertion_id && !isCandidateLink(l) && (
                       <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         PDF-derived knowledge · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>

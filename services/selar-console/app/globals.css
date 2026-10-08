@@ -1706,6 +1706,22 @@ body {
 .graph-layer-key i { width: 12px; height: 0; border-top: 2px dashed; }
 .graph-layer-key i.active { border-color: #7a8c5c; }
 .graph-layer-key i.rolled-back { margin-left: 3px; border-color: #b35b43; }
+/* #117: reviewed links are solid; SELAR suggestions awaiting review are dashed amber. */
+.graph-layer-key i.active { border-top-style: solid; }
+.graph-layer-key i.candidate { margin-left: 3px; border-color: #b0782a; }
+.graph-layer-dot.candidate { background: #b0782a; box-shadow: 0 0 0 2px rgba(176, 120, 42, .16); }
+.graph-reading-notice {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; max-width: min(560px, calc(100% - 32px));
+  padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--r-md);
+  background: var(--paper, #faf9f7); box-shadow: var(--shadow-1); font-size: 12px; line-height: 1.45; color: var(--ink-2);
+}
+.graph-reading-notice strong { grid-column: 1; color: var(--ink); font-size: 13px; }
+.graph-reading-notice span { grid-column: 1; }
+.graph-reading-notice button { grid-column: 2; grid-row: 1 / span 2; align-self: start; color: var(--ink-3); }
+.graph-candidate-card { display: grid; gap: 6px; }
+.graph-candidate-card blockquote { margin: 0; padding-left: 8px; border-left: 2px solid #b0782a; font-size: 11px; color: var(--ink-3); }
+.graph-candidate-card a { font-size: 11px; font-weight: 600; color: var(--accent); }
 
 /* ——— Quiz View ——— */
 .quiz-wrap {
