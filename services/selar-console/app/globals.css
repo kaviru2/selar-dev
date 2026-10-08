@@ -2112,3 +2112,14 @@ body {
 .cx-danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--rule)); }
 .cx-quote blockquote { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .cx-mine p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Brand mark (components/brand/Logo.tsx via components/ui/Wordmark.tsx).
+   Both variants are rendered; show the one matching the colour scheme. */
+.topbar .brand-logo {
+  display: inline-flex;
+  flex: none;
+  vertical-align: middle;
+}
+.ui-mark-dark { display: none; }
+[data-theme="dark"] .ui-mark-light { display: none; }
+[data-theme="dark"] .ui-mark-dark { display: inline-block; }

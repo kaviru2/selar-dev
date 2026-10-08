@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
+import { WordmarkMark } from "@/components/ui/Wordmark";
 
 const STEPS = [
   { no: "01", lbl: "Create your account", sub: "Your library is associated with your account.", done: true },
@@ -16,10 +17,7 @@ export default function OnboardingPage() {
     <div className="onboard">
       <div className="left">
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28, fontSize: 15, fontWeight: 600 }}>
-          <span className="brand-mark" style={{ width: 18, height: 18, position: "relative", display: "inline-block" }}>
-            <span style={{ position: "absolute", inset: 0, background: "var(--ink)", clipPath: "polygon(0 0,100% 0,100% 100%,50% 100%,50% 50%,0 50%)" }} />
-            <span style={{ position: "absolute", inset: 0, border: "1px solid var(--ink)", clipPath: "polygon(50% 50%,100% 50%,100% 100%,50% 100%)", background: "var(--accent)" }} />
-          </span>
+          <WordmarkMark size={24} />
           SELAR
           <span style={{ fontWeight: 400, color: "var(--ink-4)", fontSize: 12, marginLeft: 4 }}>· getting started</span>
         </div>

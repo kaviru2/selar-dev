@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSelar } from "@/lib/context";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { WordmarkMark } from "@/components/ui/Wordmark";
 
 const NAV_ITEMS = [
   { key: "library", label: "Library", href: "/library" },
@@ -36,7 +37,7 @@ export function Topbar() {
   return (
     <div className="topbar">
       <div className="brand">
-        <span className="brand-mark" />
+        <span className="brand-logo"><WordmarkMark size={22} /></span>
         <span>SELAR</span>
       </div>
 

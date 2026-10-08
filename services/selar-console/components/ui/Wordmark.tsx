@@ -1,9 +1,12 @@
-// Wordmark.tsx — placeholder SELAR wordmark.
-// TEMPORARY: replace the mark with components/brand/Logo once the brand PR
-// lands. Every page renders the brand through this one component, so the
-// swap is a single-file change.
+// Wordmark.tsx — SELAR brand lockup used across the console and landing page.
+// The mark is LogoMark (Linny the linnet holding a page) from components/brand;
+// see brand/DESIGN.md for usage rules. Every page renders the brand through
+// this one component. Both the light and on-dark marks are rendered and CSS
+// shows the one that matches [data-theme] (see .ui-mark-* in app/globals.css),
+// so there is no flash when the theme script runs before paint.
 
 import Link from "next/link";
+import { LogoMark } from "@/components/brand";
 
 interface WordmarkProps {
   href?: string;
@@ -12,15 +15,12 @@ interface WordmarkProps {
 }
 
 export function WordmarkMark({ size = 26 }: { size?: number }) {
-  // Two pages joined by a thread: "this reading links to that one".
+  // Linny the linnet holding a page: bringing back something you read earlier.
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <rect x="2" y="5" width="13" height="18" rx="3" fill="var(--illo-green)" />
-      <rect x="17" y="9" width="13" height="18" rx="3" fill="var(--illo-rust)" />
-      <path d="M9 14 C 13 20, 19 8, 23 18" fill="none" stroke="var(--illo-paper)" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="9" cy="14" r="2.2" fill="var(--illo-paper)" />
-      <circle cx="23" cy="18" r="2.2" fill="var(--illo-paper)" />
-    </svg>
+    <>
+      <LogoMark size={size} title="" focusable="false" className="ui-mark-light" />
+      <LogoMark size={size} title="" focusable="false" variant="dark" className="ui-mark-dark" />
+    </>
   );
 }
 
