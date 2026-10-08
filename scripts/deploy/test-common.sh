@@ -67,7 +67,30 @@ if command -v go >/dev/null 2>&1; then
   check "migrate.sh output hides the password" bash -c "! printf '%s' \"\$1\" | grep -q '$SENTINEL'" _ "$mig"
 fi
 
-for s in deploy-all deploy-api deploy-console deploy-worker migrate smoke env-sync; do
+# Backup / restore guards (no network: every case fails before pg_dump/gcloud).
+printf 'DATABASE_URL_DIRECT=postgres://u:%s@ep-a-pooler.example.neon.tech/db\nBACKUP_AGE_RECIPIENT=age1example\n' "$SENTINEL" > "$TMP/bk-pooled.env"
+printf 'DATABASE_URL_DIRECT=postgres://u:%s@ep-a.example.neon.tech/db\nBACKUP_AGE_RECIPIENT=AGE-SECRET-KEY-1%s\n' "$SENTINEL" "$SENTINEL" > "$TMP/bk-identity.env"
+chmod 600 "$TMP/bk-pooled.env" "$TMP/bk-identity.env"
+if command -v pg_dump >/dev/null 2>&1 && command -v age >/dev/null 2>&1; then
+  bk="$(SELAR_SECRETS="$TMP/bk-pooled.env" "$DIR/backup-db.sh" --local-only "$TMP/out" 2>&1 || true)"
+  check "backup-db.sh refuses a pooled URL" bash -c "printf '%s' \"\$1\" | grep -q 'pooled'" _ "$bk"
+  bk2="$(SELAR_SECRETS="$TMP/bk-identity.env" "$DIR/backup-db.sh" --local-only "$TMP/out" 2>&1 || true)"
+  check "backup-db.sh refuses an age identity as recipient" bash -c "printf '%s' \"\$1\" | grep -q 'must be an age public key'" _ "$bk2"
+  check "backup-db.sh output hides secrets" bash -c "! printf '%s' \"\$1\" | grep -q '$SENTINEL'" _ "$bk$bk2"
+fi
+if command -v age >/dev/null 2>&1 && command -v pg_restore >/dev/null 2>&1 && command -v psql >/dev/null 2>&1; then
+  : > "$TMP/id.key"; chmod 600 "$TMP/id.key"; : > "$TMP/x.age"
+  printf 'DATABASE_URL_DIRECT=postgres://u:%s@ep-prod.example.neon.tech/db\n' "$SENTINEL" > "$TMP/prod.env"; chmod 600 "$TMP/prod.env"
+  rs="$(SELAR_SECRETS="$TMP/prod.env" "$DIR/restore-db.sh" --file "$TMP/x.age" --identity "$TMP/id.key" --target "postgres://u@ep-prod.example.neon.tech/db" 2>&1 || true)"
+  check "restore-db.sh refuses the production host" bash -c "printf '%s' \"\$1\" | grep -q 'production database'" _ "$rs"
+  rs2="$(SELAR_SECRETS="$TMP/prod.env" "$DIR/restore-db.sh" --file "$TMP/x.age" --identity "$TMP/id.key" --target "postgres://u@db.example.com/db" 2>&1 || true)"
+  check "restore-db.sh refuses a remote target without --allow-remote" bash -c "printf '%s' \"\$1\" | grep -q 'not local'" _ "$rs2"
+  chmod 644 "$TMP/id.key"
+  rs3="$(SELAR_SECRETS="$TMP/prod.env" "$DIR/restore-db.sh" --file "$TMP/x.age" --identity "$TMP/id.key" --target "postgres://localhost/db" 2>&1 || true)"
+  check "restore-db.sh refuses a world-readable identity" bash -c "printf '%s' \"\$1\" | grep -q 'mode 600'" _ "$rs3"
+fi
+
+for s in deploy-all deploy-api deploy-console deploy-worker migrate smoke env-sync backup-db restore-db; do
   check "$s.sh --help" bash -c "'$DIR/$s.sh' --help >/dev/null 2>&1"
   check "$s.sh rejects unknown flags" bash -c "! '$DIR/$s.sh' --definitely-not-a-flag >/dev/null 2>&1"
 done

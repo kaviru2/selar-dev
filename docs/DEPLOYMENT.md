@@ -263,6 +263,65 @@ below are set, so local development, CI and tests never call Google.
 
 Create or inspect the key: `gcloud recaptcha keys list --project selar-research-261008`.
 
+## 7. Database backups (Google Cloud Storage, free tier)
+
+Nightly encrypted logical backups of the Neon database, on top of Neon's own
+point-in-time restore. Everything lives in GCP project `selar-research-261008`
+and stays inside the always-free tier.
+
+| Resource | Setting |
+|---|---|
+| Bucket `gs://selar-db-backups-261008` | `us-east1`, Standard, uniform bucket-level access, public access prevention **enforced**, versioning off, soft delete off, lifecycle **delete after 30 days** |
+| Service account `selar-db-backup@selar-research-261008.iam.gserviceaccount.com` | only `roles/storage.objectCreator` on that bucket (cannot read, list, overwrite or delete) |
+| Workload Identity pool `github` / provider `selar-dev` | trusts only `kaviru2/selar-dev`, `refs/heads/main`, workflow `db-backup.yml`; no service-account key exists |
+| Budget `SELAR cap 1 USD` (billing account `01B63E-CB9E16-1BC9EE`) | scoped to the project; email alerts at 1/50/90/100 % |
+
+**How a backup runs.** [`.github/workflows/db-backup.yml`](../.github/workflows/db-backup.yml)
+runs daily at 02:17 UTC (or *Run workflow*). It calls
+[`scripts/deploy/backup-db.sh`](../scripts/deploy/backup-db.sh):
+`pg_dump -Fc` over `DATABASE_URL_DIRECT` → `age -r $BACKUP_AGE_RECIPIENT` → a
+0600 temp file → `gcloud storage cp --no-clobber` to
+`gs://selar-db-backups-261008/neon/selar-<UTC>-<sha>.dump.age`. Plaintext is
+never written to disk. The run fails if the encrypted dump is under 1 KB or over
+150 MB (30 × 150 MB < 5 GB free storage).
+
+- GitHub repo secret `DATABASE_URL_DIRECT`; repo variable `BACKUP_AGE_RECIPIENT` (a public key).
+- **Encryption key.** Client-side, age X25519. CI holds only the public recipient.
+  The private identity is `~/.hermes/secrets/selar-backup-age.key` (mode 600) on the
+  operator's machine. **Keep an offline copy** (password manager): without it no
+  backup can be decrypted. Rotate by generating a new key
+  (`age-keygen -o new.key`), updating the variable, and keeping the old key for 30 days.
+- Run one by hand from an operator machine: `scripts/deploy/backup-db.sh` (needs
+  `gcloud` logged in, `pg_dump` 17+, `age`; reads `BACKUP_AGE_RECIPIENT` from the secrets file).
+
+**Restore** ([`scripts/deploy/restore-db.sh`](../scripts/deploy/restore-db.sh)):
+
+```bash
+scripts/deploy/restore-db.sh --list                 # what exists
+# 1. Throwaway local check (Homebrew postgresql@17 + pgvector):
+D=$(mktemp -d); initdb -D $D/data -U postgres --auth=trust >/dev/null
+pg_ctl -D $D/data -o "-p 55437 -k $D" -w start && createdb -h localhost -p 55437 -U postgres selar_restore
+scripts/deploy/restore-db.sh --latest --identity ~/.hermes/secrets/selar-backup-age.key \
+  --target postgres://postgres@localhost:55437/selar_restore
+pg_ctl -D $D/data -w stop && rm -rf "$D"           # delete the copy: it holds participant data
+# 2. Real recovery: create an EMPTY Neon branch/database, then
+scripts/deploy/restore-db.sh --object gs://selar-db-backups-261008/neon/<name> \
+  --identity ~/.hermes/secrets/selar-backup-age.key --target '<new branch direct URL>' --allow-remote
+```
+
+The script refuses the production host, a non-empty target, a remote target
+without `--allow-remote`, and an identity file that is not mode 600/400. It
+downloads into a 0700 temp dir that is deleted on exit and prints row counts.
+Reading objects needs an account with `storage.objects.get` on the bucket (the
+project owner); the CI service account cannot read backups.
+
+**Data protection.** Backups contain participant and research data. Keep the
+bucket private (public access prevention is enforced), never grant `allUsers`,
+download only into a throwaway directory, delete local restores straight after
+checking them, and keep the 30-day retention unless the ethics protocol says
+otherwise. Deleting a participant's account does not remove them from backups
+already taken; they age out within 30 days.
+
 ## Environment variable reference
 
 | Variable | API | Worker | Console | Default / notes |
