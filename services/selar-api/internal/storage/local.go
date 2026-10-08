@@ -144,6 +144,20 @@ func (l *Local) DeleteDocument(ctx context.Context, documentID, pdfLocator strin
 	return firstErr
 }
 
+func (l *Local) DeletePrefix(_ context.Context, prefix string) error {
+	if prefix == "" || !strings.HasSuffix(prefix, "/") {
+		return ErrInvalidLocator
+	}
+	dir, err := l.pathFor(strings.TrimSuffix(prefix, "/"))
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (l *Local) PresignPut(context.Context, string, string, int64, time.Duration) (DirectUpload, error) {
 	return DirectUpload{}, ErrDirectUploadUnsupported
 }

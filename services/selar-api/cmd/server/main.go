@@ -130,6 +130,8 @@ func main() {
 		r.Patch("/users/me/profile", h.UpdateProfile)
 		r.Post("/users/me/email", h.ChangeEmail)
 		r.Post("/users/me/password", h.ChangePassword)
+		r.Get("/users/me/export", h.ExportMyData)
+		r.Post("/users/me/delete", h.DeleteAccount)
 
 		// Documents
 		r.Get("/documents", h.ListDocuments)

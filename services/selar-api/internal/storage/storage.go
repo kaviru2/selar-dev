@@ -52,6 +52,9 @@ type Store interface {
 	Delete(ctx context.Context, locator string) error
 	// DeleteDocument removes the PDF locator and every derived asset.
 	DeleteDocument(ctx context.Context, documentID, pdfLocator string) error
+	// DeletePrefix removes every object whose key starts with prefix, for
+	// example a user's upload folder when the account is deleted.
+	DeletePrefix(ctx context.Context, prefix string) error
 	// Locator converts a backend key to the persisted locator form.
 	Locator(key string) string
 	// PresignPut returns a short-lived PUT bound to type and exact length.

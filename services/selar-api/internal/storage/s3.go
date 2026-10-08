@@ -178,6 +178,22 @@ func (s *S3) DeleteDocument(ctx context.Context, documentID, pdfLocator string) 
 	return firstErr
 }
 
+func (s *S3) DeletePrefix(ctx context.Context, prefix string) error {
+	if prefix == "" || !strings.HasSuffix(prefix, "/") {
+		return ErrInvalidLocator
+	}
+	var firstErr error
+	for object := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if object.Err != nil {
+			return mapS3Error(object.Err)
+		}
+		if err := s.Delete(ctx, s.Locator(object.Key)); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 func (s *S3) PresignPut(ctx context.Context, key, contentType string, size int64, ttl time.Duration) (DirectUpload, error) {
 	if _, err := s.key(s.Locator(key)); err != nil {
 		return DirectUpload{}, err
