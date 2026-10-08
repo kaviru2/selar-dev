@@ -337,6 +337,7 @@ already taken; they age out within 30 days.
 | `API_INTERNAL_URL` | | | ✓ | URL of the Go API |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | ✓ | | | Sign in with Google; unset = off. The secret lives only in the API |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | | | ✓ | same client id; inlined at build time, so redeploy after setting it. Unset = no Google button. Redirect URI: `<console>/api/auth/google/callback` |
+| `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY` | | | ✓ | Google Drive import: browser key restricted to `picker.googleapis.com` + console referrers (`gcloud services api-keys list --project selar-research-261008`, key `selar-console-picker`). Unset = sidebar says "Google Drive import not set up" |
 | `WORKER_URL` | ✓ | | | Modal `web` URL; local `http://localhost:8000` |
 | `WORKER_TRIGGER_URL` | ✓ | | | optional full trigger URL override |
 | `WORKER_TRIGGER_SECRET` | ✓ | ✓ | | unset = triggers off (local polling mode) |

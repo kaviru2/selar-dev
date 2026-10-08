@@ -166,6 +166,7 @@ func main() {
 		r.Post("/documents/upload", h.UploadDocument)
 		r.Post("/documents/upload-url", h.CreateUploadURL)
 		r.Post("/documents/upload-complete", h.CompleteUpload)
+		r.Post("/documents/import/drive", h.ImportDriveFile)
 		r.Get("/documents/stats", h.GetDocumentStats)
 		r.Get("/documents/{id}", h.GetDocument)
 		r.Get("/documents/{id}/content", h.GetDocumentContent)
