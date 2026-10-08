@@ -6,7 +6,6 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { useSelar } from "@/lib/context";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { WordmarkMark } from "@/components/ui/Wordmark";
@@ -24,16 +23,8 @@ export function Topbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useSelar();
-  // Admin link only; the API enforces admin access on every /api/admin route.
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/admin/access")
-      .then((r) => (r.ok ? r.json() : { admin: false }))
-      .then((b) => { if (!cancelled) setIsAdmin(!!b?.admin); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  // Convenience only: /admin is gated server-side (requireAdmin + API 403).
+  const navItems = user?.role === "admin" ? [...NAV_ITEMS, { key: "admin", label: "Admin", href: "/admin" }] : NAV_ITEMS;
 
   // Get initials from email
   const initials = user?.email
@@ -54,7 +45,7 @@ export function Topbar() {
       </div>
 
       <nav className="nav">
-        {NAV_ITEMS.map(({ key, label, href }) => {
+        {navItems.map(({ key, label, href }) => {
           const isActive = pathname.startsWith(href);
           return (
             <Link
@@ -66,11 +57,6 @@ export function Topbar() {
             </Link>
           );
         })}
-        {isAdmin && (
-          <Link href="/admin/quizzes" className={pathname.startsWith("/admin") ? "active" : ""}>
-            Admin
-          </Link>
-        )}
       </nav>
 
       <div style={{ flex: 1 }} />

@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
+import { createDwellTracker, track, type DwellTracker } from "@/lib/analytics";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { PanelResizer } from "@/components/PanelResizer";
 import { isTypingTarget, useReaderLayout } from "@/lib/reader-layout";
@@ -128,6 +129,24 @@ export default function ReaderPage() {
   useEffect(() => {
     telemetryRef.current?.visitPage(pageNumber);
   }, [pageNumber]);
+
+  // Visible dwell time per page (one event per page left; no-op without consent).
+  const dwellRef = useRef<DwellTracker | null>(null);
+  useEffect(() => {
+    if (!docId || documentContent?.document.status !== "ready") return;
+    const dwell = createDwellTracker((page, dwellMs) => track("reader_page_viewed", { document_id: docId, page, dwell_ms: dwellMs }));
+    dwellRef.current = dwell;
+    const onVisibility = () => (document.visibilityState === "hidden" ? dwell.pause() : dwell.resume());
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      dwell.stop();
+      if (dwellRef.current === dwell) dwellRef.current = null;
+    };
+  }, [docId, documentContent?.document.status]);
+  useEffect(() => {
+    dwellRef.current?.enter(pageNumber);
+  }, [pageNumber, docId, documentContent?.document.status]);
 
   useEffect(() => {
     for (const suggestion of suggestions) {

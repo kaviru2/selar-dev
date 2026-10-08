@@ -29,8 +29,10 @@ and how someone becomes an admin. Tracking issue: #84.
   feature may store text only with a separate, explicit opt-in and a new consent version.
 - **Consent gates per-user data.** A per-user event row is written only for users who opted in
   (`users.consented_at IS NOT NULL`). The check happens inside the same SQL statement as the
-  insert, so a withdrawal that commits first always wins. For everyone else, only an anonymous
-  per-day count per event name is incremented (`analytics_daily_counts`, which has no user id).
+  insert, so a withdrawal that commits first always wins. Separately, every accepted event
+  (from any user, consenting or not) increments an anonymous per-day count per event name
+  (`analytics_daily_counts`, which has no user id). That count is all a non-consenting user ever
+  contributes.
 - **Kill switch.** Set `ANALYTICS_ENABLED=false` on the API to stop all recording, including
   anonymous counts. The default is enabled, but per-user rows still require consent.
 
@@ -41,7 +43,7 @@ and how someone becomes an admin. Tracking issue: #84.
 - **Users who registered before this feature,** or who skipped the checkbox, see a one-time
   prompt after login with the same wording and "Yes" / "No thanks" buttons. Either answer sets
   `consent_decided_at`, so the prompt does not return.
-- **Settings → Privacy** shows the current state. From there the user can turn analytics on or
+- **Settings → Privacy & data** shows the current state. From there the user can turn analytics on or
   off and delete their analytics data.
 - The user record stores `consented_at`, `consent_version` (currently `prototype-usage-v1`, see
   `analytics.ConsentVersion`) and `consent_decided_at`. Bump the version whenever the wording
@@ -49,7 +51,7 @@ and how someone becomes an admin. Tracking issue: #84.
 
 ### Retention and deletion
 
-- `DELETE /api/users/me/analytics` (**Settings → Privacy → Delete my analytics data**)
+- `DELETE /api/users/me/analytics` (**Settings → Privacy & data → Delete my usage analytics**)
   deletes all of the user's events immediately. Turning analytics off stops new events but
   keeps old ones until the user deletes them.
 - Deleting a user account deletes all of that user's events (`ON DELETE CASCADE`).
