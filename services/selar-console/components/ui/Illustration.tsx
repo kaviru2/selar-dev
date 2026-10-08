@@ -18,16 +18,16 @@ export type IllustrationName =
   | "lost"
   | "hero";
 
-const G = "var(--selar-green-800)";
-const GM = "var(--selar-green-500)";
-const GL = "var(--selar-green-100)";
-const R = "var(--selar-rust)";
-const RT = "var(--selar-rust-tint)";
-const A = "var(--selar-amber)";
-const S = "var(--selar-sky)";
-const INK = "var(--selar-ink)";
-const W = "#fff";
-const LINE = "#cbd5e1";
+const G = "var(--illo-green)";
+const GM = "var(--illo-green-mid)";
+const GL = "var(--illo-green-light)";
+const R = "var(--illo-rust)";
+const RT = "var(--illo-rust-tint)";
+const A = "var(--illo-amber)";
+const S = "var(--illo-sky)";
+const INK = "var(--illo-ink)";
+const W = "var(--illo-paper)";
+const LINE = "var(--illo-line)";
 
 function Page({ x, y, w = 70, h = 90, fill = W, accent = GM, r = 8, lines = 4 }: { x: number; y: number; w?: number; h?: number; fill?: string; accent?: string; r?: number; lines?: number }) {
   const rows = Array.from({ length: lines }, (_, i) => (
@@ -198,7 +198,7 @@ const ART: Record<IllustrationName, { vb: string; body: ReactNode }> = {
         <g className="float-2">
           <rect x="44" y="70" width="190" height="240" rx="18" fill={W} stroke={INK} strokeWidth="3" />
           <rect x="66" y="94" width="88" height="12" rx="6" fill={R} />
-          <text x="66" y="134" fontFamily="var(--font-sans)" fontSize="13" fontWeight="700" fill="#475569">EARLIER READING</text>
+          <text x="66" y="134" fontFamily="var(--font-sans)" fontSize="13" fontWeight="700" fill="var(--illo-label)">EARLIER READING</text>
           <rect x="66" y="150" width="146" height="8" rx="4" fill={LINE} />
           <rect x="66" y="168" width="130" height="8" rx="4" fill={LINE} />
           <rect x="60" y="182" width="158" height="26" rx="6" fill={RT} />
@@ -211,7 +211,7 @@ const ART: Record<IllustrationName, { vb: string; body: ReactNode }> = {
         <g className="float">
           <rect x="288" y="150" width="190" height="240" rx="18" fill={W} stroke={INK} strokeWidth="3" />
           <rect x="310" y="174" width="88" height="12" rx="6" fill={G} />
-          <text x="310" y="214" fontFamily="var(--font-sans)" fontSize="13" fontWeight="700" fill="#475569">READING NOW</text>
+          <text x="310" y="214" fontFamily="var(--font-sans)" fontSize="13" fontWeight="700" fill="var(--illo-label)">READING NOW</text>
           <rect x="310" y="230" width="146" height="8" rx="4" fill={LINE} />
           <rect x="304" y="246" width="158" height="26" rx="6" fill={GL} />
           <rect x="310" y="255" width="128" height="8" rx="4" fill={G} opacity="0.7" />

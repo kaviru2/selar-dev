@@ -68,29 +68,70 @@
   --selar-shadow-3: 0 4px 8px rgba(15, 23, 42, 0.06), 0 18px 48px rgba(15, 23, 42, 0.14);
 }
 
-/* ——— Semantic layer: the console's existing variable names, remapped ——— */
+/* ——— Semantic layer ———
+ * Components use these, never the brand layer directly, so the dark theme
+ * (and a future brand palette) only has to remap this block. */
 :root {
+  color-scheme: light;
+
+  /* Surfaces */
   --bg: var(--selar-white);
   --bg-2: var(--selar-paper);
   --bg-3: var(--selar-light);
+  --bg-raised: var(--selar-white);
+  --bg-nav: color-mix(in srgb, var(--selar-white) 92%, transparent);
+
+  /* Text */
   --ink: var(--selar-ink);
   --ink-2: #1e293b;
   --ink-3: var(--selar-slate);
   --ink-4: var(--selar-slate-500);
+
+  /* Lines */
   --rule: var(--selar-slate-200);
   --rule-2: var(--selar-slate-300);
-  --accent: var(--selar-green-800);
-  --accent-2: var(--selar-green-600);
+
+  /* Brand roles */
+  --accent: var(--selar-green-800); /* brand text, links, fills */
+  --accent-2: var(--selar-green-600); /* secondary brand text */
+  --accent-strong: var(--selar-green-900); /* hover/pressed fill */
+  --on-accent: #ffffff; /* text on an --accent fill */
+  --panel-brand: var(--selar-green-800); /* large brand panels (white text) */
+  --panel-brand-ink: #ffffff;
+  --panel-brand-muted: #dbe7df;
   --accent-3: var(--selar-rust);
   --accent-warm: var(--selar-rust);
   --accent-warm-ink: var(--selar-rust-700);
   --accent-warm-tint: var(--selar-rust-tint);
-  --tint-green: var(--selar-green-50);
-  --tint-sky: var(--selar-sky);
-  --error: var(--selar-danger);
+  --accent-warm-fill: var(--selar-rust-700);
+  --accent-warm-strong: #7f381c;
 
+  /* Tints and their text colours */
+  --tint-green: var(--selar-green-50);
+  --tint-green-2: var(--selar-green-100);
+  --tint-sky: var(--selar-sky);
+  --text-sky: var(--selar-sky-600);
+  --tint-amber: var(--selar-amber-tint);
+  --text-amber: var(--selar-amber-800);
+  --text-amber-strong: #78350f;
+  --highlight-marker: color-mix(in srgb, var(--selar-amber) 38%, transparent);
+
+  --error: var(--selar-danger);
   --highlight-suggest: rgba(31, 81, 53, 0.1);
   --highlight-suggest-border: rgba(31, 81, 53, 0.55);
+
+  /* Illustration palette (toned down in dark mode) */
+  --illo-ink: var(--selar-ink);
+  --illo-paper: #ffffff;
+  --illo-line: #cbd5e1;
+  --illo-label: #475569;
+  --illo-green: var(--selar-green-800);
+  --illo-green-mid: var(--selar-green-500);
+  --illo-green-light: var(--selar-green-100);
+  --illo-sky: var(--selar-sky);
+  --illo-rust: var(--selar-rust);
+  --illo-rust-tint: var(--selar-rust-tint);
+  --illo-amber: var(--selar-amber);
 
   --font-sans: var(--selar-font-sans);
   --font-display: var(--selar-font-display);
@@ -113,41 +154,92 @@
   --shadow-3: var(--selar-shadow-3);
 }
 
-/* Optional reader themes keep their names; they now sit on the new palette. */
-[data-theme="warm"] {
+/* Reader paper tints (light mode only). Set on <html data-paper="…">. */
+:root[data-paper="warm"]:not([data-theme="dark"]) {
   --bg: #fffdf8;
   --bg-2: #fbf6ec;
   --bg-3: #f4ecdc;
   --rule: #ebe1cd;
 }
-[data-theme="sage"] {
+:root[data-paper="sage"]:not([data-theme="dark"]) {
   --bg: #fbfdfb;
   --bg-2: var(--selar-green-50);
   --bg-3: var(--selar-green-100);
   --rule: #d3e3d8;
 }
+
+/* ——— Dark theme ———
+ * Applied as <html data-theme="dark"> by lib/theme.tsx (system preference or
+ * the user's choice). Every text/background pair below is checked for WCAG AA
+ * in lib/design-tokens.test.ts. */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --bg: #0f172a;
-  --bg-2: #162033;
+  --bg-2: #131d33;
   --bg-3: #1e293b;
+  --bg-raised: #162033;
+  --bg-nav: color-mix(in srgb, #0f172a 90%, transparent);
+
   --ink: #f1f5f9;
   --ink-2: #e2e8f0;
   --ink-3: #cbd5e1;
   --ink-4: #94a3b8;
+
   --rule: #273449;
   --rule-2: #334155;
+
   --accent: #8fc3a4;
   --accent-2: #a7c4b2;
+  --accent-strong: #a7d4b8;
+  --on-accent: #0f172a;
+  --panel-brand: #163c27;
+  --panel-brand-ink: #ffffff;
+  --panel-brand-muted: #dbe7df;
   --accent-3: #f2c9b5;
   --accent-warm: #f2c9b5;
   --accent-warm-ink: #f2c9b5;
   --accent-warm-tint: #3a2419;
+  --accent-warm-fill: #f2c9b5;
+  --accent-warm-strong: #f8dccf;
+
   --tint-green: #15281f;
+  --tint-green-2: #1b3528;
   --tint-sky: #172a40;
+  --text-sky: #bcd5f2;
+  --tint-amber: #3a2a10;
+  --text-amber: #fde7b0;
+  --text-amber-strong: #fff3d6;
+  --highlight-marker: color-mix(in srgb, #d97706 30%, transparent);
+
   --error: #f19a8f;
   --highlight-suggest: rgba(143, 195, 164, 0.16);
   --highlight-suggest-border: rgba(143, 195, 164, 0.7);
+
+  --illo-ink: #0b1220;
+  --illo-paper: #cbd5e1;
+  --illo-line: #94a3b8;
+  --illo-label: #1e293b;
+  --illo-green: #2f6b49;
+  --illo-green-mid: #6f9f83;
+  --illo-green-light: #24452f;
+  --illo-sky: #1e3a5a;
+  --illo-rust: #c8673c;
+  --illo-rust-tint: #3a2419;
+  --illo-amber: #e08a1e;
+
   --selar-focus: 0 0 0 3px #0f172a, 0 0 0 5px #8fc3a4;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 4px 8px rgba(0, 0, 0, 0.35), 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* Theme switches cross-fade gently; instant under reduced motion. */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, fill 200ms ease !important;
 }
 
 /* ——— Global accessibility defaults ——— */
