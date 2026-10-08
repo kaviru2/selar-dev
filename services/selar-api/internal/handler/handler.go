@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
+	"github.com/selar-dev/selar-api/internal/settings"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
 	"github.com/selar-dev/selar-api/internal/workertrigger"
@@ -145,7 +146,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.auth.GenerateToken(user.ID)
+	// Bind the token to the current session version so it survives only
+	// until the next password change.
+	_, _, sessionVersion, err := h.store.GetUserAuth(r.Context(), user.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate token"})
+		return
+	}
+	token, err := h.auth.GenerateSessionToken(user.ID, sessionVersion)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate token"})
 		return
@@ -171,16 +179,28 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+// UpdatePreferences is the legacy route used by older consoles, which send
+// their whole preferences object. It merges (never replaces) and silently
+// drops unknown, invalid or cohort-locked keys. New clients use
+// PATCH /api/users/me/settings, which rejects them explicitly.
 func (h *Handler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	var prefs map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&prefs); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<16)).Decode(&prefs); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if err := h.store.UpdateUserPreferences(r.Context(), userID, prefs); err != nil {
+	_, _, locks, err := h.store.GetUserSettings(r.Context(), userID)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update preferences"})
 		return
+	}
+	_, locked := settings.Effective(nil, locks)
+	if clean := settings.SanitizeLegacy(prefs, locked); len(clean) > 0 {
+		if err := h.store.MergeUserSettings(r.Context(), userID, clean); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update preferences"})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -110,7 +110,7 @@ jobs:
         working-directory: services/selar-api
 
       - name: Test real Go graph and review store against Postgres
-        run: go test ./internal/store -run 'TestGroundedReview|TestGroundedChatConceptDiscoveryIntegration|TestChatGraphSafety|TestQuiz' -v -count=1
+        run: go test ./internal/store -run 'TestGroundedReview|TestGroundedChatConceptDiscoveryIntegration|TestChatGraphSafety|TestQuiz|TestAccount' -v -count=1
         working-directory: services/selar-api
 
       - name: Syntax check

@@ -18,6 +18,7 @@ const (
 type User struct {
 	ID             string         `json:"id"`
 	Email          string         `json:"email"`
+	DisplayName    string         `json:"display_name"`
 	Password       string         `json:"-"`
 	Cohort         Cohort         `json:"cohort"`
 	DriveConnected bool           `json:"drive_connected"`

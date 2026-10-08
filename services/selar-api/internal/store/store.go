@@ -45,9 +45,9 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string, coho
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO users (email, password_hash, cohort)
 		 VALUES ($1, $2, $3)
-		 RETURNING id, email, cohort, drive_connected, preferences, created_at`,
+		 RETURNING id, email, display_name, cohort, drive_connected, preferences, created_at`,
 		email, passwordHash, cohort,
-	).Scan(&u.ID, &u.Email, &u.Cohort, &u.DriveConnected, &u.Preferences, &u.CreatedAt)
+	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Cohort, &u.DriveConnected, &u.Preferences, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -58,10 +58,10 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*model.User, 
 	u := &model.User{}
 	var prefsJSON []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, cohort, drive_connected, preferences, created_at
+		`SELECT id, email, display_name, password_hash, cohort, drive_connected, preferences, created_at
 		 FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Password, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt)
+	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Password, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -75,10 +75,10 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*model.User, error)
 	u := &model.User{}
 	var prefsJSON []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, email, cohort, drive_connected, preferences, created_at
+		`SELECT id, email, display_name, cohort, drive_connected, preferences, created_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt)
+	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

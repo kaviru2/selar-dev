@@ -97,7 +97,15 @@ func TestIntegrationAdoptsDockerInitdbDatabaseAndAppliesTheRest(t *testing.T) {
 	if strings.Join(result.Adopted, ",") != "001,002,003,004,005,006,007,008,009" {
 		t.Fatalf("adopted = %v", result.Adopted)
 	}
-	if strings.Join(result.Applied, ",") != "010,011,012,013" {
+	// Everything after the initdb set is applied, whatever the latest
+	// migration is, so adding a migration does not require editing this test.
+	var wantApplied []string
+	for _, file := range files {
+		if file.Version > "009" {
+			wantApplied = append(wantApplied, file.Version)
+		}
+	}
+	if strings.Join(result.Applied, ",") != strings.Join(wantApplied, ",") {
 		t.Fatalf("applied = %v", result.Applied)
 	}
 	var adoptedRows int
