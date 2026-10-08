@@ -1985,22 +1985,112 @@ body {
 
 /* Landing page styles live in app/landing.css. */
 
-/* Reader on narrow screens */
+/* ——— Reader side panels: collapsible + resizable (lib/reader-layout.ts) ——— */
+.reader { position: relative; }
+.reader-side {
+  flex: none;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+.reader-side[hidden] { display: none; }
+/* The panels fill their wrapper; the wrapper owns the width. */
+.reader-side > .sidebar,
+.reader-side > .matches { width: 100%; flex: 1; min-width: 0; }
+.reader-side > .sidebar { border-right: 0; }
+.reader-side > .matches { border-left: 0; }
+.reader .doc-pane { min-width: 0; }
+
+.panel-resizer {
+  position: relative;
+  flex: none;
+  width: 1px;
+  background: var(--rule);
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 6;
+}
+/* Wider invisible hit area, plus a visible accent line on hover/focus/drag. */
+.panel-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 -5px;
+}
+.panel-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity .12s;
+}
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after,
+body.is-resizing-panel .panel-resizer:active::after { opacity: 1; }
+.panel-resizer:focus-visible { outline: none; }
+body.is-resizing-panel { cursor: col-resize; user-select: none; }
+body.is-resizing-panel iframe,
+body.is-resizing-panel .pdf-container { pointer-events: none; }
+
+.doc-toolbar .panel-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-3);
+  font: 500 var(--t-sm) var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.doc-toolbar .panel-toggle:hover { background: var(--bg-2); color: var(--ink); }
+.doc-toolbar .panel-toggle.on { color: var(--ink); border-color: var(--rule-2); background: var(--bg-2); }
+.doc-toolbar .panel-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Toolbar labels never wrap; when space runs out the toolbar scrolls sideways. */
+.doc-toolbar { overflow-x: auto; scrollbar-width: none; }
+.doc-toolbar::-webkit-scrollbar { display: none; }
+.doc-toolbar .grp { flex: none; }
+.doc-toolbar .grp button,
+.doc-toolbar .page-indicator { white-space: nowrap; }
+.doc-toolbar .mental-domain-chip { flex: 0 1 auto; min-width: 0; }
+
+.reader-scrim { display: none; }
+
+@media (max-width: 1100px) {
+  .doc-toolbar .panel-toggle-label { display: none; }
+}
+
+/* Narrow windows: open panels float over the document instead of squeezing it. */
 @media (max-width: 800px) {
-  .reader .sidebar {
-    display: none;
+  .reader-side {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    max-width: 88vw;
+    box-shadow: var(--shadow-3);
   }
-
-  .reader {
-    overflow-x: auto;
-  }
-
-  .reader .doc-pane {
-    min-width: 65vw;
-  }
-
-  .matches {
-    width: 320px;
+  .reader-side-library { left: 0; }
+  .reader-side-connections { right: 0; }
+  .reader .panel-resizer { display: none; }
+  .reader-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    border: 0;
+    padding: 0;
+    background: rgba(20, 24, 22, .28);
+    cursor: pointer;
   }
 }
 

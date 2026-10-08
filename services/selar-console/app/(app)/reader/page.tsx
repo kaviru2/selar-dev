@@ -8,6 +8,8 @@ import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
+import { PanelResizer } from "@/components/PanelResizer";
+import { isTypingTarget, useReaderLayout } from "@/lib/reader-layout";
 import { nextMatchLabel } from "@/lib/format";
 import {
   clientFetch,
@@ -45,6 +47,19 @@ export default function ReaderPage() {
     return Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
   });
   const telemetryRef = useRef<ReaderTelemetry | null>(null);
+  const panels = useReaderLayout();
+  const { layout, toggle: togglePanel } = panels;
+
+  // [ toggles the Library, ] toggles Connections (ignored while typing).
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+      if (event.key === "[") { event.preventDefault(); togglePanel("library"); }
+      else if (event.key === "]") { event.preventDefault(); togglePanel("connections"); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [togglePanel]);
 
   useEffect(() => {
     if (!docId) return;
@@ -196,11 +211,39 @@ export default function ReaderPage() {
   }, [docId]);
 
   return (
-    <div className="reader">
-      <Sidebar currentId={docId} onPick={selectDocument} />
+    <div className={`reader${layout.libraryOpen ? " has-library" : ""}${layout.connectionsOpen ? " has-connections" : ""}`}>
+      <div
+        id="reader-library"
+        className="reader-side reader-side-library"
+        style={{ width: layout.libraryWidth }}
+        hidden={!layout.libraryOpen}
+      >
+        <Sidebar currentId={docId} onPick={selectDocument} />
+      </div>
+      {layout.libraryOpen && (
+        <PanelResizer
+          side="library"
+          width={layout.libraryWidth}
+          label="Resize library"
+          controls="reader-library"
+          onResize={(width) => panels.resize("library", width)}
+          onReset={() => panels.reset("library")}
+        />
+      )}
 
       <main className="doc-pane">
         <div className="doc-toolbar">
+          <button
+            type="button"
+            className={`panel-toggle${layout.libraryOpen ? " on" : ""}`}
+            aria-controls="reader-library"
+            aria-expanded={layout.libraryOpen}
+            aria-keyshortcuts="["
+            onClick={() => togglePanel("library")}
+            title={`${layout.libraryOpen ? "Hide" : "Show"} library  [`}
+          >
+            <Icon name="menu" size={13} /><span className="panel-toggle-label">Library</span>
+          </button>
           {isPdf && <div className="grp">
             <button aria-label="Previous page" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => Math.max(1, page - 1))}>‹</button>
             <span className="page-indicator">{pageNumber} / {numPages || "?"}</span>
@@ -227,6 +270,17 @@ export default function ReaderPage() {
           </div>
           <div className="tool-spacer" />
           {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
+          <button
+            type="button"
+            className={`panel-toggle${layout.connectionsOpen ? " on" : ""}`}
+            aria-controls="reader-connections"
+            aria-expanded={layout.connectionsOpen}
+            aria-keyshortcuts="]"
+            onClick={() => togglePanel("connections")}
+            title={`${layout.connectionsOpen ? "Hide" : "Show"} connections  ]`}
+          >
+            <Icon name="link" size={13} /><span className="panel-toggle-label">Connections</span>
+          </button>
         </div>
 
         <div className={isPdf ? "pdf-container" : "article-container"}>
@@ -265,6 +319,23 @@ export default function ReaderPage() {
         </div>
       </main>
 
+      {layout.connectionsOpen && (
+        <PanelResizer
+          side="connections"
+          width={layout.connectionsWidth}
+          label="Resize connections"
+          controls="reader-connections"
+          onResize={(width) => panels.resize("connections", width)}
+          onReset={() => panels.reset("connections")}
+        />
+      )}
+      {/* Kept mounted while hidden so a half-written explanation is not lost. */}
+      <div
+        id="reader-connections"
+        className="reader-side reader-side-connections"
+        style={{ width: layout.connectionsWidth }}
+        hidden={!layout.connectionsOpen}
+      >
       <ConnectionsPanel
         key={docId}
         docId={docId}
@@ -296,6 +367,16 @@ export default function ReaderPage() {
           </details>
         }
       />
+      </div>
+      {(layout.libraryOpen || layout.connectionsOpen) && (
+        <button
+          type="button"
+          className="reader-scrim"
+          aria-label="Close side panels"
+          tabIndex={-1}
+          onClick={() => { panels.setOpen("library", false); panels.setOpen("connections", false); }}
+        />
+      )}
     </div>
   );
 }
