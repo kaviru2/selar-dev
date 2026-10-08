@@ -1205,7 +1205,7 @@ func (s *Store) GetAttemptForAdmin(ctx context.Context, attemptID string) (*Admi
 		position[id] = i
 	}
 	rows, err := s.pool.Query(ctx, `SELECT a.id, q.id, q.type, q.prompt, q.cue, q.rubric, q.accepted_answers, q.options, q.points::float8,
-		a.selected, a.answer_text, a.auto_score::float8, a.manual_score::float8, a.is_correct, a.needs_review, a.grader_note,
+		a.selected, a.answer_text, a.auto_score::float8, a.manual_score::float8, a.is_correct, a.needs_review AND a.manual_score IS NULL, a.grader_note,
 		a.time_on_question_ms, a.answered_at, a.revisions
 		FROM quiz_answers a JOIN quiz_questions q ON q.id=a.question_id WHERE a.attempt_id=$1`, attemptID)
 	if err != nil {
