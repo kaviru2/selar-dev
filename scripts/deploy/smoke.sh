@@ -224,11 +224,18 @@ auth_flow() {
   body="$(printf '{"email":"%s","password":"%s"}' "$SMOKE_EMAIL" "$pw")"
   info "account: $SMOKE_EMAIL (invented; deleted at exit)"
 
-  code="$(printf '%s' "$body" | curl -sS -o /dev/null -D "$headers" -w '%{http_code}' --max-time 30 \
+  code="$(printf '%s' "$body" | curl -sS -o "$SMOKE_TMP/register.json" -D "$headers" -w '%{http_code}' --max-time 30 \
     -c "$jar" -H 'Content-Type: application/json' --data-binary @- "$CONSOLE_URL/api/auth/register" 2>/dev/null)" || true
   code="${code:-000}"
   # Even on a timeout the account may exist server-side; the exit trap deletes by address.
   SMOKE_REGISTERED=1
+  if [ "$code" = "403" ] && grep -q '"recaptcha_failed"' "$SMOKE_TMP/register.json" 2>/dev/null; then
+    # reCAPTCHA is on in production (docs/DEPLOYMENT.md §6); curl cannot get a token.
+    SMOKE_REGISTERED=0  # refused before any insert; nothing to delete
+    record PASS "auth: register refuses a request without a reCAPTCHA token" "$code"
+    record SKIP "auth flow (rest)" "reCAPTCHA enabled; sign up once in a browser to test the full flow"
+    return 0
+  fi
   if [ "$code" != "201" ]; then
     record FAIL "auth: register" "got $code"
     return 0

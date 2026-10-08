@@ -54,3 +54,14 @@ Alternatively, redeploy a known-good commit: `git checkout <sha>` then
 - Forward fix: add `services/selar-api/internal/store/migrations/NNN_fix.sql`, merge it, then run `migrate.sh`.
 - For data loss or corruption, use Neon's point-in-time restore (branch restore) from the Neon console.
   Restore into a new branch first, verify it, then switch.
+- If Neon's history window does not reach far enough back (or Neon itself is the problem), use the
+  nightly encrypted GCS backups (30 days kept):
+
+  ```bash
+  scripts/deploy/restore-db.sh --list
+  scripts/deploy/restore-db.sh --object gs://selar-db-backups-261008/neon/<name>.dump.age \
+    --identity ~/.hermes/secrets/selar-backup-age.key --target '<EMPTY new branch direct URL>' --allow-remote
+  ```
+
+  Rehearse against a throwaway local Postgres first (see `docs/DEPLOYMENT.md` §7), then point
+  `DATABASE_URL` (API, pooled) and the worker's `DATABASE_URL` (direct) at the new branch and redeploy.

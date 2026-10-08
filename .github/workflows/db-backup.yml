@@ -1,0 +1,59 @@
+name: Nightly DB backup
+
+# Encrypted pg_dump of the production Neon database to Google Cloud Storage.
+# Runs scripts/deploy/backup-db.sh. GCP auth is keyless (Workload Identity
+# Federation): the pool provider only trusts this repository's main branch and
+# this workflow file, and the service account can only create objects in the
+# backup bucket (no read, list, overwrite or delete).
+#
+# Repository secret:   DATABASE_URL_DIRECT  (Neon direct URL, never -pooler)
+# Repository variable: BACKUP_AGE_RECIPIENT (age public key; the private
+#                      identity stays offline with the operator)
+# Restore: scripts/deploy/restore-db.sh (see docs/DEPLOYMENT.md §7).
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # 02:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: pg_dump | age | GCS
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pg_dump 17 and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 age
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/834233085605/locations/global/workloadIdentityPools/github/providers/selar-dev
+          service_account: selar-db-backup@selar-research-261008.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Backup
+        env:
+          SELAR_SECRETS: env
+          DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+          BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          pg_dump --version
+          scripts/deploy/backup-db.sh | tee -a "$GITHUB_STEP_SUMMARY"
