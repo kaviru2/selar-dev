@@ -1,15 +1,25 @@
 // layout.tsx — Root layout for the SELAR console.
-// Loads the three typefaces (Inter, Source Serif 4, JetBrains Mono) via next/font,
-// imports the full design system CSS, and sets SEO metadata.
+// Loads the typefaces via next/font (Figtree for UI, Fraunces for display
+// headings, Source Serif 4 for reading text, JetBrains Mono for code/meta),
+// imports the design system CSS, and sets SEO metadata.
+// Fonts are exposed as CSS variables and consumed by app/tokens.css, so a
+// brand font swap only needs changes here and in the --selar-font-* tokens.
 
 import type { Metadata } from "next";
-import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
+import { Figtree, Fraunces, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const figtree = Figtree({
+  variable: "--font-figtree",
   subsets: ["latin"],
   display: "swap",
+});
+
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  display: "swap",
+  axes: ["SOFT", "opsz"],
 });
 
 const sourceSerif = Source_Serif_4({
@@ -38,7 +48,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable}`}
+      className={`${figtree.variable} ${fraunces.variable} ${sourceSerif.variable} ${jetbrainsMono.variable}`}
     >
       <body>{children}</body>
     </html>
