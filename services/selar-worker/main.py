@@ -999,7 +999,13 @@ async def process_document_with_limit(**kwargs):
         await process_document_task(**kwargs)
 
 
-async def claim_ingestion_job() -> Optional[Dict[str, Any]]:
+async def claim_ingestion_job(job_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Lease the oldest ready job, or only ``job_id`` when given.
+
+    A targeted claim (serverless trigger) uses the same conditions as the
+    poller: the job must be queued, past its backoff and under max attempts,
+    and FOR UPDATE SKIP LOCKED means concurrent claimers cannot both win.
+    """
     conn = await asyncpg.connect(DATABASE_URL)
     try:
         async with conn.transaction():
@@ -1034,6 +1040,7 @@ async def claim_ingestion_job() -> Optional[Dict[str, Any]]:
                 WITH candidate AS (
                     SELECT id FROM ingestion_jobs
                     WHERE status = 'queued' AND available_at <= now() AND attempts < max_attempts
+                      AND ($3::uuid IS NULL OR id = $3::uuid)
                     ORDER BY created_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
@@ -1045,7 +1052,7 @@ async def claim_ingestion_job() -> Optional[Dict[str, Any]]:
                 FROM candidate
                 WHERE job.id = candidate.id
                 RETURNING job.*
-            """, WORKER_ID, INGESTION_LEASE_SECONDS)
+            """, WORKER_ID, INGESTION_LEASE_SECONDS, job_id)
             return dict(row) if row else None
     finally:
         await conn.close()

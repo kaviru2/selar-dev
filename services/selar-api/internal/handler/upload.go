@@ -276,6 +276,7 @@ func (h *Handler) createPDFIngestion(w http.ResponseWriter, r *http.Request, use
 		rollback("failed to queue PDF ingestion")
 		return
 	}
+	h.notifyWorker(r, job.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"source": source, "document": doc, "run": run})
 }
 

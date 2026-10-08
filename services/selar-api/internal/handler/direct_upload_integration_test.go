@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,6 +16,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/storage/storagetest"
 	"github.com/selar-dev/selar-api/internal/store"
+	"github.com/selar-dev/selar-api/internal/workertrigger"
 )
 
 // TestIntegrationDirectUploadQueuesStorageLocatorAndOwnerOnlyDelete runs the
@@ -46,6 +49,19 @@ func TestIntegrationDirectUploadQueuesStorageLocatorAndOwnerOnlyDelete(t *testin
 	}
 	h := New(store.New(pool))
 	h.SetStorage(objects)
+	triggered := make(chan string, 1)
+	workerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if r.URL.Path == "/jobs/trigger" && r.Header.Get(workertrigger.SecretHeader) == "integration-secret-value" {
+			triggered <- body["job_id"]
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer workerServer.Close()
+	h.SetWorkerTrigger(workertrigger.FromEnv(func(key string) string {
+		return map[string]string{"WORKER_URL": workerServer.URL, "WORKER_TRIGGER_SECRET": "integration-secret-value"}[key]
+	}))
 
 	const uploadID = "44444444-4444-4444-4444-444444444444"
 	key := "users/" + owner + "/uploads/" + uploadID + ".pdf"
@@ -55,13 +71,21 @@ func TestIntegrationDirectUploadQueuesStorageLocatorAndOwnerOnlyDelete(t *testin
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("complete status = %d body = %s", response.Code, response.Body.String())
 	}
-	var docID, filePath, status, title string
-	if err := pool.QueryRow(ctx, `SELECT d.id, j.file_path, j.status, d.title FROM documents d
-		JOIN ingestion_jobs j ON j.document_id = d.id WHERE d.user_id = $1`, owner).Scan(&docID, &filePath, &status, &title); err != nil {
+	var docID, jobID, filePath, status, title string
+	if err := pool.QueryRow(ctx, `SELECT d.id, j.id, j.file_path, j.status, d.title FROM documents d
+		JOIN ingestion_jobs j ON j.document_id = d.id WHERE d.user_id = $1`, owner).Scan(&docID, &jobID, &filePath, &status, &title); err != nil {
 		t.Fatal(err)
 	}
 	if filePath != "s3://selar-test/"+key || status != "queued" || title != "Synthetic Reading.pdf" {
 		t.Fatalf("job file_path=%q status=%q title=%q", filePath, status, title)
+	}
+	select {
+	case got := <-triggered:
+		if got != jobID {
+			t.Fatalf("worker triggered for %q, want committed job %q", got, jobID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker was not triggered after the job was queued")
 	}
 
 	serve := func(userID string) *httptest.ResponseRecorder {
