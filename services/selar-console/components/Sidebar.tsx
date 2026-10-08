@@ -1,11 +1,12 @@
 // Sidebar.tsx — SELAR library sidebar.
 // Displays the list of documents in the user's corpus with status indicators,
-// search with ⌘K hint, and Drive sync footer.
+// search with ⌘K hint, and a Google Drive import footer.
 // Matches design_handoff_selar §3 sidebar spec — 240px wide, compact items.
 
 "use client";
 
 import { Icon } from "@/components/ui/Icon";
+import { DriveImportFooter } from "@/components/DriveImportFooter";
 import { useEffect, useState } from "react";
 import { clientFetch } from "@/lib/api";
 import { pageCountLabel } from "@/lib/format";
@@ -156,12 +157,7 @@ export function Sidebar({ currentId, onPick }: SidebarProps) {
         })}
       </div>
 
-      <div className="sb-foot">
-        <Icon name="drive" size={12} style={{ color: "var(--accent-2)" }} />
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>
-          Drive · connected
-        </span>
-      </div>
+      <DriveImportFooter />
     </aside>
   );
 }

@@ -35,6 +35,8 @@ type Handler struct {
 	worker  *workertrigger.Client
 	admins  AdminChecker
 	google  GoogleExchanger
+	// driveAPIBase overrides the Google Drive endpoint in tests.
+	driveAPIBase string
 
 	// adminEmails (ADMIN_EMAILS) are promoted to admin on login/registration.
 	adminEmails analytics.EmailSet
