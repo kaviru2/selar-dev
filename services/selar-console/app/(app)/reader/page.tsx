@@ -7,9 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
-import { groundedLinkPresentation } from "@/lib/link-evidence";
-import { ReviewAssertion } from "@/components/ReviewAssertion";
-import { type ReviewAction } from "@/lib/reviewed-links";
+import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import {
   clientFetch,
   type Annotation,
@@ -17,7 +15,6 @@ import {
   type DocumentMentalModel,
   type LinkSuggestion,
   type MentalModelLink,
-  type MentalLinkReviewPreview,
 } from "@/lib/api";
 
 const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
@@ -27,50 +24,17 @@ const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
   ),
 });
 
-const RELATION_LABELS: Record<string, string> = {
-  unclassified: "unclassified passage match",
-  related_to: "related to",
-  prerequisite_of: "prerequisite of",
-  sub_concept_of: "sub-concept of",
-  contradicts: "contradicts",
-  extends: "extends",
-  concept_overlap: "concept overlap",
-  claim_extension: "claim extension",
-  assumption_conflict: "assumption conflict",
-  question_resolution: "question resolution",
-};
-
-const RELATION_COLORS: Record<string, string> = {
-  prerequisite_of: "var(--accent)",
-  extends: "var(--accent-2)",
-  sub_concept_of: "var(--accent-3)",
-  contradicts: "#c0443a",
-  related_to: "var(--ink-4)",
-  concept_overlap: "#5e8aaa",
-  claim_extension: "var(--accent-2)",
-  assumption_conflict: "#c0443a",
-  question_resolution: "#8a6a9a",
-};
-
-type PanelMode = "argument" | "passages";
-
 export default function ReaderPage() {
   const searchParams = useSearchParams();
   const [docId, setDocId] = useState(searchParams.get("docId") || "");
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [mentalLinks, setMentalLinks] = useState<MentalModelLink[]>([]);
-  const [reviewPreview, setReviewPreview] = useState<MentalLinkReviewPreview | null>(null);
-  const [reviewLabel, setReviewLabel] = useState("");
-  const [reviewReason, setReviewReason] = useState("");
-  const [reviewBusy, setReviewBusy] = useState(false);
-  const [reviewError, setReviewError] = useState("");
   const [mentalModel, setMentalModel] = useState<DocumentMentalModel | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [documentContent, setDocumentContent] = useState<DocumentContent | null>(null);
   const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestionActionError, setSuggestionActionError] = useState("");
-  const [panelMode, setPanelMode] = useState<PanelMode>("argument");
   const [zoom, setZoom] = useState(1);
   const [annotationsOn, setAnnotationsOn] = useState(true);
   const [suggestionsOn, setSuggestionsOn] = useState(true);
@@ -107,16 +71,6 @@ export default function ReaderPage() {
       cancelled = true;
     };
   }, [docId]);
-
-  useEffect(() => {
-    const linkId = searchParams.get("linkId");
-    if (!linkId || !mentalLinks.some(link => link.id === linkId)) return;
-    let active = true;
-    clientFetch<MentalLinkReviewPreview>(`/api/mental-model-links/${linkId}/preview`)
-      .then(preview => { if (active) { setReviewPreview(preview); setReviewLabel(preview.user_label || ""); } })
-      .catch(error => { if (active) setReviewError(error instanceof Error ? error.message : "Assertion unavailable"); });
-    return () => { active = false; };
-  }, [mentalLinks, searchParams]);
 
   useEffect(() => {
     if (!docId || documentContent?.document.status !== "ready") return;
@@ -175,12 +129,6 @@ export default function ReaderPage() {
 
   const selectDocument = useCallback((id: string) => openDocument(id, 1), [openDocument]);
 
-  const pendingCount = panelMode === "argument"
-    ? mentalLinks.filter((item) => item.status === "candidate").length
-    : suggestions.filter((item) => item.status === "pending").length;
-  const confirmedCount = panelMode === "argument"
-    ? mentalLinks.filter((item) => item.status === "confirmed" || item.status === "relabeled").length
-    : suggestions.filter((item) => item.status === "confirmed").length;
   const visibleSuggestions = suggestions.filter((item) => item.status !== "rejected");
   const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === pageNumber).length;
   const isPdf = !documentContent || documentContent.document.source_type === "pdf";
@@ -240,41 +188,11 @@ export default function ReaderPage() {
     }
   }
 
-  async function previewMentalLink(id: string) {
-    setReviewError("");
-    try {
-      const preview = await clientFetch<MentalLinkReviewPreview>(`/api/mental-model-links/${id}/preview`);
-      setReviewPreview(preview);
-      setReviewLabel(preview.user_label || "");
-      setReviewReason("");
-    } catch (error) {
-      setReviewPreview(null);
-      setReviewError(error instanceof Error ? error.message : "Assertion preview unavailable");
-    }
-  }
-
-  async function respondToMentalLink(action: ReviewAction) {
-    if (!reviewPreview || reviewBusy) return;
-    setReviewBusy(true);
-    setReviewError("");
-    try {
-      await clientFetch(`/api/mental-model-links/${reviewPreview.id}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, revision: reviewPreview.revision,
-          label: action === "relabeled" ? reviewLabel : "", reason: reviewReason,
-          target_revision: action === "rolled_back" ? reviewPreview.revision - 1 : undefined }),
-      });
-      const links = await clientFetch<MentalModelLink[]>(`/api/mental-model-links?document_id=${docId}`);
-      setMentalLinks(links);
-      await previewMentalLink(reviewPreview.id);
-    } catch (error) {
-      setReviewError(error instanceof Error ? error.message : "Could not save assertion review");
-      setReviewPreview(null); // never reuse a possibly stale revision
-    } finally {
-      setReviewBusy(false);
-    }
-  }
+  const reloadLinks = useCallback(async () => {
+    const links = await clientFetch<MentalModelLink[]>(`/api/mental-model-links?document_id=${docId}`);
+    setMentalLinks(links);
+    return links;
+  }, [docId]);
 
   return (
     <div className="reader">
@@ -346,136 +264,61 @@ export default function ReaderPage() {
         </div>
       </main>
 
-      <aside className="matches mental-panel">
-        <div className="matches-head">
-          <span className="ttl">Connections</span>
-          <span className="chip">{pendingCount} to review</span>
-          <span className="chip linked-chip">{confirmedCount} linked</span>
-        </div>
-
-        <div className="mental-panel-tabs" role="tablist" aria-label="Connection type">
-          <button role="tab" aria-selected={panelMode === "argument"} className={panelMode === "argument" ? "active" : ""} onClick={() => setPanelMode("argument")}>Argument links</button>
-          <button role="tab" aria-selected={panelMode === "passages"} className={panelMode === "passages" ? "active" : ""} onClick={() => setPanelMode("passages")}>Passage matches</button>
-        </div>
-
-        <div className="matches-body">
-          {panelMode === "argument" ? (
-            <>
-              {mentalModel && <MentalModelSummary model={mentalModel} />}
-              <div className="match-group-lbl">Argument-level candidates · {loading ? "…" : mentalLinks.length}</div>
-              {reviewError && <p role="alert" className="reader-action-error">{reviewError} Refresh the assertion preview before trying again.</p>}
-              {!loading && mentalLinks.length === 0 && <PanelEmpty message="No argument-level links yet. They appear after at least two documents have mental models." />}
-              {mentalLinks.map((link) => {
-                const pair = groundedLinkPresentation(link);
-                if (!pair) return null;
-                const otherTitle = link.source_document_id === docId ? link.target_document_title : link.source_document_title;
-                return (
-                  <ConnectionCard
-                    key={link.id}
-                    relation={link.link_type}
-                    score={link.confidence}
-                    source={otherTitle}
-                    explanation={pair.prompt}
-                    evidence={pair.evidence}
-                    status={link.status}
-                    allowConfirm={false}
-                    showActions={false}
-                    onConfirm={() => previewMentalLink(link.id)}
-                    onReject={() => previewMentalLink(link.id)}
-                  />
-                );
-              })}
-              {mentalLinks.map(link => <div key={`review-${link.id}`}>
-                <button type="button" onClick={() => previewMentalLink(link.id)} aria-label={`Preview grounded assertion from ${link.source_document_title} to ${link.target_document_title}`}>Review assertion · {link.source_document_title} → {link.target_document_title}</button>
-                {reviewPreview?.id === link.id && (docId === link.source_document_id || docId === link.target_document_id) && <ReviewAssertion preview={reviewPreview} documentId={docId} label={reviewLabel} reason={reviewReason} busy={reviewBusy} onLabel={setReviewLabel} onReason={setReviewReason} onAct={respondToMentalLink} />}
-              </div>)}
-            </>
-          ) : (
-            <>
-              <div className="match-group-lbl">Passage-level matches · {loading ? "…" : suggestions.length}</div>
-              {suggestionActionError && <div className="reader-action-error">Could not save response: {suggestionActionError}</div>}
-              {!loading && suggestionError && <PanelEmpty message={`Suggested passages could not be loaded: ${suggestionError}`} />}
-              {!loading && !suggestionError && suggestions.length === 0 && <PanelEmpty message="No passage matches were generated for this document." />}
-              {suggestions.map((suggestion) => (
-                <ConnectionCard
-                  key={suggestion.id}
-                  relation="unclassified"
-                  score={suggestion.similarity}
-                  source={`${suggestion.src_doc} · p.${suggestion.src_page} → ${suggestion.tgt_doc} · p.${suggestion.tgt_page}`}
-                  explanation="Similarity-only passage match; not a verified relationship. Compare the two sources before drawing a conclusion."
-                  evidence={`${suggestion.src_doc} · p.${suggestion.src_page}: “${suggestion.src_text}”\n${suggestion.tgt_doc} · p.${suggestion.tgt_page}: “${suggestion.tgt_text}”`}
-                  allowConfirm={false}
-                  status={suggestion.status}
-                  onConfirm={() => respondToPassage(suggestion.id, "confirmed")}
-                  onReject={() => respondToPassage(suggestion.id, "rejected")}
-                  onReveal={() => {
-                    setSuggestionsOn(true);
-                    setPageNumber(suggestion.src_page);
-                  }}
-                />
-              ))}
-            </>
-          )}
-        </div>
-      </aside>
+      <ConnectionsPanel
+        key={docId}
+        docId={docId}
+        links={mentalLinks}
+        loading={loading}
+        mentalModel={mentalModel}
+        reloadLinks={reloadLinks}
+        focusLinkId={searchParams.get("linkId")}
+        passageSection={
+          <details className="cx-passages">
+            <summary>Similar passages ({loading ? "…" : visibleSuggestions.length})</summary>
+            <p className="cx-note">Similarity-only passage matches: not verified relationships. Use them to explore, then compare the two sources yourself.</p>
+            {suggestionActionError && <div className="reader-action-error">Could not save response: {suggestionActionError}</div>}
+            {!loading && suggestionError && <PanelEmpty message={`Suggested passages could not be loaded: ${suggestionError}`} />}
+            {!loading && !suggestionError && suggestions.length === 0 && <PanelEmpty message="No similar passages were found for this reading." />}
+            {suggestions.map((suggestion) => (
+              <ConnectionCard
+                key={suggestion.id}
+                source={`${suggestion.src_doc} · p.${suggestion.src_page} → ${suggestion.tgt_doc} · p.${suggestion.tgt_page}`}
+                evidence={`${suggestion.src_doc} · p.${suggestion.src_page}: “${suggestion.src_text}”\n${suggestion.tgt_doc} · p.${suggestion.tgt_page}: “${suggestion.tgt_text}”`}
+                status={suggestion.status}
+                onReject={() => respondToPassage(suggestion.id, "rejected")}
+                onReveal={() => {
+                  setSuggestionsOn(true);
+                  setPageNumber(suggestion.src_page);
+                }}
+              />
+            ))}
+          </details>
+        }
+      />
     </div>
   );
 }
 
-function MentalModelSummary({ model }: { model: DocumentMentalModel }) {
-  return (
-    <section className="mental-summary">
-      <div className="mental-summary-kicker"><Icon name="graph" size={11} /> Article mental model</div>
-      <p>{model.main_claim}</p>
-      <div className="mental-concepts">
-        {model.key_concepts.slice(0, 6).map((concept) => <span key={concept}>{concept}</span>)}
-      </div>
-      {(model.assumptions.length > 0 || model.open_questions.length > 0) && (
-        <div className="mental-summary-meta">
-          <span>{model.assumptions.length} assumptions</span>
-          <span>{model.open_questions.length} open questions</span>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ConnectionCard({ relation, score, source, explanation, evidence, status, onConfirm, onReject, onReveal, allowConfirm = true, showActions = true }: {
-  relation: string;
-  score: number;
+function ConnectionCard({ source, evidence, status, onReject, onReveal }: {
   source: string;
-  explanation: string;
-  evidence?: string;
+  evidence: string;
   status: string;
-  onConfirm: () => void;
   onReject: () => void;
   onReveal?: () => void;
-  allowConfirm?: boolean;
-  showActions?: boolean;
 }) {
-  const relationColor = RELATION_COLORS[relation] || "var(--ink-4)";
-  const reviewed = status === "confirmed" || status === "rejected" || status === "relabeled";
+  const reviewed = status === "confirmed" || status === "rejected";
   return (
-    <article className={`match-card mental-link-card ${status}`}>
-      <div className="row1">
-        <span className="relation-pill" style={{ color: relationColor, borderColor: relationColor }}>{RELATION_LABELS[relation] || relation.replaceAll("_", " ")}</span>
-        <span className="sim">{Math.round(score * 100)}%</span>
-        <div className="sim-bar"><div className="fill" style={{ width: `${Math.max(0, Math.min(100, score * 100))}%` }} /></div>
-      </div>
+    <article className={`match-card passage-card ${status}`}>
       <div className="connection-source">{source}</div>
-      <p className="connection-explanation">{explanation}</p>
-      {evidence && <details className="connection-evidence"><summary>View both source passages</summary><p style={{ whiteSpace: "pre-line" }}>{evidence}</p></details>}
-      {showActions && <div className="foot">
-        {onReveal && <button className="reveal" onClick={onReveal}><Icon name="eye" size={11} /> Show highlight</button>}
+      <details className="connection-evidence"><summary>View both passages</summary><p style={{ whiteSpace: "pre-line" }}>{evidence}</p></details>
+      <div className="foot">
+        {onReveal && <button className="reveal" onClick={onReveal}><Icon name="eye" size={11} /> Show on page</button>}
         {reviewed ? (
-          <span className={`review-state ${status}`}><Icon name={status === "rejected" ? "x" : "check"} size={11} /> {status}</span>
+          <span className={`review-state ${status}`}><Icon name={status === "rejected" ? "x" : "check"} size={11} /> {status === "rejected" ? "dismissed" : status}</span>
         ) : (
-          <>
-            {allowConfirm && <button className="confirm" onClick={onConfirm}><Icon name="check" size={11} /> Confirm</button>}
-            <button onClick={onReject}><Icon name="x" size={11} /> {allowConfirm ? "Reject" : "Dismiss"}</button>
-          </>
+          <button onClick={onReject}><Icon name="x" size={11} /> Dismiss</button>
         )}
-      </div>}
+      </div>
     </article>
   );
 }
