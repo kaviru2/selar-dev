@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/cors"
+	"github.com/selar-dev/selar-api/internal/dbconfig"
 	"github.com/selar-dev/selar-api/internal/handler"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/store"
@@ -33,25 +35,42 @@ func main() {
 	appEnv := getEnv("APP_ENV", "development")
 	dbURL := getEnv("DATABASE_URL", "postgres://selar:***@localhost:5432/selar?sslmode=disable")
 	jwtSecret := getEnv("JWT_SECRET", developmentJWTSecret)
-	corsOrigin := getEnv("CORS_ORIGIN", "http://localhost:3000")
+	corsOrigins, err := parseCORSOrigins(getEnv("CORS_ORIGIN", "http://localhost:3000"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := validateRuntimeConfig(appEnv, jwtSecret); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateDatabaseURL(appEnv, dbURL); err != nil {
 		log.Fatal(err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Database connection pool
-	pool, err := pgxpool.New(ctx, dbURL)
+	// Database connection pool with serverless-safe bounds (few connections,
+	// short idle/lifetime, bounded connect timeout). Migrations never run at
+	// startup; apply them with cmd/migrate as a separate deploy step.
+	poolConfig, err := dbconfig.PoolConfig(dbURL, os.Getenv)
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v", err)
+		log.Fatal(err)
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		log.Fatal("unable to configure database pool")
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		log.Fatalf("unable to ping database: %v", err)
+	// A cold start must not hang on an unreachable database: ping with a
+	// short deadline and keep serving; later queries retry through the pool.
+	pingCtx, pingCancel := context.WithTimeout(ctx, dbconfig.DefaultConnectTimeout)
+	if err := pool.Ping(pingCtx); err != nil {
+		log.Println("database ping failed at startup; requests will retry the pool")
+	} else {
+		log.Println("connected to database")
 	}
-	log.Println("connected to database")
+	pingCancel()
 
 	// Store & handlers
 	st := store.New(pool)
@@ -66,7 +85,7 @@ func main() {
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(cors.New(cors.Options{
-		AllowedOrigins:   []string{corsOrigin},
+		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -179,6 +198,36 @@ func validateRuntimeConfig(appEnv, jwtSecret string) error {
 		return errors.New("JWT_SECRET must be replaced before running SELAR in production")
 	}
 	return nil
+}
+
+// parseCORSOrigins accepts a comma-separated list of exact http(s) origins.
+// Wildcards are rejected because the API allows credentials.
+func parseCORSOrigins(raw string) ([]string, error) {
+	var origins []string
+	for _, part := range strings.Split(raw, ",") {
+		origin := strings.TrimSuffix(strings.TrimSpace(part), "/")
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || strings.Contains(origin, "*") || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.User != nil {
+			return nil, fmt.Errorf("CORS_ORIGIN entry %q must be an exact origin such as https://selar.example.com", origin)
+		}
+		origins = append(origins, parsed.Scheme+"://"+parsed.Host)
+	}
+	if len(origins) == 0 {
+		return nil, errors.New("CORS_ORIGIN must list at least one exact origin")
+	}
+	return origins, nil
+}
+
+// validateDatabaseURL requires TLS for remote databases in production.
+func validateDatabaseURL(appEnv, databaseURL string) error {
+	if !strings.EqualFold(strings.TrimSpace(appEnv), "production") {
+		return nil
+	}
+	return dbconfig.RequireTLSForRemote(databaseURL)
 }
 
 func getEnv(key, fallback string) string {

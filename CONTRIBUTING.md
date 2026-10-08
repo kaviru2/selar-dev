@@ -65,14 +65,9 @@ cp .env.example .env.development
 
 # 2. Set up the database
 createdb selar
-psql -d selar -c "CREATE EXTENSION IF NOT EXISTS vector;"
-psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql
-psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql
-psql -d selar -f services/selar-api/internal/store/migrations/003_runtime_mental_model.sql
-psql -d selar -f services/selar-api/internal/store/migrations/004_adaptive_chat.sql
-psql -d selar -f services/selar-api/internal/store/migrations/005_chat_graph_reducer.sql
-psql -d selar -f services/selar-api/internal/store/migrations/006_graph_governance.sql
+# Applies every migration in order and records checksums in schema_migrations.
+# Safe to re-run; databases created by the old psql steps are adopted.
+(cd services/selar-api && DATABASE_URL="postgres://localhost:5432/selar?sslmode=disable" go run ./cmd/migrate)
 
 # 3. Install dependencies
 cd services/selar-console && pnpm install && cd ../..
