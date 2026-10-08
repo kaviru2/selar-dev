@@ -48,7 +48,9 @@ interface PdfCanvasProps {
   ) => void;
   onPageLoad: (numPages: number) => void;
   onScrollDepth?: (depth: number) => void;
-  onRespondSuggestion: (id: string, action: "confirmed" | "rejected") => Promise<boolean>;
+  // Passage matches are similarity-only (relation "unclassified"); the API
+  // refuses to confirm them, so the reader can only dismiss them.
+  onRespondSuggestion: (id: string, action: "rejected") => Promise<boolean>;
   onOpenSuggestionTarget: (suggestion: LinkSuggestion) => void;
 }
 
@@ -141,7 +143,7 @@ export default function PdfCanvas({
   const suggestionByID = useMemo(() => new Map(suggestions.map((suggestion) => [suggestion.id, suggestion])), [suggestions]);
   const pageSuggestionBoxes = useMemo(() => visibleSuggestionBoxes(suggestions, pageNumber), [suggestions, pageNumber]);
 
-  async function respondToSelectedSuggestion(action: "confirmed" | "rejected") {
+  async function respondToSelectedSuggestion(action: "rejected") {
     if (!selectedSuggestion || suggestionBusy) return;
     setSuggestionBusy(true);
     setSuggestionError("");
@@ -249,6 +251,7 @@ export default function PdfCanvas({
           </div>
           <h3>{selectedSuggestion.tgt_doc} · page {selectedSuggestion.tgt_page}</h3>
           <p>{selectedSuggestion.summary || selectedSuggestion.tgt_text.slice(0, 220)}</p>
+          <p className="suggestion-popover-note">Similarity only: these passages use similar wording. This is not a confirmed relation, so it cannot be accepted into your graph.</p>
           {suggestionError && <div className="suggestion-popover-error">{suggestionError}</div>}
           <div className="suggestion-popover-actions">
             <button
@@ -257,11 +260,8 @@ export default function PdfCanvas({
               onClick={() => onOpenSuggestionTarget(selectedSuggestion)}
             >Open connected passage</button>
             {selectedSuggestion.status === "pending" ? (
-              <>
-                <button className="confirm" disabled={suggestionBusy} onClick={() => respondToSelectedSuggestion("confirmed")}>✓ Accept</button>
-                <button disabled={suggestionBusy} onClick={() => respondToSelectedSuggestion("rejected")}>× Reject</button>
-              </>
-            ) : <span className={`suggestion-popover-state ${selectedSuggestion.status}`}>{selectedSuggestion.status}</span>}
+              <button disabled={suggestionBusy} onClick={() => respondToSelectedSuggestion("rejected")}>× Dismiss</button>
+            ) : <span className={`suggestion-popover-state ${selectedSuggestion.status}`}>{selectedSuggestion.status === "rejected" ? "dismissed" : selectedSuggestion.status}</span>}
           </div>
         </div>
       )}

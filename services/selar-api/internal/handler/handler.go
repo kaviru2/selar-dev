@@ -308,6 +308,14 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.RespondToSuggestion(r.Context(), userID, id, status, req.Label, req.TimeToRespondMs); err != nil {
+		switch {
+		case errors.Is(err, store.ErrUnclassifiedNotConfirmable):
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		case errors.Is(err, store.ErrSuggestionNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "suggestion not found"})
+			return
+		}
 		log.Printf("failed to respond to suggestion %s: %v", id, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to respond"})
 		return

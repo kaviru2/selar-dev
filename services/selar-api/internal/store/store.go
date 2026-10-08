@@ -18,6 +18,14 @@ import (
 
 var ErrMentalModelLinkNotFound = errors.New("mental-model link not found")
 
+// ErrUnclassifiedNotConfirmable is returned when a learner tries to confirm or
+// relabel a similarity-only passage match. Embedding distance is not evidence
+// of a relation, so these matches can only be dismissed.
+var ErrUnclassifiedNotConfirmable = errors.New("similarity-only passage matches cannot be confirmed or relabeled as a relation; dismiss it instead")
+
+// ErrSuggestionNotFound is returned when no owner-visible suggestion matches.
+var ErrSuggestionNotFound = errors.New("suggestion not found")
+
 // Store wraps the database connection pool and provides data access methods.
 type Store struct {
 	pool *pgxpool.Pool
@@ -367,7 +375,7 @@ func (s *Store) ListSuggestions(ctx context.Context, userID, docID string, page 
 func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, action model.SuggestionStatus, label string, timeMs int) error {
 	// Distance-only passage matches can be dismissed, never promoted to assertions.
 	if action != model.SuggestionRejected {
-		return fmt.Errorf("unclassified passage match cannot be confirmed as a relation")
+		return ErrUnclassifiedNotConfirmable
 	}
 	now := time.Now()
 	tx, err := s.pool.Begin(ctx)
@@ -395,7 +403,7 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 		return fmt.Errorf("update suggestion state: %w", err)
 	}
 	if command.RowsAffected() == 0 {
-		return fmt.Errorf("suggestion not found")
+		return ErrSuggestionNotFound
 	}
 
 	payload, _ := json.Marshal(map[string]any{"action": action, "label": label, "time_to_respond_ms": timeMs})
