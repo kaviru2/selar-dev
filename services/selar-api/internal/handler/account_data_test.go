@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/storage/storagetest"
 )
@@ -134,6 +135,10 @@ func TestIntegrationDeleteAccountRemovesRowsAndStoredObjects(t *testing.T) {
 	f := newAccountFixture(t)
 	fake := withFakeS3(t, f)
 	docID, uploadKey := seedAccountData(t, f, fake)
+	withdrawalGroup := "handler-withdrawal-" + uuid.NewString()
+	if _, err := f.pool.Exec(context.Background(), `UPDATE users SET group_label=$1 WHERE id=$2`, withdrawalGroup, f.id); err != nil {
+		t.Fatal(err)
+	}
 	strangerKey := "users/00000000-0000-0000-0000-00000000beef/uploads/66666666-6666-6666-6666-666666666666.pdf"
 	fake.Seed(strangerKey, []byte("%PDF other"), "application/pdf")
 	orphan := "users/" + f.id + "/uploads/77777777-7777-7777-7777-777777777777.pdf"
@@ -155,6 +160,19 @@ func TestIntegrationDeleteAccountRemovesRowsAndStoredObjects(t *testing.T) {
 	}
 	if users+docs+chunks+suggestions+annotations != 0 {
 		t.Fatalf("rows survived: users=%d docs=%d chunks=%d suggestions=%d annotations=%d", users, docs, chunks, suggestions, annotations)
+	}
+	var withdrawals int
+	var withdrawalJSON string
+	if err := f.pool.QueryRow(context.Background(), `SELECT count(*), COALESCE(max(to_jsonb(study_withdrawals)::text), '')
+		FROM study_withdrawals WHERE cohort='control' AND group_label=$1`, withdrawalGroup).
+		Scan(&withdrawals, &withdrawalJSON); err != nil {
+		t.Fatal(err)
+	}
+	if withdrawals != 1 {
+		t.Fatalf("account deletion wrote %d withdrawal rows, want exactly 1", withdrawals)
+	}
+	if strings.Contains(withdrawalJSON, f.email) || strings.Contains(withdrawalJSON, f.id) {
+		t.Fatalf("withdrawal row contains an identifier: %s", withdrawalJSON)
 	}
 	if fake.Has(uploadKey) || fake.Has(docID+"/assets/figure-1.png") || fake.Has(orphan) {
 		t.Fatalf("stored objects survived: %v", fake.Keys())

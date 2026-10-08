@@ -3,7 +3,11 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // exportQueries are the per-user tables included in "Export my data". Each
@@ -112,6 +116,20 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	var cohort, groupLabel string
+	var accountCreatedAt time.Time
+	if err := tx.QueryRow(ctx, `SELECT cohort, group_label, created_at FROM users WHERE id = $1`, userID).
+		Scan(&cohort, &groupLabel, &accountCreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("read user for withdrawal: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO study_withdrawals (cohort, group_label, account_created_at)
+		VALUES ($1, $2, $3)`, cohort, groupLabel, accountCreatedAt); err != nil {
+		return fmt.Errorf("record withdrawal: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM mental_model_links WHERE user_id = $1`, userID); err != nil {
 		return fmt.Errorf("delete links: %w", err)
 	}
