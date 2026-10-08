@@ -38,6 +38,8 @@ var exportQueries = []struct {
 			'is_correct', x.is_correct, 'manual_score', x.manual_score, 'grader_note', x.grader_note))
 			FROM quiz_answers x WHERE x.attempt_id = a.id), '[]') AS answers
 		FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id WHERE a.user_id = $1 ORDER BY a.started_at`},
+	{"email_notices.json", `SELECT id, kind, quiz_id, window_start, window_end, transport, subject, status, created_at
+		FROM notification_log WHERE user_id = $1 ORDER BY created_at`},
 	{"reading_sessions.json", `SELECT id, document_id, started_at, ended_at, pages_viewed, max_scroll_depth
 		FROM reading_sessions WHERE user_id = $1 ORDER BY started_at`},
 	{"chat_threads.json", `SELECT t.id, t.title, t.created_at,

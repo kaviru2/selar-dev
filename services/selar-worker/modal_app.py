@@ -15,6 +15,9 @@ What it defines:
   the polling worker, so duplicates are harmless.
 - ``sweep``: scheduled every SWEEP_SCHEDULE_MINUTES. It re-queues expired
   leases and drains ready jobs (retries after backoff, missed triggers).
+- ``notifications``: scheduled every NOTIFY_SCHEDULE_MINUTES. It asks the API
+  to run the optional email study notices (dry-run unless switched on there)
+  and does nothing unless SELAR_API_URL is set in the secret.
 
 Secrets are referenced by name only. Create one Modal secret named
 ``selar-worker-secrets`` with the keys listed in docs/DEPLOYMENT.md.
@@ -38,12 +41,13 @@ except ImportError:  # pragma: no cover
 APP_NAME = "selar-worker"
 SECRET_NAMES = ["selar-worker-secrets"]
 SWEEP_SCHEDULE_MINUTES = 5
+NOTIFY_SCHEDULE_MINUTES = 15
 # Lease (INGESTION_LEASE_SECONDS, default 300) is renewed by the heartbeat; the
 # function timeout bounds a single large PDF.
 JOB_TIMEOUT_SECONDS = 30 * 60
 SWEEP_TIMEOUT_SECONDS = 15 * 60
 LOCAL_MODULES = ["main", "ingestion", "storage", "worker_trigger", "candidate_contract", "candidate_generation",
-                 "offline_evidence", "evaluation"]
+                 "offline_evidence", "evaluation", "notify_schedule"]
 
 if MODAL_AVAILABLE:  # pragma: no cover - exercised only on Modal
     image = (
@@ -68,6 +72,13 @@ if MODAL_AVAILABLE:  # pragma: no cover - exercised only on Modal
         import worker_trigger
 
         return asyncio.run(worker_trigger.sweep(time_budget_seconds=SWEEP_TIMEOUT_SECONDS - 120))
+
+    @app.function(secrets=secrets, timeout=120,
+                  schedule=modal.Period(minutes=NOTIFY_SCHEDULE_MINUTES))
+    def notifications() -> dict:
+        import notify_schedule
+
+        return notify_schedule.run_notifications()
 
     @app.function(secrets=secrets, timeout=120)
     @modal.concurrent(max_inputs=20)

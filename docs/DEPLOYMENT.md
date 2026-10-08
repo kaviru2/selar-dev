@@ -353,6 +353,8 @@ already taken; they age out within 30 days.
 | `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | | | ✓ | build time; unset = no script on `/register` |
 | `CALENDAR_FEED_ENABLED`, `CALENDAR_FEED_ALLOWLIST` | ✓ | | | off / nobody: optional quiz-window calendar, see [REMINDERS.md](REMINDERS.md) |
 | `PUBLIC_API_URL`, `PUBLIC_CONSOLE_URL`, `LINK_TOKEN_SECRET` | ✓ | | | origins used in signed links; link key defaults to `JWT_SECRET` |
+| `NOTIFY_EMAIL_ENABLED`, `NOTIFY_EMAIL_ALLOWLIST`, `NOTIFY_SMTP_*`, `NOTIFY_EMAIL_FROM`, `NOTIFY_TIMEZONE` | ✓ | | | off: optional email notices, dry-run by default, see [REMINDERS.md](REMINDERS.md) |
+| `SELAR_API_URL` | | ✓ (Modal) | | unset = notification schedule idle |
 
 Generate secrets with `openssl rand -base64 48`. Never commit them; `.env*` files other than `.env.example` are git-ignored.
 

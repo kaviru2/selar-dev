@@ -19,6 +19,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
+	"github.com/selar-dev/selar-api/internal/notify"
 	"github.com/selar-dev/selar-api/internal/recaptcha"
 	"github.com/selar-dev/selar-api/internal/settings"
 	"github.com/selar-dev/selar-api/internal/storage"
@@ -47,6 +48,10 @@ type Handler struct {
 
 	// calendar configures the optional quiz-window calendar feed (calendar.go).
 	calendar *CalendarConfig
+
+	// notifier sends optional email notices (notifications.go); nil = none.
+	notifier        *notify.Notifier
+	notifyRunSecret string
 }
 
 // New creates a new Handler with the given store. Upload storage defaults to

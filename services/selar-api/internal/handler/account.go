@@ -8,11 +8,14 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/selar-dev/selar-api/internal/middleware"
+	"github.com/selar-dev/selar-api/internal/notify"
 	"github.com/selar-dev/selar-api/internal/settings"
 	"github.com/selar-dev/selar-api/internal/store"
 )
@@ -177,7 +180,8 @@ func (h *Handler) ChangeEmail(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "current_password is required")
 		return
 	}
-	if _, ok := h.verifyCurrentPassword(w, r, req.CurrentPassword); !ok {
+	previous, ok := h.verifyCurrentPassword(w, r, req.CurrentPassword)
+	if !ok {
 		return
 	}
 	err := h.store.UpdateEmail(r.Context(), middleware.GetUserID(r.Context()), req.Email)
@@ -189,6 +193,8 @@ func (h *Handler) ChangeEmail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to change email"})
 		return
 	}
+	// Optional security notice to the previous address (opt-in, dry-run by default).
+	h.sendSecurityNotice(r, middleware.GetUserID(r.Context()), previous, notify.SecurityEmail, req.Email+"@"+time.Now().UTC().Format(time.RFC3339))
 	writeJSON(w, http.StatusOK, map[string]string{"email": req.Email})
 }
 
@@ -237,5 +243,6 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to issue a new session"})
 		return
 	}
+	h.sendSecurityNotice(r, userID, email, notify.SecurityPassword, strconv.Itoa(version))
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "other_sessions_ended": true})
 }
