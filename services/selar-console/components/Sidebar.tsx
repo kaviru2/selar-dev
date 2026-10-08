@@ -8,6 +8,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { useEffect, useState } from "react";
 import { clientFetch } from "@/lib/api";
+import { pageCountLabel } from "@/lib/format";
 
 interface SidebarDoc {
   id: string;
@@ -99,7 +100,7 @@ export function Sidebar({ currentId, onPick }: SidebarProps) {
               ? `processing`
               : d.status === "failed"
               ? "failed"
-              : d.page_count > 0 ? `${d.page_count} pages` : "ready";
+              : d.page_count > 0 ? pageCountLabel(d.page_count) : "ready";
 
           return (
             <div
