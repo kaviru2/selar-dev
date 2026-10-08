@@ -142,7 +142,7 @@ async def _drain_job(document_id):
 @pytest.mark.timeout(180)
 def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(services, monkeypatch):
     import main
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     api, console = services
     # No external model/network access; all indexing, linking, persistence and
@@ -329,6 +329,9 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             card = page.get_by_role("region", name="Review a suggested connection")
             card.get_by_text("Fabricated notebook A").wait_for(timeout=20000)
             start = card.get_by_role("button", name="Think about this link →")
+            # The button stays disabled until the exact source preview arrives;
+            # wait for that prerequisite instead of racing the client fetch.
+            expect(start).to_be_enabled(timeout=10000)
             start.focus()
             start.press("Enter")
             heading = card.get_by_role("heading", name="Explain it in your own words")
