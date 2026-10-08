@@ -40,14 +40,63 @@ func New(pool *pgxpool.Pool) *Store {
 // Users
 // ============================================================
 
+const userColumns = `id, email, display_name, cohort, drive_connected, preferences, created_at,
+	role, group_label, consented_at, consent_version, consent_decided_at`
+
+func scanUser(row interface{ Scan(...any) error }, u *model.User, extra ...any) error {
+	var prefsJSON []byte
+	dest := append([]any{&u.ID, &u.Email, &u.DisplayName, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt,
+		&u.Role, &u.GroupLabel, &u.ConsentedAt, &u.ConsentVersion, &u.ConsentDecidedAt}, extra...)
+	if err := row.Scan(dest...); err != nil {
+		return err
+	}
+	if prefsJSON != nil {
+		_ = json.Unmarshal(prefsJSON, &u.Preferences)
+	}
+	return nil
+}
+
+// NewUser describes an account to create.
+type NewUser struct {
+	Email        string
+	PasswordHash string
+	Cohort       model.Cohort
+	Role         string
+	// Consent is the optional research-consent answer given at registration:
+	// nil = not asked, false = declined, true = opted in (ConsentVersion set).
+	Consent        *bool
+	ConsentVersion string
+}
+
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string, cohort model.Cohort) (*model.User, error) {
+	return s.CreateUserWith(ctx, NewUser{Email: email, PasswordHash: passwordHash, Cohort: cohort})
+}
+
+// CreateUserWith creates a user with an optional role and consent answer.
+func (s *Store) CreateUserWith(ctx context.Context, in NewUser) (*model.User, error) {
+	role := in.Role
+	if role == "" {
+		role = "user"
+	}
+	var consentedAt, decidedAt *time.Time
+	var version *string
+	if in.Consent != nil {
+		now := time.Now().UTC()
+		decidedAt = &now
+		if *in.Consent {
+			if in.ConsentVersion == "" {
+				return nil, errors.New("consent version required")
+			}
+			consentedAt, version = &now, &in.ConsentVersion
+		}
+	}
 	u := &model.User{}
-	err := s.pool.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, cohort)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, email, display_name, cohort, drive_connected, preferences, created_at`,
-		email, passwordHash, cohort,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Cohort, &u.DriveConnected, &u.Preferences, &u.CreatedAt)
+	err := scanUser(s.pool.QueryRow(ctx,
+		`INSERT INTO users (email, password_hash, cohort, role, consented_at, consent_version, consent_decided_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 RETURNING `+userColumns,
+		in.Email, in.PasswordHash, in.Cohort, role, consentedAt, version, decidedAt,
+	), u)
 	if err != nil {
 		return nil, err
 	}
@@ -56,34 +105,18 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string, coho
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	u := &model.User{}
-	var prefsJSON []byte
-	err := s.pool.QueryRow(ctx,
-		`SELECT id, email, display_name, password_hash, cohort, drive_connected, preferences, created_at
-		 FROM users WHERE email = $1`,
-		email,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Password, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt)
-	if err != nil {
+	if err := scanUser(s.pool.QueryRow(ctx,
+		`SELECT `+userColumns+`, password_hash FROM users WHERE email = $1`, email), u, &u.Password); err != nil {
 		return nil, err
-	}
-	if prefsJSON != nil {
-		_ = json.Unmarshal(prefsJSON, &u.Preferences)
 	}
 	return u, nil
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	u := &model.User{}
-	var prefsJSON []byte
-	err := s.pool.QueryRow(ctx,
-		`SELECT id, email, display_name, cohort, drive_connected, preferences, created_at
-		 FROM users WHERE id = $1`,
-		id,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.Cohort, &u.DriveConnected, &prefsJSON, &u.CreatedAt)
-	if err != nil {
+	if err := scanUser(s.pool.QueryRow(ctx,
+		`SELECT `+userColumns+` FROM users WHERE id = $1`, id), u); err != nil {
 		return nil, err
-	}
-	if prefsJSON != nil {
-		_ = json.Unmarshal(prefsJSON, &u.Preferences)
 	}
 	return u, nil
 }
@@ -783,13 +816,21 @@ func (s *Store) CreateReadingSession(ctx context.Context, sess *model.ReadingSes
 	).Scan(&sess.ID)
 }
 
-func (s *Store) EndReadingSession(ctx context.Context, userID, id string, pagesViewed []int, maxDepth int) error {
+func (s *Store) EndReadingSession(ctx context.Context, userID, id string, pagesViewed []int, maxDepth int) (*model.ReadingSession, error) {
 	now := time.Now()
-	_, err := s.pool.Exec(ctx,
+	sess := &model.ReadingSession{ID: id, UserID: userID}
+	// Only the first end call closes a session, so a duplicate beacon cannot
+	// stretch its duration.
+	err := s.pool.QueryRow(ctx,
 		`UPDATE reading_sessions SET ended_at = $1, pages_viewed = $2, max_scroll_depth = $3
-		 WHERE id = $4 AND user_id = $5`,
-		now, pagesViewed, maxDepth, id, userID)
-	return err
+		 WHERE id = $4 AND user_id = $5 AND ended_at IS NULL
+		 RETURNING document_id, started_at`,
+		now, pagesViewed, maxDepth, id, userID).Scan(&sess.DocumentID, &sess.StartedAt)
+	if err != nil {
+		return nil, err
+	}
+	sess.EndedAt = &now
+	return sess, nil
 }
 
 // ============================================================

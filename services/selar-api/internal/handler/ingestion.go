@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
 )
@@ -131,6 +132,7 @@ func (h *Handler) AddContent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to queue ingestion"})
 		return
 	}
+	h.Track(r.Context(), userID, analytics.DocumentUploaded, analytics.Props{"document_id": doc.ID, "source_type": req.SourceType})
 	writeJSON(w, http.StatusAccepted, map[string]any{"source": source, "document": doc, "run": run})
 }
 

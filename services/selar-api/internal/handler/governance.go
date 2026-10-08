@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
 )
@@ -35,6 +36,7 @@ func (h *Handler) RecordCitationOpen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to record citation interaction"})
 		return
 	}
+	h.Track(r.Context(), middleware.GetUserID(r.Context()), analytics.ChatCitationOpened, analytics.Props{"citation_id": chi.URLParam(r, "id")})
 	writeJSON(w, http.StatusOK, map[string]bool{"recorded": recorded})
 }
 
@@ -95,6 +97,8 @@ func (h *Handler) RespondToConceptEdge(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update relationship"})
 		return
 	}
+	h.Track(r.Context(), middleware.GetUserID(r.Context()), analytics.DecisionMade, analytics.Props{"kind": "concept_edge",
+		"action": decisionAction(request.Action), "link_id": chi.URLParam(r, "id")})
 	writeJSON(w, http.StatusOK, map[string]string{"status": request.Action})
 }
 
@@ -122,6 +126,8 @@ func (h *Handler) RespondToConcept(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update concept"})
 		return
 	}
+	h.Track(r.Context(), middleware.GetUserID(r.Context()), analytics.DecisionMade, analytics.Props{"kind": "concept",
+		"action": decisionAction(request.Action), "link_id": chi.URLParam(r, "id")})
 	writeJSON(w, http.StatusOK, map[string]string{"status": request.Action})
 }
 
