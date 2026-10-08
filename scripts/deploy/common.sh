@@ -89,12 +89,14 @@ secrets_file() {
   printf '%s' "${SELAR_SECRETS:-$HOME/.hermes/secrets/selar-deploy.env}"
 }
 
+# GNU stat first: on Linux `stat -f` means "file system status" and succeeds
+# with unrelated output; BSD/macOS stat rejects -c, so the fallback is safe.
 file_mode() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null || echo '?'
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || echo '?'
 }
 
 file_owner_uid() {
-  stat -f '%u' "$1" 2>/dev/null || stat -c '%u' "$1" 2>/dev/null || echo '?'
+  stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1" 2>/dev/null || echo '?'
 }
 
 # load_secrets: parse KEY=value lines and export them; values are never printed.
