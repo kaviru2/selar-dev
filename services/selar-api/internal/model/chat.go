@@ -52,6 +52,9 @@ type ChatGraphUpdate struct {
 	LinksObserved      int    `json:"links_observed"`
 	LinksPromoted      int    `json:"links_promoted"`
 	ReducerVersion     string `json:"reducer_version"`
+	// Retracted is true once negative feedback or a correction deactivated
+	// this answer's adaptive evidence; counts remain for audit only.
+	Retracted bool `json:"retracted"`
 }
 
 // ChatAnswer is returned by the worker after deterministic retrieval.

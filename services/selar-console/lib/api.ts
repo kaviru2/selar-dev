@@ -366,6 +366,8 @@ export interface ChatGraphUpdate {
   links_observed: number;
   links_promoted: number;
   reducer_version: string;
+  /** Negative feedback or a correction withdrew this answer's adaptive evidence. */
+  retracted?: boolean;
 }
 
 // --- Annotation types ---

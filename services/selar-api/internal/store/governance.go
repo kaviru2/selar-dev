@@ -217,7 +217,17 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 
 	}
 
-	if feedbackPermitsGraphReduction(request.Action) {
+	// A later helpful click cannot override an earlier unhelpful rating or
+	// correction of the same answer: negative feedback is sticky for graph use.
+	var negative bool
+	if err = tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM chat_message_feedback
+		               WHERE user_id = $1 AND message_id = $2 AND action IN ('unhelpful', 'correction'))`,
+		userID, messageID).Scan(&negative); err != nil {
+		return nil, err
+	}
+
+	if feedbackPermitsGraphReduction(request.Action) && !negative {
 		var query string
 		err = tx.QueryRow(ctx, `
 			SELECT query FROM retrieval_traces
@@ -259,54 +269,102 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 			threadID, userID, "Correction recorded: "+request.CorrectionText, messageID); err != nil {
 			return nil, err
 		}
-		edgeRows, err := tx.Query(ctx, `
-			SELECT DISTINCT edge_id FROM adaptive_edge_evidence
-			WHERE message_id = $1 AND active ORDER BY edge_id`, messageID)
-		if err != nil {
+	}
+	if request.Action == "unhelpful" || request.Action == "correction" {
+		if err = retractChatAnswerEvidence(ctx, tx, userID, messageID, feedback.ID, request.Action); err != nil {
 			return nil, err
-		}
-		var edgeIDs []string
-		for edgeRows.Next() {
-			var edgeID string
-			if err := edgeRows.Scan(&edgeID); err != nil {
-				edgeRows.Close()
-				return nil, err
-			}
-			edgeIDs = append(edgeIDs, edgeID)
-		}
-		edgeRows.Close()
-		if _, err = tx.Exec(ctx, `
-			UPDATE adaptive_edge_evidence SET active = false, superseded_at = now()
-			WHERE message_id = $1 AND active`, messageID); err != nil {
-			return nil, err
-		}
-		if _, err = tx.Exec(ctx, `
-			UPDATE chat_concept_evidence SET active = false, superseded_at = now()
-			WHERE message_id = $1 AND active`, messageID); err != nil {
-			return nil, err
-		}
-		for _, conceptID := range conceptIDs {
-			if _, err = tx.Exec(ctx, `
-				UPDATE chat_learner_projection SET
-					exposure_count = GREATEST(0, exposure_count - 1),
-					interest_score = GREATEST(0, interest_score - 0.05), updated_at = now()
-				WHERE user_id = $1 AND concept_id = $2`, userID, conceptID); err != nil {
-				return nil, err
-			}
-		}
-		for _, edgeID := range edgeIDs {
-			if _, err = tx.Exec(ctx, `
-				INSERT INTO graph_edge_actions (user_id, edge_id, action, reason, source_message_id)
-				VALUES ($1, $2, 'weakened', 'User correction superseded chat evidence', $3)`,
-				userID, edgeID, messageID); err != nil {
-				return nil, err
-			}
-			if err = recalculateAdaptiveEdge(ctx, tx, edgeID, time.Now().UTC()); err != nil {
-				return nil, err
-			}
 		}
 	}
 	return feedback, tx.Commit(ctx)
+}
+
+// retractChatAnswerEvidence deactivates every adaptive effect of one answer
+// (concept observations, learner exposure, adaptive edge evidence) and
+// recomputes affected edges. Rows are kept, inactive, as audit history.
+func retractChatAnswerEvidence(ctx context.Context, tx pgx.Tx, userID, messageID, feedbackID, action string) error {
+	conceptRows, err := tx.Query(ctx, `
+		UPDATE chat_concept_evidence SET active = false, superseded_at = now()
+		WHERE message_id = $1 AND active RETURNING concept_id`, messageID)
+	if err != nil {
+		return err
+	}
+	var conceptIDs []string
+	for conceptRows.Next() {
+		var conceptID string
+		if err := conceptRows.Scan(&conceptID); err != nil {
+			conceptRows.Close()
+			return err
+		}
+		conceptIDs = append(conceptIDs, conceptID)
+	}
+	conceptRows.Close()
+	if err := conceptRows.Err(); err != nil {
+		return err
+	}
+	sort.Strings(conceptIDs)
+	for _, conceptID := range conceptIDs {
+		if _, err = tx.Exec(ctx, `
+			UPDATE chat_learner_projection SET
+				exposure_count = GREATEST(0, exposure_count - 1),
+				interest_score = GREATEST(0, interest_score - 0.05), updated_at = now()
+			WHERE user_id = $1 AND concept_id = $2`, userID, conceptID); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `
+			UPDATE learner_concept_state SET
+				evidence_count = GREATEST(0, evidence_count - 1),
+				state_version = state_version + 1, updated_at = now()
+			WHERE user_id = $1 AND concept_id = $2`, userID, conceptID); err != nil {
+			return err
+		}
+	}
+	edgeRows, err := tx.Query(ctx, `
+		UPDATE adaptive_edge_evidence SET active = false, superseded_at = now()
+		WHERE message_id = $1 AND active RETURNING edge_id`, messageID)
+	if err != nil {
+		return err
+	}
+	edgeSet := map[string]bool{}
+	for edgeRows.Next() {
+		var edgeID string
+		if err := edgeRows.Scan(&edgeID); err != nil {
+			edgeRows.Close()
+			return err
+		}
+		edgeSet[edgeID] = true
+	}
+	edgeRows.Close()
+	if err := edgeRows.Err(); err != nil {
+		return err
+	}
+	edgeIDs := make([]string, 0, len(edgeSet))
+	for edgeID := range edgeSet {
+		edgeIDs = append(edgeIDs, edgeID)
+	}
+	sort.Strings(edgeIDs)
+	reason := "User marked the chat answer unhelpful"
+	if action == "correction" {
+		reason = "User correction superseded chat evidence"
+	}
+	for _, edgeID := range edgeIDs {
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO graph_edge_actions (user_id, edge_id, action, reason, source_message_id)
+			VALUES ($1, $2, 'weakened', $3, $4)`, userID, edgeID, reason, messageID); err != nil {
+			return err
+		}
+		if err = recalculateAdaptiveEdge(ctx, tx, edgeID, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO learning_events (user_id, event_type, chat_message_id, payload, source, idempotency_key)
+		VALUES ($1, 'chat_graph_evidence_retracted', $2,
+		        jsonb_build_object('feedback_id', $3::text, 'action', $4::text,
+		                           'concepts_retracted', $5::int, 'edges_recomputed', $6::int),
+		        'feedback_gated_reducer', $7)
+		ON CONFLICT (user_id, idempotency_key) DO NOTHING`, userID, messageID, feedbackID, action,
+		len(conceptIDs), len(edgeIDs), fmt.Sprintf("chat-graph-retracted:%s", messageID))
+	return err
 }
 
 func recalculateAdaptiveEdge(ctx context.Context, tx pgx.Tx, edgeID string, asOf time.Time) error {
