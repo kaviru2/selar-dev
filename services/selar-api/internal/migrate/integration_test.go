@@ -118,7 +118,8 @@ func TestIntegrationStatusIsReadOnly(t *testing.T) {
 		t.Fatalf("untracked empty database: pending %d, err %v", len(pending), err)
 	}
 	var tracked bool
-	if err := conn.QueryRow(ctx, `SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&tracked); err != nil || tracked {
+	if err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_tables
+		WHERE schemaname = current_schema() AND tablename = 'schema_migrations')`).Scan(&tracked); err != nil || tracked {
 		t.Fatalf("status must not create schema_migrations (tracked=%v err=%v)", tracked, err)
 	}
 	if _, err := Run(ctx, conn, files, noLog); err != nil {

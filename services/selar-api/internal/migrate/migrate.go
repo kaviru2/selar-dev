@@ -216,7 +216,8 @@ func Run(ctx context.Context, conn *pgx.Conn, files []Migration, logf func(strin
 // database reports every migration as pending (adoption happens in Run).
 func Status(ctx context.Context, conn *pgx.Conn, files []Migration) ([]Migration, error) {
 	var tracked bool
-	if err := conn.QueryRow(ctx, `SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&tracked); err != nil {
+	if err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_tables
+		WHERE schemaname = current_schema() AND tablename = 'schema_migrations')`).Scan(&tracked); err != nil {
 		return nil, err
 	}
 	if !tracked {
