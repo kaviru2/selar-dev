@@ -239,7 +239,11 @@ func (h *Handler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, locked := settings.Effective(nil, locks)
+	stored, _, _, _ := h.store.GetUserSettings(r.Context(), userID)
 	if clean := settings.SanitizeLegacy(prefs, locked); len(clean) > 0 {
+		if patch, ok := clean["reader"].(map[string]any); ok {
+			clean["reader"] = settings.MergeReader(stored["reader"], patch)
+		}
 		if err := h.store.MergeUserSettings(r.Context(), userID, clean); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update preferences"})
 			return

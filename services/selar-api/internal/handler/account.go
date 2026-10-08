@@ -98,6 +98,10 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if patch, ok := clean["reader"].(map[string]any); ok {
+		// Reader fields merge individually so a partial update keeps the rest.
+		clean["reader"] = settings.MergeReader(stored["reader"], patch)
+	}
 	if err := h.store.MergeUserSettings(r.Context(), userID, clean); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save settings"})
 		return

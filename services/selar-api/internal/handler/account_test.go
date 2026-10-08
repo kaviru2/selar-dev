@@ -112,7 +112,11 @@ func TestIntegrationSettingsMergeDefaultsAndCohortLock(t *testing.T) {
 	if rec := sendJSON(t, f.h.UpdateSettings, http.MethodPatch, "/", `{"colorScheme":"dark"}`, f.id); rec.Code != http.StatusOK {
 		t.Fatalf("colour scheme: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := sendJSON(t, f.h.UpdateSettings, http.MethodPatch, "/", `{"reader.zoom":1.4}`, f.id); rec.Code != http.StatusOK {
+	if rec := sendJSON(t, f.h.UpdateSettings, http.MethodPatch, "/", `{"reader":{"highlightColor":"green"}}`, f.id); rec.Code != http.StatusOK {
+		t.Fatalf("highlight: %d %s", rec.Code, rec.Body.String())
+	}
+	// A second partial reader update must keep the first field.
+	if rec := sendJSON(t, f.h.UpdateSettings, http.MethodPatch, "/", `{"reader":{"defaultZoom":1.4}}`, f.id); rec.Code != http.StatusOK {
 		t.Fatalf("zoom: %d %s", rec.Code, rec.Body.String())
 	}
 	rec := sendJSON(t, f.h.GetSettings, http.MethodGet, "/", "", f.id)
@@ -121,7 +125,7 @@ func TestIntegrationSettingsMergeDefaultsAndCohortLock(t *testing.T) {
 		Locked []string       `json:"locked"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &got)
-	if got.Values["colorScheme"] != "dark" || got.Values["reader.zoom"] != 1.4 || got.Values["reader.highlight_color"] != "yellow" {
+	if got.Values["colorScheme"] != "dark" || readerOf(got.Values)["defaultZoom"] != 1.4 || readerOf(got.Values)["highlightColor"] != "green" {
 		t.Fatalf("settings = %#v", got.Values)
 	}
 
@@ -228,4 +232,9 @@ func TestIntegrationPasswordChangeEndsOtherSessions(t *testing.T) {
 	if rec := call(body.Token, http.MethodGet, "/api/users/me", ""); rec.Code != http.StatusOK {
 		t.Fatalf("fresh login token rejected after password change: %d", rec.Code)
 	}
+}
+
+func readerOf(values map[string]any) map[string]any {
+	r, _ := values["reader"].(map[string]any)
+	return r
 }
