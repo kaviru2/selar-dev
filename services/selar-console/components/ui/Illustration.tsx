@@ -190,8 +190,9 @@ const ART: Record<IllustrationName, { vb: string; body: ReactNode }> = {
     body: (
       <>
         <ellipse cx="260" cy="392" rx="220" ry="16" fill={GL} />
-        <circle cx="400" cy="90" r="64" fill={S} />
-        <circle cx="64" cy="356" r="40" fill={RT} />
+        <circle cx="452" cy="74" r="52" fill={S} />
+        <circle cx="34" cy="70" r="9" fill={A} />
+        <circle cx="486" cy="364" r="7" fill={GM} />
         {/* Earlier reading */}
         <g transform="translate(0 40)">
         <g className="float-2">
