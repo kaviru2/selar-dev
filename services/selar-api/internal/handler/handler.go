@@ -19,6 +19,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
+	"github.com/selar-dev/selar-api/internal/recaptcha"
 	"github.com/selar-dev/selar-api/internal/settings"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
@@ -38,6 +39,8 @@ type Handler struct {
 	adminEmails analytics.EmailSet
 	// analyticsOff disables all event recording (ANALYTICS_ENABLED=false).
 	analyticsOff bool
+	// captcha verifies reCAPTCHA tokens on account creation (nil = off).
+	captcha recaptcha.Verifier
 }
 
 // New creates a new Handler with the given store. Upload storage defaults to
@@ -91,6 +94,8 @@ type authRequest struct {
 	// ResearchConsent is the optional analytics opt-in checkbox shown at
 	// registration. Omitted = not asked (the console asks after login).
 	ResearchConsent *bool `json:"research_consent,omitempty"`
+	// RecaptchaToken is required on registration when RECAPTCHA_* is set.
+	RecaptchaToken string `json:"recaptcha_token,omitempty"`
 }
 
 // roleFor returns the role a user should be created with.
@@ -125,6 +130,9 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	parsedEmail, emailErr := mail.ParseAddress(req.Email)
 	if req.Email == "" || emailErr != nil || parsedEmail.Address != req.Email || len(req.Password) < 8 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a valid email and a password of at least 8 characters are required"})
+		return
+	}
+	if !h.requireHuman(w, r, req.RecaptchaToken, RecaptchaActionRegister) {
 		return
 	}
 
