@@ -224,3 +224,6 @@
 /* While the consent banner is shown, fixed-height views must shrink to the
    remaining space instead of overflowing (e.g. the chat composer). */
 .selar-app:has(> .consent-prompt) > .chat-layout { height: auto; flex: 1; min-height: 0; }
+
+.ui-empty-mascot { display: inline-grid; place-items: center; animation: ui-float 6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .ui-empty-mascot { animation: none; } }

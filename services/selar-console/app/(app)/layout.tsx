@@ -28,7 +28,9 @@ export default async function AppLayout({
         <div className="selar-app">
           <Topbar />
           <ConsentBanner />
-          {children}
+          <div id="main" className="app-main" tabIndex={-1}>
+            {children}
+          </div>
         </div>
       </AnalyticsProvider>
     </SelarProvider>

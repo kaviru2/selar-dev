@@ -1,0 +1,120 @@
+/* library.css — /library (app/(app)/library/page.tsx) and the managed
+ * sources panel. */
+
+.app-page.library { padding-top: clamp(20px, 3vw, 32px); }
+
+/* Stats */
+.lib-stats { list-style: none; margin: 0 0 22px; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.lib-stat {
+  display: grid; grid-template-columns: auto 1fr; grid-template-areas: "icon val" "icon lbl";
+  align-items: center; column-gap: 14px;
+  padding: 16px 18px;
+  background: var(--bg-raised);
+  border: 1.5px solid var(--rule);
+  border-radius: var(--selar-radius-lg);
+}
+.lib-stat-icon { grid-area: icon; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; }
+.lib-stat-val { grid-area: val; font: 700 26px/1.05 var(--font-display); color: var(--ink); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.lib-stat-lbl { grid-area: lbl; font-size: 13.5px; color: var(--ink-3); font-weight: 600; }
+.lib-stat--green .lib-stat-icon { background: var(--tint-green-2); color: var(--accent); }
+.lib-stat--warm .lib-stat-icon { background: var(--accent-warm-tint); color: var(--accent-warm-ink); }
+.lib-stat--sky .lib-stat-icon { background: var(--tint-sky); color: var(--text-sky); }
+.lib-stat--amber .lib-stat-icon { background: var(--tint-amber); color: var(--text-amber); }
+
+.lib-notice { margin-bottom: 18px; }
+
+/* Document table */
+.lib-table {
+  background: var(--bg-raised);
+  border: 1.5px solid var(--rule);
+  border-radius: var(--selar-radius-lg);
+  overflow: hidden;
+}
+.lib-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.2fr) 70px 70px minmax(150px, 1fr) 44px;
+  align-items: center; gap: 12px;
+  min-height: 58px; padding: 8px 14px 8px 18px;
+  border-top: 1px solid var(--rule);
+  font-size: 14.5px;
+  transition: background var(--selar-dur) var(--selar-ease);
+}
+.lib-row:not(.lib-row--head):hover { background: var(--bg-2); }
+.lib-row--head {
+  min-height: 42px; border-top: 0; background: var(--bg-3);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
+}
+.lib-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lib-doc-icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--tint-green); color: var(--accent); }
+.lib-title-link {
+  color: var(--ink); font-weight: 650; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Whole row is clickable; actions stay above the stretched link. */
+.lib-title-link::after { content: ""; position: absolute; inset: 0; }
+.lib-title-link:hover { color: var(--accent); }
+.lib-title-link:focus-visible { box-shadow: none; outline: none; }
+.lib-row:has(.lib-title-link:focus-visible) { box-shadow: inset 0 0 0 2px var(--accent); }
+.lib-actions, .lib-status-cell .ui-btn, .lib-status-cell button { position: relative; z-index: 1; }
+.lib-muted { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-num { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.lib-actions { display: flex; justify-content: flex-end; }
+
+.lib-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; min-width: 0; }
+.lib-status--ready { color: var(--accent); }
+.lib-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.lib-status--processing { color: var(--ink-3); }
+.lib-progress { display: block; width: 84px; height: 6px; border-radius: 99px; background: var(--bg-3); overflow: hidden; }
+.lib-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 400ms var(--selar-ease); }
+.lib-status--failed { color: var(--error); flex-wrap: wrap; }
+.lib-status-text { display: grid; }
+.lib-error-detail { font-weight: 400; font-size: 12px; color: var(--ink-3); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lib-docs .ui-empty { padding: 40px 24px 44px; }
+
+/* Delete button (components/DeleteDocButton.tsx) */
+.lib-delete {
+  display: grid; place-items: center; width: 34px; height: 34px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--ink-4);
+  cursor: pointer; transition: background var(--selar-dur) var(--selar-ease), color var(--selar-dur) var(--selar-ease);
+}
+.lib-delete:hover { background: var(--bg-3); color: var(--ink); }
+.lib-delete[data-confirming="true"] { width: auto; padding: 0 12px; border-radius: var(--selar-radius-pill); background: color-mix(in srgb, var(--error) 12%, transparent); color: var(--error); font: 700 12.5px var(--font-sans); gap: 6px; display: inline-flex; align-items: center; }
+
+/* Managed sources (components/SourcesPanel.tsx) */
+.sources-panel { margin-top: 28px; border: 1.5px solid var(--rule); border-radius: var(--selar-radius-lg); background: var(--bg-raised); overflow: hidden; }
+.sources-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--rule); }
+.sources-head > div { flex: 1; min-width: 220px; }
+.sources-head h2 { margin: 0 0 4px; font: 600 20px/1.2 var(--font-display); color: var(--ink); }
+.sources-head p { margin: 0; color: var(--ink-3); font-size: 14px; }
+.sources-count { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 8px; border-radius: var(--selar-radius-pill); background: var(--bg-3); color: var(--ink-2); font-weight: 700; font-size: 13px; }
+.sources-panel .form-error { margin: 14px 20px 0; font-size: 13.5px; }
+.sources-empty { padding: 26px 20px; color: var(--ink-3); font-size: 14px; text-align: center; }
+.source-row { min-height: 60px; padding: 12px 20px; gap: 12px; }
+.source-main strong { font-size: 14px; }
+.source-main span { font-family: var(--font-sans); font-size: 12.5px; color: var(--ink-3); }
+.source-main em { font-size: 12.5px; }
+.source-status { font-family: var(--font-sans); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-3); }
+.source-status.failed { color: var(--error); }
+.source-status.active { color: var(--accent); }
+
+@media (max-width: 960px) {
+  .lib-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lib-row { grid-template-columns: minmax(0, 1fr) auto 44px; grid-template-areas: "title status actions" "meta meta meta"; row-gap: 2px; padding-top: 12px; padding-bottom: 12px; }
+  .lib-row--head { display: none; }
+  .lib-row .lib-title { grid-area: title; }
+  .lib-row .lib-status-cell { grid-area: status; }
+  .lib-row .lib-actions { grid-area: actions; }
+  .lib-row .lib-authors { grid-area: meta; padding-left: 44px; font-size: 13px; }
+  .lib-row .lib-num { display: none; }
+  .lib-table { border-radius: var(--selar-radius-md); }
+}
+@media (max-width: 520px) {
+  .lib-stats { gap: 10px; }
+  .lib-stat { padding: 12px; column-gap: 10px; }
+  .lib-stat-icon { width: 34px; height: 34px; }
+  .lib-stat-val { font-size: 22px; }
+  .lib-stat-lbl { font-size: 12.5px; }
+  .lib-progress { width: 52px; }
+}

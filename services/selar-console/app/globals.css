@@ -9,6 +9,8 @@
 @import "./landing.css";
 @import "./auth.css";
 @import "./quiz.css";
+@import "./shell.css";
+@import "./library.css";
 
 /* ——— Tailwind v4 Theme Tokens ——— */
 @theme inline {
@@ -488,108 +490,7 @@ body {
   flex-direction: column;
 }
 
-/* ——— Topbar ——— */
-.topbar {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--bg);
-  gap: 10px;
-  flex-shrink: 0;
-}
-.topbar .brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: -0.01em;
-}
-.topbar .brand-mark {
-  width: 16px;
-  height: 16px;
-  position: relative;
-  display: inline-block;
-}
-.topbar .brand-mark::before,
-.topbar .brand-mark::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-.topbar .brand-mark::before {
-  background: var(--ink);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 100%, 50% 50%, 0 50%);
-}
-.topbar .brand-mark::after {
-  border: 1px solid var(--ink);
-  clip-path: polygon(50% 50%, 100% 50%, 100% 100%, 50% 100%);
-  background: var(--accent);
-}
-.topbar .nav {
-  display: flex;
-  gap: 2px;
-  margin-left: 8px;
-}
-.topbar .nav a {
-  background: transparent;
-  border: none;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: var(--t-md);
-  color: var(--ink-3);
-  cursor: pointer;
-  border-radius: var(--r-sm);
-  text-decoration: none;
-  transition: color 0.1s, background 0.1s;
-}
-.topbar .nav a:hover {
-  color: var(--ink);
-  background: var(--bg-2);
-}
-.topbar .nav a.active {
-  color: var(--ink);
-  background: var(--bg-2);
-}
-.topbar .meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--t-sm);
-  color: var(--ink-3);
-}
-.topbar .cohort-chip {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 2px 7px;
-  border: 1px solid var(--rule-2);
-  border-radius: 10px;
-  color: var(--ink-3);
-}
-.topbar .cohort-chip .dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: 1px;
-  background: var(--accent);
-}
-.avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--accent-3);
-  color: var(--on-accent);
-  font-size: 10px;
-  display: grid;
-  place-items: center;
-  font-weight: 600;
-}
+/* Topbar styles live in app/shell.css. */
 
 /* ——— Kbd hint ——— */
 .kbd {
@@ -1483,111 +1384,7 @@ body {
 .match-card .foot .reveal { margin-right: auto; color: var(--accent); }
 
 /* ——— Library View ——— */
-.library {
-  flex: 1;
-  overflow: auto;
-  padding: 24px 32px;
-  background: var(--bg);
-}
-.library .head {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.library .head h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.library .head .sub {
-  color: var(--ink-3);
-  font-size: var(--t-md);
-}
-.library .stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.stat {
-  padding: 12px 14px;
-  border: 1px solid var(--rule);
-  background: var(--bg);
-  border-radius: var(--r-md);
-}
-.stat .lbl {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--ink-4);
-  text-transform: uppercase;
-}
-.stat .val {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin-top: 2px;
-}
-.stat .delta {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--accent-2);
-}
-.doc-table {
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md);
-  background: var(--bg);
-  overflow: hidden;
-}
-.doc-row {
-  display: grid;
-  grid-template-columns: 22px 1fr 120px 80px 90px 120px 60px 32px;
-  align-items: center;
-  padding: 7px 12px;
-  gap: 10px;
-  border-bottom: 1px solid var(--rule);
-  font-size: var(--t-md);
-  cursor: pointer;
-}
-.doc-row:last-child {
-  border-bottom: none;
-}
-.doc-row:hover {
-  background: var(--bg-2);
-}
-.doc-row.head {
-  background: var(--bg-2);
-  cursor: default;
-  padding: 5px 12px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--ink-4);
-  text-transform: uppercase;
-}
-.doc-row .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent-2);
-}
-.doc-row .dot.processing {
-  background: var(--accent);
-}
-.doc-row .title {
-  font-weight: 500;
-}
-.doc-row .authors {
-  color: var(--ink-3);
-  font-size: var(--t-sm);
-}
-.doc-row .mono {
-  font-family: var(--font-mono);
-  font-size: var(--t-sm);
-  color: var(--ink-3);
-}
+/* Library styles live in app/library.css. */
 
 /* ——— Graph View ——— */
 .graph-wrap {
@@ -2135,11 +1932,11 @@ body.is-resizing-panel .pdf-container { pointer-events: none; }
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-.document-failed-state { display: flex; align-items: center; gap: 8px; min-width: 0; color: #c0443a; }
+.document-failed-state { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--error); }
 .document-failed-state > .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .retry-ingestion-wrap { display: inline-flex; align-items: center; gap: 6px; }
-.retry-ingestion { padding: 3px 7px; font-size: 10px; }
-.retry-ingestion-error { color: #c0443a; max-width: 180px; }
+.retry-ingestion { min-height: 28px; padding: 0 10px; font-size: 12px; }
+.retry-ingestion-error { color: var(--error); max-width: 180px; }
 
 /* ——— Guided Connections sidebar (notice → explain → compare & decide) ——— */
 .cx-panel { font-family: var(--font-sans); }
@@ -2228,11 +2025,6 @@ body.is-resizing-panel .pdf-container { pointer-events: none; }
 
 /* Brand mark (components/brand/Logo.tsx via components/ui/Wordmark.tsx).
    Both variants are rendered; show the one matching the colour scheme. */
-.topbar .brand-logo {
-  display: inline-flex;
-  flex: none;
-  vertical-align: middle;
-}
 .ui-mark-dark { display: none; }
 [data-theme="dark"] .ui-mark-light { display: none; }
 [data-theme="dark"] .ui-mark-dark { display: inline-block; }
