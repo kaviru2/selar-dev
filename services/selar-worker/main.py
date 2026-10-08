@@ -101,10 +101,12 @@ def is_explicit_graph_command(question: str) -> bool:
 def graph_command_response(started: float) -> Dict[str, Any]:
     # Without a reviewed, request-matched witness, a random existing candidate
     # would be a misleading suggestion for this particular correction.
-    answer = ("No graph change was made, and no preview was created for this request. "
-              "Chat cannot verify or apply a graph correction. To inspect an existing "
-              "two-sided candidate, open its document in the reader and check both source "
-              "quotes before deciding; a chat citation alone does not establish a relation.")
+    answer = ("No graph change was made, and no preview was created for this request: "
+              "chat does not infer graph corrections or search your library for one. "
+              "To correct the graph, propose a source-scoped assertion below: pick the cited "
+              "passage of the paper that makes the claim, state what that paper asserts and "
+              "whether it is about its own work or another work it reports on. It is added "
+              "only after you confirm the exact preview.")
     return {
         "answer": answer,
         "model_version": "deterministic-graph-command-boundary-v1",
