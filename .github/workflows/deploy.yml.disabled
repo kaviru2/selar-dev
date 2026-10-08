@@ -1,0 +1,125 @@
+# Manual production deploy for SELAR — TEMPLATE, DISABLED BY DEFAULT.
+#
+# GitHub only runs files ending in .yml/.yaml, so this file does nothing until
+# it is renamed to .github/workflows/deploy.yml. Even then it runs only on a
+# manual "Run workflow" click (workflow_dispatch), never on push.
+#
+# It runs the same scripts as a local release (scripts/deploy/deploy-all.sh).
+#
+# Repository secrets to add first (Settings -> Secrets and variables ->
+# Actions). NONE are set today; add them yourself only if you enable this:
+#
+#   VERCEL_TOKEN            Vercel account token with access to team kavirus-projects
+#   MODAL_TOKEN_ID          Modal token id    (modal.com -> Settings -> API tokens)
+#   MODAL_TOKEN_SECRET      Modal token secret
+#   DATABASE_URL_DIRECT     Neon DIRECT (non -pooler) URL, sslmode=require (migrations + smoke cleanup)
+#   DATABASE_URL_POOLED     Neon pooled URL (used only to refuse it for migrations)
+#   WORKER_URL              Modal web endpoint URL (worker health checks)
+#   S3_ENDPOINT, S3_BUCKET  bucket endpoint + name (bucket CORS smoke check)
+#
+# Only needed with "sync_secrets" (overwrites the Modal secret selar-worker-secrets):
+#   GEMINI_API_KEY, WORKER_TRIGGER_SECRET, STORAGE_BACKEND, S3_REGION,
+#   S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+#
+# Recommended: protect it with a GitHub Environment named "production" with
+# required reviewers (Settings -> Environments), which this job references.
+
+name: Deploy (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: checks + plan only, change nothing"
+        type: boolean
+        default: true
+      only:
+        description: "Steps to deploy (comma-separated subset of migrate,worker,api,console)"
+        type: string
+        default: "migrate,worker,api,console"
+      skip_tests:
+        description: "Skip the quick tests (CI already ran them on main)"
+        type: boolean
+        default: true
+      sync_secrets:
+        description: "Overwrite the Modal secret from repository secrets"
+        type: boolean
+        default: false
+      auth_smoke:
+        description: "Run the throwaway-account smoke flow"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 40
+    if: github.ref == 'refs/heads/main'
+    env:
+      SELAR_SECRETS: env
+      SELAR_MODAL_ENV_TOKEN: "1"
+      NO_COLOR: "1"
+      GH_TOKEN: ${{ github.token }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
+      DATABASE_URL_POOLED: ${{ secrets.DATABASE_URL_POOLED }}
+      WORKER_URL: ${{ secrets.WORKER_URL }}
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      WORKER_TRIGGER_SECRET: ${{ secrets.WORKER_TRIGGER_SECRET }}
+      STORAGE_BACKEND: ${{ secrets.STORAGE_BACKEND }}
+      S3_REGION: ${{ secrets.S3_REGION }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/selar-api/go.mod
+          cache-dependency-path: services/selar-api/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deploy CLIs
+        run: |
+          npm install -g vercel@latest
+          pip install modal
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Deploy
+        env:
+          # Inputs pass through env (never interpolated into the script).
+          IN_DRY_RUN: ${{ inputs.dry_run }}
+          IN_ONLY: ${{ inputs.only }}
+          IN_SKIP_TESTS: ${{ inputs.skip_tests }}
+          IN_SYNC: ${{ inputs.sync_secrets }}
+          IN_AUTH: ${{ inputs.auth_smoke }}
+        run: |
+          git checkout -B main origin/main
+          args=(--yes "--only=$IN_ONLY")
+          [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
+          [ "$IN_SKIP_TESTS" = "true" ] && args+=(--skip-tests)
+          [ "$IN_SYNC" = "true" ] && args+=(--sync-secrets)
+          [ "$IN_AUTH" = "true" ] && args+=(--auth-smoke)
+          scripts/deploy/deploy-all.sh "${args[@]}"

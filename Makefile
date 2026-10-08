@@ -1,7 +1,9 @@
 # SELAR — Development Makefile
 # Convenience targets for local development with Docker Compose.
 
-.PHONY: dev down logs build migrate migrate-url replay clean api-dev console-dev
+.PHONY: dev down logs build migrate migrate-url replay clean api-dev console-dev \
+	deploy deploy-dry-run deploy-migrate deploy-api deploy-console deploy-worker \
+	deploy-smoke deploy-env-sync deploy-lint
 
 # Start all services in development mode
 dev:
@@ -56,3 +58,34 @@ clean:
 	docker compose down -v --rmi all
 	rm -rf services/selar-console/.next
 	rm -rf services/selar-console/node_modules
+
+# ---- Production deploy (see docs/DEPLOYMENT.md "One-command deploy") ----
+# Pass extra flags with ARGS, e.g. make deploy ARGS="--skip-tests --yes"
+DEPLOY := scripts/deploy
+
+deploy:
+	$(DEPLOY)/deploy-all.sh $(ARGS)
+
+deploy-dry-run:
+	$(DEPLOY)/deploy-all.sh --dry-run $(ARGS)
+
+deploy-migrate:
+	$(DEPLOY)/migrate.sh $(ARGS)
+
+deploy-api:
+	$(DEPLOY)/deploy-api.sh $(ARGS)
+
+deploy-console:
+	$(DEPLOY)/deploy-console.sh $(ARGS)
+
+deploy-worker:
+	$(DEPLOY)/deploy-worker.sh $(ARGS)
+
+deploy-smoke:
+	$(DEPLOY)/smoke.sh $(ARGS)
+
+deploy-env-sync:
+	$(DEPLOY)/env-sync.sh $(ARGS)
+
+deploy-lint:
+	shellcheck -x -P SCRIPTDIR $(DEPLOY)/*.sh

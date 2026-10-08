@@ -14,8 +14,79 @@ Docker Compose and the local three-terminal setup are unchanged. They keep
 `STORAGE_BACKEND=local`, the shared `selar_uploads` volume and the polling worker.
 Nothing in this guide is required for local development.
 
-> The repository contains configuration only. Creating accounts, projects,
-> buckets, secrets and running deploys are manual steps for the operator.
+> Creating accounts, projects, buckets and secrets is a one-time manual step for the
+> operator. Once they exist, releases go through the scripts in
+> [`scripts/deploy/`](../scripts/deploy) (see [One-command deploy](#one-command-deploy)).
+
+## One-command deploy
+
+Once the stack exists (sections 1–5 below), release `main` with:
+
+```bash
+git checkout main && git pull
+scripts/deploy/deploy-all.sh --dry-run   # read-only checks + the full plan
+scripts/deploy/deploy-all.sh             # asks once, then deploys
+make deploy ARGS="--skip-tests --yes"    # same, via make, unattended
+```
+
+`deploy-all.sh` runs these steps in order and stops at the first failure:
+
+1. **Preflight.** Checks that the required CLIs are installed, that Vercel and Modal are logged in, and that the secrets file is readable. Runs `env-sync.sh` to check that every required env var *name* exists in Vercel and in the Modal secret.
+2. **Git.** The tree must be clean, on `main`, and equal to `origin/main`. It also reports the `ci.yml` status for HEAD. `SELAR_ALLOW_NON_MAIN=1` overrides this for hotfix or rollback builds.
+3. **Tests.** Runs `go vet` and `go test -short` for the API, `vitest` for the console when `node_modules` exists, and `pytest` for the worker when its dependencies are installed. Every database URL is removed from the test environment. `--skip-tests` skips this step.
+4. **Migrate.** Runs `migrate.sh`: status, then apply, then status again. Production must end with `0 pending`. It uses `DATABASE_URL_DIRECT` and refuses a pooled (`-pooler`) URL.
+5. **Worker.** Runs `deploy-worker.sh`, which does `modal deploy` from a `git archive` of HEAD. This takes about 5 minutes. The script then waits for `/health`.
+6. **API.** Runs `deploy-api.sh`, which does `vercel deploy --prod` of `services/selar-api`, then waits for `/healthz`.
+7. **Console.** Runs `deploy-console.sh`, which does `vercel deploy --prod` of `services/selar-console`, then waits for `/login`.
+8. **Smoke.** Runs `smoke.sh`.
+
+| Script | What it does | Useful flags |
+|---|---|---|
+| `deploy-all.sh` | the whole release, in the order above | `--dry-run`, `--yes`, `--skip-tests`, `--only=api,console`, `--sync-secrets`, `--auth-smoke` |
+| `migrate.sh` | status → apply → status on production | `--dry-run` / `--status-only` (read-only) |
+| `deploy-worker.sh` | Modal deploy of the worker | `--sync-secrets` (overwrite `selar-worker-secrets` from the secrets file), `--allow-key-removal` |
+| `deploy-api.sh` / `deploy-console.sh` | Vercel production deploy | `--preview` (preview deployment only; production untouched) |
+| `smoke.sh` | read-only production checks | `--auth-flow` (throwaway account, deleted afterwards) |
+| `env-sync.sh` | required env var **names** vs Vercel and Modal (never values, never writes) | `--skip-modal` |
+| [`ROLLBACK.md`](../scripts/deploy/ROLLBACK.md) | `vercel rollback` / `promote`, `modal app rollback`, forward-fix migrations | |
+
+Every script accepts `--dry-run` and `--help`. In dry-run mode, read-only checks (logins,
+migration status, env names and smoke checks against current production) run for
+real. Anything that would change production is printed instead.
+
+**Secrets.** The scripts read `~/.hermes/secrets/selar-deploy.env`, or the file named by
+`SELAR_SECRETS=/path` (`SELAR_SECRETS=env` uses variables that are already exported). This is a
+plain `KEY=value` file with mode `600`. Names used: `DATABASE_URL_DIRECT` and `DATABASE_URL_POOLED` (Neon),
+`WORKER_URL`, `WORKER_TRIGGER_SECRET`, `GEMINI_API_KEY`, `JWT_SECRET`, `STORAGE_BACKEND` and `S3_*`.
+`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` are used only when there is no `~/.modal.toml` profile, as in CI.
+The file is parsed and never `source`d, no value is ever printed, and values reach CLIs through
+the environment or a `0600` temp file, never through argv.
+
+**What the scripts do not do.**
+- They do not overwrite Vercel env vars. Production values are managed in the Vercel dashboard or with `vercel env`.
+- They do not touch the Modal secret unless you pass `--sync-secrets`. That flag replaces the whole secret and refuses if it would drop a key that exists in Modal but not locally.
+- They do not run `vercel link`. Deploys run from a fresh `git archive` of HEAD with `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` set, so no `.env.local` (which would hold pulled secrets) and no `.vercel/` directory is ever written into the checkout.
+
+**Hygiene the scripts handle for you.** The scripts set `umask 022`; under a restrictive umask,
+`.vercel/` and build caches become unreadable. They use a private, user-owned `GOCACHE`. They
+build only committed code, and they run migrations before the API that needs them.
+
+**Smoke checks** (`smoke.sh`, about 5 s):
+- API: `/healthz` returns 200. `/api/users/me` without a token returns 401. The CORS preflight allows the console origin.
+- Worker: `/health` returns 200. `POST /jobs/trigger` without the secret returns 401.
+- Console: `/login` and `/register` return 200, and `/` returns the landing page.
+- Redirects: a signed-out deep link redirects to `/login?from=…`. With a session cookie, `/` and `/login` redirect into the app. An off-site `from=` is ignored. `session-expired` redirects to `/login`. The `/api` proxy rejects requests without a cookie.
+- Bucket: CORS allows the console origin.
+
+With `--auth-flow`, the script also registers `deploy-smoke-<time>-<random>@example.invalid` with
+a random password. It checks that the cookie is `Secure`+`HttpOnly`, that `/api/users/me`,
+`/api/documents` and `/library` load, that API login works, and that logout works. It then
+deletes the account with `psql` over `DATABASE_URL_DIRECT`; dependent rows go through
+`ON DELETE CASCADE`. The delete runs on exit even when a check fails. Only invented data is used.
+
+**CI (optional, disabled).** [`.github/workflows/deploy.yml.disabled`](../.github/workflows/deploy.yml.disabled)
+is a manual-dispatch template that runs the same scripts. GitHub ignores it until it is renamed
+to `.yml`. The repository secrets it needs are listed in the file. None are set.
 
 ## How requests flow
 
