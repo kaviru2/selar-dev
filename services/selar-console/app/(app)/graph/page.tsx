@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { clientFetch, type GraphData, type GraphNodeType, type ReplayReport } from "@/lib/api";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { AssertionProvenance } from "@/components/AssertionProvenance";
 import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
 
 type ForceGraphComponent = (typeof import("react-force-graph-2d"))["default"];
@@ -43,6 +44,9 @@ interface GraphLinkMetadata {
   source_quote?: string;
   target_quote?: string;
   review_revision?: number;
+  assertion_id?: string;
+  assertion_scope?: "own_work" | "reported_about_other";
+  asserting_document_title?: string;
 }
 
 type RenderNode = NodeObject<GraphNode>;
@@ -75,6 +79,7 @@ const REL_COLORS: Record<string, string> = {
 
 const NODE_TYPE_COLORS: Record<GraphNodeType, string> = {
   concept: "#5e8aaa",
+  entity: "#4f7a74",
   document: "#c96442",
   claim: "#7a8c5c",
   assumption: "#8a6a3d",
@@ -192,6 +197,9 @@ export default function GraphPage() {
           source_quote: e.source_quote,
           target_quote: e.target_quote,
           review_revision: e.review_revision,
+          assertion_id: e.assertion_id,
+          assertion_scope: e.assertion_scope,
+          asserting_document_title: e.asserting_document_title,
         }));
 
         setNodes(gNodes);
@@ -862,7 +870,8 @@ export default function GraphPage() {
                     {l.mental_link_id && <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9 }}>
                       Learner-reviewed exact concept overlap; human note does not establish another relation.
                     </span>}
-                    {l.created_via !== "deterministic_chat" && !l.mental_link_id && (
+                    {l.assertion_id && <AssertionProvenance link={l} />}
+                    {l.created_via !== "deterministic_chat" && !l.mental_link_id && !l.assertion_id && (
                       <span style={{ color: "var(--ink-4)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         PDF-derived knowledge · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>

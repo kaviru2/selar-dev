@@ -173,7 +173,7 @@ export interface GraphData {
   edges: GraphEdge[];
 }
 
-export type GraphNodeType = "concept" | "document" | "claim" | "assumption" | "question";
+export type GraphNodeType = "concept" | "document" | "claim" | "assumption" | "question" | "entity";
 
 export interface GraphNode {
   id: string;
@@ -206,6 +206,10 @@ export interface GraphEdge {
   source_quote?: string;
   target_quote?: string;
   review_revision?: number;
+  /** Research assertion provenance (issue #9). */
+  assertion_id?: string;
+  assertion_scope?: "own_work" | "reported_about_other";
+  asserting_document_title?: string;
 }
 
 // --- Runtime mental-model types ---

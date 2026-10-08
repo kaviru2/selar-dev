@@ -187,6 +187,11 @@ func main() {
 		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)
 		r.Get("/learner-state", h.ListLearnerConceptState)
 
+		// Provenance-aware research assertions (issue #9): proposed, then owner-reviewed.
+		r.Get("/research-assertions", h.ListResearchAssertions)
+		r.Post("/research-assertions", h.ProposeResearchAssertion)
+		r.Post("/research-assertions/{id}/respond", h.RespondToResearchAssertion)
+
 		// Grounded Chat
 		r.Get("/chat/threads", h.ListChatThreads)
 		r.Post("/chat/threads", h.CreateChatThread)
