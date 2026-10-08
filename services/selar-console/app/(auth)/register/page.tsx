@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { AuthError, AuthField, AuthShell } from "@/components/auth/AuthShell";
+import { CONSENT_WORDING } from "@/lib/consent";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -16,6 +17,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  // Optional and unticked by default; the account works the same either way.
+  const [researchConsent, setResearchConsent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -39,7 +42,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, research_consent: researchConsent }),
       });
 
       const data = await res.json();
@@ -109,6 +112,12 @@ export default function RegisterPage() {
           required
           minLength={8}
         />
+        <label className="auth-consent">
+          <input type="checkbox" checked={researchConsent} onChange={(e) => setResearchConsent(e.target.checked)} />
+          <span>
+            {CONSENT_WORDING}. <span className="auth-consent-sub">Optional. You can change this or delete the data later in Settings → Privacy &amp; data.</span>
+          </span>
+        </label>
         <button type="submit" disabled={loading} className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block">
           {loading ? "Creating account…" : "Create account"}
           {!loading && <Icon name="arrow_right" size={14} />}

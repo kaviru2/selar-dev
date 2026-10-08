@@ -4,6 +4,7 @@
 // decision is a revision-bound call to /api/mental-model-links/{id}/respond.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { track } from "@/lib/analytics";
 import { Icon } from "@/components/ui/Icon";
 import {
   clientFetch,
@@ -238,6 +239,20 @@ function GuidedReview({ docId, link, position, total, onDecide, onLater }: {
     moved.current = true;
   }, [step]);
 
+  // First-party usage analytics (no-op without consent; lengths only, never text).
+  useEffect(() => {
+    track("suggestion_shown", { kind: "mental_link", link_id: link.id, position });
+  }, [link.id, position]);
+  const openExplain = () => {
+    track("suggestion_opened", { kind: "mental_link", link_id: link.id });
+    setStep("explain");
+  };
+  const openCompare = () => {
+    track("explain_submitted", { link_id: link.id, length: explanation.trim().length, recall_length: recall.trim().length, recall_on: recallOn });
+    track("compare_viewed", { kind: "mental_link", link_id: link.id });
+    setStep("compare");
+  };
+
   const reviewable = isReviewable(preview);
   const act = async (action: ReviewAction, extra: Record<string, unknown> = {}) => {
     if (!reviewable || busy) return;
@@ -270,7 +285,7 @@ function GuidedReview({ docId, link, position, total, onDecide, onLater }: {
           <p className="cx-note">This is a suggestion, not a fact. The two readings may only share a topic. You decide whether the link is real.</p>
           {previewError && <p role="alert" className="cx-error">The source passages could not be loaded ({previewError}). This link cannot be reviewed right now.</p>}
           {preview && !reviewable && <p role="alert" className="cx-error">Two exact source passages and their locations are unavailable, so this link cannot be reviewed.</p>}
-          <button type="button" className="cx-btn cx-pri" disabled={!reviewable} onClick={() => setStep("explain")}>Think about this link →</button>
+          <button type="button" className="cx-btn cx-pri" disabled={!reviewable} onClick={openExplain}>Think about this link →</button>
           <button type="button" className="cx-btn cx-ghost" onClick={onLater}>Skip for now</button>
         </>
       )}
@@ -302,7 +317,7 @@ function GuidedReview({ docId, link, position, total, onDecide, onLater }: {
             />
           )}
           <p className="cx-note">Your writing is just for you. It is not graded, not saved and not sent anywhere.</p>
-          <button type="button" className="cx-btn cx-pri" onClick={() => setStep("compare")}>Show me the passages →</button>
+          <button type="button" className="cx-btn cx-pri" onClick={openCompare}>Show me the passages →</button>
           <button type="button" className="cx-btn cx-ghost" onClick={() => setStep("notice")}>← Back</button>
         </>
       )}

@@ -99,4 +99,9 @@ export interface SessionUser {
   drive_connected: boolean;
   preferences: Record<string, unknown>;
   created_at: string;
+  /** "admin" unlocks /admin; the API re-checks it on every admin request. */
+  role?: "user" | "admin";
+  consented_at?: string | null;
+  consent_version?: string | null;
+  consent_decided_at?: string | null;
 }

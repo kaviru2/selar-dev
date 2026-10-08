@@ -8,6 +8,7 @@
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
+import { useAnalyticsConsent } from "@/components/AnalyticsProvider";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Button } from "@/components/ui/Button";
 import { useSelar, type Theme } from "@/lib/context";
@@ -103,6 +104,8 @@ export default function SettingsPage() {
   const showOnOpen = suggestionsOnOpen(preferences);
 
   // Privacy
+  const analyticsConsent = useAnalyticsConsent();
+  const [analyticsMsg, setAnalyticsMsg] = useState<Msg>(null);
   const [consentedAt, setConsentedAt] = useState<string | null>(user?.consented_at ?? null);
   const [consentMsg, setConsentMsg] = useState<Msg>(null);
   const [deletePw, setDeletePw] = useState("");
@@ -186,6 +189,8 @@ export default function SettingsPage() {
     try {
       const u = await setResearchConsent(granted);
       setConsentedAt(u.consented_at);
+      // Keep the shared analytics client in step (no reload needed).
+      analyticsConsent.sync(Boolean(u.consented_at));
       setConsentMsg({ ok: true, text: granted ? "Thank you. Usage analytics are on." : "Usage analytics are off." });
     } catch (err) {
       setConsentMsg(fail(err));
@@ -342,6 +347,31 @@ export default function SettingsPage() {
                 {consentedAt ? "Turn off" : "Turn on"}
               </Button>
               <Status msg={consentMsg} />
+            </div>
+          </Row>
+          <Row k="Delete my usage analytics" sub="Removes every usage event recorded for your account. Your account and documents stay.">
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <Button
+                size="sm"
+                disabled={busy === "analytics"}
+                onClick={async () => {
+                  if (!window.confirm("Delete all usage analytics recorded for your account? This cannot be undone.")) return;
+                  setBusy("analytics");
+                  try {
+                    const res = await fetch("/api/users/me/analytics", { method: "DELETE" });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(body.error || "Could not delete");
+                    setAnalyticsMsg({ ok: true, text: `Deleted ${body.deleted_events ?? 0} recorded events.` });
+                  } catch (err) {
+                    setAnalyticsMsg(fail(err));
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                Delete analytics data
+              </Button>
+              <Status msg={analyticsMsg} />
             </div>
           </Row>
           <Row k="Export my data" sub="A zip of JSON files: your documents' details, highlights, link decisions, quiz attempts and activity. Uploaded PDFs are not included.">

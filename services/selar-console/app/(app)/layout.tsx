@@ -3,6 +3,7 @@
 // in SelarProvider for global state, and renders the Topbar.
 
 import { Topbar } from "@/components/Topbar";
+import { AnalyticsProvider, ConsentBanner } from "@/components/AnalyticsProvider";
 import { SelarProvider } from "@/lib/context";
 import { redirect } from "next/navigation";
 import { getSessionStatus } from "@/lib/auth";
@@ -23,10 +24,13 @@ export default async function AppLayout({
 
   return (
     <SelarProvider initialUser={user}>
-      <div className="selar-app">
-        <Topbar />
-        {children}
-      </div>
+      <AnalyticsProvider user={user}>
+        <div className="selar-app">
+          <Topbar />
+          <ConsentBanner />
+          {children}
+        </div>
+      </AnalyticsProvider>
     </SelarProvider>
   );
 }

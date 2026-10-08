@@ -30,6 +30,7 @@ interface SelarUser {
   cohort: Cohort;
   drive_connected: boolean;
   preferences: Record<string, unknown>;
+  role?: "user" | "admin";
   consented_at?: string | null;
   consent_decided_at?: string | null;
 }
