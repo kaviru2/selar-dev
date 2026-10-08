@@ -1026,6 +1026,11 @@ body {
   pointer-events: auto;
 }
 
+.user-mark[data-color="green"] { background: rgba(120, 190, 110, 0.36); }
+.user-mark[data-color="blue"] { background: rgba(110, 160, 230, 0.34); }
+.user-mark[data-color="pink"] { background: rgba(235, 130, 170, 0.34); }
+.user-mark[data-color="purple"] { background: rgba(165, 125, 220, 0.34); }
+
 .user-mark.note {
   background: rgba(122, 140, 92, 0.32);
   border-bottom: 2px solid rgba(93, 111, 66, 0.9);

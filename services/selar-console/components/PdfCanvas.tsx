@@ -34,6 +34,8 @@ interface SuggestionMenu {
 interface PdfCanvasProps {
   docId: string;
   zoom: number;
+  /** Colour for new highlights (Settings › Reader › Highlight colour). */
+  highlightColor?: string;
   pageNumber: number;
   annotationsOn: boolean;
   suggestionsOn: boolean;
@@ -71,6 +73,7 @@ function parseBBoxes(value: Annotation["bbox"] | LinkSuggestion["src_bboxes"]): 
 export default function PdfCanvas({
   docId,
   zoom,
+  highlightColor = "yellow",
   pageNumber,
   annotationsOn,
   suggestionsOn,
@@ -145,7 +148,7 @@ export default function PdfCanvas({
   function createSelection(type: "highlight" | "note") {
     if (!selectionMenu || !onCreateAnnotation) return;
     if (type === "highlight") {
-      onCreateAnnotation(type, selectionMenu.bboxes, "yellow", pageNumber);
+      onCreateAnnotation(type, selectionMenu.bboxes, highlightColor, pageNumber);
     } else {
       const comment = window.prompt("Add a note about this passage:");
       if (comment?.trim()) {
@@ -203,6 +206,7 @@ export default function PdfCanvas({
                   <div
                     key={`annotation-${annotation.id}-${index}`}
                     className={`pdf-mark user-mark ${annotation.type}`}
+                    data-color={annotation.color}
                     style={{
                       left: `${bbox.x * 100}%`,
                       top: `${bbox.y * 100}%`,

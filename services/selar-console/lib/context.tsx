@@ -1,6 +1,8 @@
 // lib/context.tsx — SELAR app-wide React context provider.
-// Provides user state (id, email, cohort), theme, density, and active
-// document tracking to all client components via useSelar() hook.
+// Provides user state (id, email, cohort, preferences), paper theme and
+// active document tracking to all client components via useSelar() hook.
+// Preference changes are saved with PATCH /api/users/me/settings, which
+// validates and merges server-side (lib/settings.ts).
 //
 // Colour scheme (light/dark/system) lives in lib/theme.tsx (useTheme()).
 // `theme`/`setTheme` here are kept for the existing Settings page: "dark"
@@ -14,30 +16,33 @@ import {
   useState,
   useCallback,
   useEffect,
-  useRef,
   type ReactNode,
 } from "react";
 import { useTheme, useThemeAccountSync, type ThemePreference } from "./theme";
 
 export type Theme = "paper" | "warm" | "sage" | "dark";
-export type Density = "compact" | "balanced" | "spacious";
 export type Cohort = "control" | "treatment_auto" | "treatment_hitl";
 
 interface SelarUser {
   id: string;
   email: string;
+  display_name?: string;
   cohort: Cohort;
   drive_connected: boolean;
   preferences: Record<string, unknown>;
+  consented_at?: string | null;
+  consent_decided_at?: string | null;
 }
 
 interface SelarState {
   user: SelarUser | null;
   theme: Theme;
-  density: Density;
   activeDocId: string | null;
   setTheme: (t: Theme) => void;
-  setDensity: (d: Density) => void;
+  /** Effective preferences, updated after each successful save. */
+  preferences: Record<string, unknown>;
+  /** Apply values returned by the settings API (e.g. from the Settings page). */
+  applyPreferences: (values: Record<string, unknown>) => void;
   setActiveDocId: (id: string | null) => void;
 }
 
@@ -50,16 +55,17 @@ interface ProviderProps {
 
 export function SelarProvider({ children, initialUser }: ProviderProps) {
   const prefs = initialUser?.preferences ?? {};
-  // The API replaces the whole preferences object on PATCH, so always send
-  // the merged object to avoid wiping other keys.
-  const prefsRef = useRef<Record<string, unknown>>(prefs);
+  const [preferences, setPreferences] = useState<Record<string, unknown>>(prefs);
+  const applyPreferences = useCallback((values: Record<string, unknown>) => {
+    setPreferences((current) => ({ ...current, ...values }));
+  }, []);
   const savePrefs = useCallback(async (patch: Record<string, unknown>) => {
-    prefsRef.current = { ...prefsRef.current, ...patch };
+    setPreferences((current) => ({ ...current, ...patch }));
     try {
-      await fetch("/api/auth/preferences", {
+      await fetch("/api/users/me/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(prefsRef.current),
+        body: JSON.stringify(patch),
       });
     } catch {
       // silent fail — the change is already applied locally
@@ -79,9 +85,6 @@ export function SelarProvider({ children, initialUser }: ProviderProps) {
     [savePrefs]
   );
   useThemeAccountSync(accountScheme, saveScheme);
-  const [density, setDensityState] = useState<Density>(
-    (prefs.density as Density) || "compact"
-  );
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,23 +107,15 @@ export function SelarProvider({ children, initialUser }: ProviderProps) {
     [setPreference, savePrefs]
   );
 
-  const setDensity = useCallback(
-    async (d: Density) => {
-      setDensityState(d);
-      await savePrefs({ density: d });
-    },
-    [savePrefs]
-  );
-
   return (
     <SelarContext.Provider
       value={{
         user: initialUser,
         theme,
-        density,
         activeDocId,
         setTheme,
-        setDensity,
+        preferences,
+        applyPreferences,
         setActiveDocId,
       }}
     >

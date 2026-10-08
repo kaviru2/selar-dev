@@ -150,8 +150,11 @@ describe("account persistence via SelarProvider", () => {
 
     await act(async () => radio("Light").click());
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // The settings route merges server-side, so only the change is sent.
+    expect(fetchSpy.mock.calls[0][0]).toBe("/api/users/me/settings");
+    expect(fetchSpy.mock.calls[0][1]?.method).toBe("PATCH");
     const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
-    expect(body).toEqual({ colorScheme: "light", density: "spacious" });
+    expect(body).toEqual({ colorScheme: "light" });
   });
 
   it("migrates the old theme: 'dark' preference", async () => {
