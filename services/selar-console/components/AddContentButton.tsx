@@ -4,6 +4,7 @@ import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
+import { uploadPDF } from "@/lib/upload";
 
 type AddMode = "web" | "text" | "pdf";
 type UploadProgress = { completed: number; total: number } | null;
@@ -91,11 +92,11 @@ export function AddContentButton() {
         for (let index = 0; index < selectedFiles.length; index += 1) {
           const file = selectedFiles[index];
           setUploadProgress({ completed: index, total: selectedFiles.length });
-          const upload = new FormData();
-          upload.append("file", file);
-          const response = await fetch("/api/documents/upload", { method: "POST", body: upload });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(`${file.name}: ${payload.error || "Unable to upload PDF"}`);
+          try {
+            await uploadPDF(file);
+          } catch (cause) {
+            throw new Error(`${file.name}: ${cause instanceof Error ? cause.message : "Unable to upload PDF"}`);
+          }
           uploadedPDFs = index + 1;
         }
         setUploadProgress({ completed: selectedFiles.length, total: selectedFiles.length });

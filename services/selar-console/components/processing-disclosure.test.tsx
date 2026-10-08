@@ -80,4 +80,30 @@ describe("processing disclosure in real entry points", () => {
     expect(container.querySelector('[role="status"]')).toBeTruthy();
     expect(input.value).toBe("");
   });
+  it("uploads large PDFs from the add-content dialog straight to storage, then registers them", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method || "GET"} ${url}`);
+      if (url === "/api/documents/upload-url") {
+        return new Response(JSON.stringify({ mode: "direct", upload_id: "u-1", upload: { method: "PUT", url: "https://bucket.example/users/u/uploads/u-1.pdf?sig=1", headers: { "Content-Type": "application/pdf" } } }), { status: 200 });
+      }
+      if (url.startsWith("https://bucket.example/")) return new Response(null, { status: 200 });
+      return new Response(JSON.stringify({ document: { id: "d" } }), { status: 202 });
+    }));
+    await render(<AddContentButton />);
+    await act(async () => { (container.querySelector("button.btn.primary") as HTMLButtonElement).click(); });
+    await act(async () => { (Array.from(container.querySelectorAll('[role="tab"]')).find((tab) => tab.textContent?.includes("Upload PDF")) as HTMLButtonElement).click(); });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const large = new File([new Uint8Array(6 * 1024 * 1024)], "large-synthetic.pdf", { type: "application/pdf" });
+    Object.defineProperty(input, "files", { configurable: true, value: [large] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await act(async () => { (container.querySelector("dialog form") as HTMLFormElement).requestSubmit(); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(calls).toEqual([
+      "POST /api/documents/upload-url",
+      "PUT https://bucket.example/users/u/uploads/u-1.pdf?sig=1",
+      "POST /api/documents/upload-complete",
+    ]);
+    expect(calls.some((call) => call.includes("/api/documents/upload "))).toBe(false);
+  });
 });

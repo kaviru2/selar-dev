@@ -24,6 +24,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/dbconfig"
 	"github.com/selar-dev/selar-api/internal/handler"
 	"github.com/selar-dev/selar-api/internal/middleware"
+	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
 )
 
@@ -75,6 +76,12 @@ func main() {
 	// Store & handlers
 	st := store.New(pool)
 	h := handler.New(st)
+	uploads, err := storage.FromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("invalid storage configuration: %v", err)
+	}
+	h.SetStorage(uploads)
+	log.Printf("upload storage backend: %s", uploads.Backend())
 	auth := middleware.NewAuth(jwtSecret)
 	h.SetAuth(auth)
 
@@ -111,6 +118,8 @@ func main() {
 		r.Post("/documents", h.CreateDocument)
 		r.Post("/documents/add", h.AddContent)
 		r.Post("/documents/upload", h.UploadDocument)
+		r.Post("/documents/upload-url", h.CreateUploadURL)
+		r.Post("/documents/upload-complete", h.CompleteUpload)
 		r.Get("/documents/stats", h.GetDocumentStats)
 		r.Get("/documents/{id}", h.GetDocument)
 		r.Get("/documents/{id}/content", h.GetDocumentContent)

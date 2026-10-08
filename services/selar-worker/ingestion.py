@@ -23,6 +23,8 @@ import trafilatura
 from bs4 import BeautifulSoup
 from PIL import Image
 
+from storage import asset_prefix, get_storage
+
 MAX_SOURCE_BYTES = int(os.getenv("MAX_SOURCE_BYTES", str(10 << 20)))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(5 << 20)))
 MAX_REDIRECTS = 5
@@ -238,7 +240,8 @@ def chunks_from_blocks(blocks: list[dict[str, Any]], word_limit: int) -> list[di
     return chunks
 
 
-def _save_image(data: bytes, asset_dir: Path, suggested_ext: str = "png") -> tuple[str, str, int, int, str] | None:
+def _save_image(data: bytes, doc_id: str, suggested_ext: str = "png") -> tuple[str, str, int, int, str] | None:
+    """Validate an image and store it under <doc_id>/assets/ in upload storage."""
     try:
         image = Image.open(BytesIO(data))
         image.load()
@@ -251,11 +254,9 @@ def _save_image(data: bytes, asset_dir: Path, suggested_ext: str = "png") -> tup
         if image_format not in {"png", "jpeg", "webp", "gif"}:
             image_format = "png"
         digest = hashlib.sha256(data).hexdigest()
-        asset_dir.mkdir(parents=True, exist_ok=True)
-        path = asset_dir / f"{digest}.{image_format}"
-        if not path.exists():
-            path.write_bytes(data)
-        return str(path), f"image/{image_format}", width, height, digest
+        locator = get_storage().put_bytes(
+            f"{asset_prefix(doc_id)}{digest}.{image_format}", data, f"image/{image_format}")
+        return locator, f"image/{image_format}", width, height, digest
     except Exception:
         return None
 
@@ -296,7 +297,6 @@ async def extract_web(url: str, doc_id: str, word_limit: int) -> NormalizedSourc
     date = str(getattr(metadata, "date", "") or "")
     year_match = re.match(r"(19|20)\d{2}", date)
     blocks = markdown_blocks(markdown)
-    asset_dir = Path("/tmp/selar_uploads") / doc_id / "assets"
     assets: list[dict[str, Any]] = []
     soup = BeautifulSoup(html, "html.parser")
     seen_urls: set[str] = set()
@@ -331,7 +331,7 @@ async def extract_web(url: str, doc_id: str, word_limit: int) -> NormalizedSourc
             )
         except Exception:
             continue
-        saved = _save_image(image_bytes, asset_dir, image_mime.split("/")[-1])
+        saved = _save_image(image_bytes, doc_id, image_mime.split("/")[-1])
         if not saved:
             continue
         storage_path, stored_mime, width, height, digest = saved
@@ -419,7 +419,6 @@ def extract_pdf(file_path: str, doc_id: str, word_limit: int, merge_bboxes, titl
                 chunks.append({"text": text, "page": page_num, "bboxes": bboxes, "locator": locator, "modality": "text"})
 
     assets: list[dict[str, Any]] = []
-    asset_dir = Path("/tmp/selar_uploads") / doc_id / "assets"
     pdf_doc = fitz.open(file_path)
     seen_xrefs: set[int] = set()
     rendered_pages = 0
@@ -432,7 +431,7 @@ def extract_pdf(file_path: str, doc_id: str, word_limit: int, merge_bboxes, titl
             seen_xrefs.add(xref)
             try:
                 extracted = pdf_doc.extract_image(xref)
-                saved = _save_image(extracted["image"], asset_dir, extracted.get("ext", "png"))
+                saved = _save_image(extracted["image"], doc_id, extracted.get("ext", "png"))
             except Exception:
                 saved = None
             if not saved:
@@ -452,7 +451,7 @@ def extract_pdf(file_path: str, doc_id: str, word_limit: int, merge_bboxes, titl
             })
         if rendered_pages < MAX_PDF_PAGE_RENDERS and page.get_drawings():
             pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-            saved = _save_image(pixmap.tobytes("png"), asset_dir, "png")
+            saved = _save_image(pixmap.tobytes("png"), doc_id, "png")
             if saved:
                 storage_path, stored_mime, width, height, digest = saved
                 if not any(asset["content_hash"] == digest for asset in assets):
@@ -479,6 +478,12 @@ def extract_pdf(file_path: str, doc_id: str, word_limit: int, merge_bboxes, titl
     )
 
 
+def _extract_stored_pdf(locator: str, doc_id: str, word_limit: int, merge_bboxes, title: str) -> NormalizedSource:
+    """Materialise the stored PDF as a local file (a temp download for S3)."""
+    with get_storage().local_copy(locator) as path:
+        return extract_pdf(path, doc_id, word_limit, merge_bboxes, title or os.path.basename(locator))
+
+
 async def extract_source(
     *, source_type: str, doc_id: str, word_limit: int, merge_bboxes,
     file_path: str = "", source_url: str = "", raw_text: str = "", title: str = "",
@@ -488,7 +493,7 @@ async def extract_source(
     if source_type == "text":
         return extract_text(raw_text, title, word_limit)
     if source_type == "pdf":
-        if not file_path or not os.path.exists(file_path):
-            raise FileNotFoundError(f"file {file_path} not found")
-        return await asyncio.to_thread(extract_pdf, file_path, doc_id, word_limit, merge_bboxes, title)
+        if not file_path:
+            raise FileNotFoundError("PDF job has no stored file")
+        return await asyncio.to_thread(_extract_stored_pdf, file_path, doc_id, word_limit, merge_bboxes, title)
     raise ValueError(f"unsupported source type: {source_type}")

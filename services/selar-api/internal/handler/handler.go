@@ -9,8 +9,6 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,19 +17,29 @@ import (
 	"github.com/google/uuid"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
+	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // Handler holds the store and auth for HTTP handlers.
 type Handler struct {
-	store *store.Store
-	auth  *middleware.Auth
+	store   *store.Store
+	auth    *middleware.Auth
+	storage storage.Store
 }
 
-// New creates a new Handler with the given store.
+// New creates a new Handler with the given store. Upload storage defaults to
+// the local /tmp/selar_uploads directory until SetStorage is called.
 func New(st *store.Store) *Handler {
-	return &Handler{store: st}
+	return &Handler{store: st, storage: &storage.Local{Root: "/tmp/selar_uploads"}}
+}
+
+// SetStorage selects the upload storage backend.
+func (h *Handler) SetStorage(s storage.Store) {
+	if s != nil {
+		h.storage = s
+	}
 }
 
 // SetAuth sets the auth middleware reference for token generation.
@@ -206,15 +214,26 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(id); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid document id"})
+		return
+	}
+	// Only the owner may delete; resolve the stored PDF locator before the
+	// rows (and their ingestion jobs) disappear.
+	if _, err := h.store.GetDocument(r.Context(), id, userID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "document not found"})
+		return
+	}
+	pdfLocator := ""
+	if job, err := h.store.GetLatestIngestionJob(r.Context(), id, userID); err == nil && job.SourceType == "pdf" {
+		pdfLocator = job.FilePath
+	}
 	if err := h.store.DeleteDocument(r.Context(), id, userID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete document"})
 		return
 	}
-
-	// Clean up local temp file storage to save space
-	if _, parseErr := uuid.Parse(id); parseErr == nil {
-		_ = os.Remove(filepath.Join("/tmp/selar_uploads", id+".pdf"))
-		_ = os.RemoveAll(filepath.Join("/tmp/selar_uploads", id))
+	if err := h.storage.DeleteDocument(r.Context(), id, pdfLocator); err != nil {
+		log.Printf("storage cleanup for deleted document %s failed: %v", id, err)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

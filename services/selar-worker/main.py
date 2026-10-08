@@ -4,7 +4,6 @@ import json
 import asyncio
 import contextlib
 import socket
-import shutil
 import unicodedata
 import time
 from collections import Counter
@@ -16,6 +15,7 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from ingestion import extract_source
+from storage import asset_prefix, get_storage
 from candidate_contract import persist_grounded_overlap
 
 # Load root .env.development
@@ -523,8 +523,8 @@ def embed_visual_asset(asset: Dict[str, Any]) -> List[float]:
         asset.get("caption", ""), asset.get("alt_text", ""), asset.get("description", "")
     ]))) or "Source visual evidence"
     parts.append(types.Part.from_text(text=f"title: visual evidence | text: {context}"))
-    with open(asset["storage_path"], "rb") as image_file:
-        parts.append(types.Part.from_bytes(data=image_file.read(), mime_type=asset["mime_type"]))
+    image_bytes = get_storage().read_bytes(asset["storage_path"])
+    parts.append(types.Part.from_bytes(data=image_bytes, mime_type=asset["mime_type"]))
     result = client.models.embed_content(
         model=EMBEDDING_MODEL,
         contents=types.Content(parts=parts),
@@ -597,7 +597,7 @@ async def process_document_task(
                         json.dumps({"source_type": source_type, "content_hash": normalized.content_hash}),
                     )
                 await conn.close()
-                shutil.rmtree(os.path.join("/tmp/selar_uploads", doc_id), ignore_errors=True)
+                await asyncio.to_thread(get_storage().delete_prefix, asset_prefix(doc_id))
                 print(f"Source {source_id} is unchanged; hidden snapshot {doc_id}")
                 return
             await conn.close()

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
 import { useRouter } from "next/navigation";
+import { uploadPDF } from "@/lib/upload";
 
 export function UploadButton() {
   const router = useRouter();
@@ -17,23 +18,14 @@ export function UploadButton() {
     setError("");
     setStatus(`Uploading ${file.name}`);
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
-      const res = await fetch("/api/documents/upload", { method: "POST", body: formData });
-      if (res.ok) {
-        setStatus(`${file.name} uploaded`);
-        router.refresh();
-      } else {
-        const payload = await res.json().catch(() => ({}));
-        setStatus("");
-        setError(payload.error || "Upload failed");
-      }
+      await uploadPDF(file);
+      setStatus(`${file.name} uploaded`);
+      router.refresh();
     } catch (cause) {
       console.error(cause);
       setStatus("");
-      setError("Network error while uploading PDF");
+      setError(cause instanceof TypeError ? "Network error while uploading PDF" : cause instanceof Error ? cause.message : "Upload failed");
     } finally {
       e.target.value = "";
       setUploading(false);
