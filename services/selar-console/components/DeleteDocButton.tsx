@@ -30,17 +30,15 @@ export function DeleteDocButton({ docId }: { docId: string }) {
 
   return (
     <button
+      type="button"
+      className="lib-delete"
+      data-confirming={confirming}
       onClick={handleDelete}
-      title={confirming ? "Click again to confirm deletion" : "Delete document"}
-      style={{
-        width: 22, height: 22, borderRadius: 3, border: "none",
-        background: confirming ? "rgba(192,68,58,0.08)" : "transparent",
-        color: confirming ? "#c0443a" : "var(--ink-4)",
-        cursor: "pointer", display: "grid", placeItems: "center",
-        transition: "all 0.15s",
-      }}
+      aria-label={confirming ? "Confirm: delete this reading" : "Delete reading"}
+      title={confirming ? "Click again to confirm" : "Delete reading"}
     >
-      <Icon name="x" size={confirming ? 13 : 11} />
+      <Icon name="trash" size={15} />
+      {confirming && <span>Delete?</span>}
     </button>
   );
 }

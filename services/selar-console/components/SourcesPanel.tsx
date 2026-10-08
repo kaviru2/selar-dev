@@ -61,12 +61,12 @@ export function SourcesPanel() {
   return (
     <section className="sources-panel">
       <div className="sources-head">
-        <div><h2>Managed sources</h2><p>Origins, refresh state, and ingestion provenance.</p></div>
+        <div><h2>Where your readings came from</h2><p>Each source, when it was last fetched, and whether processing worked.</p></div>
         <button className="btn" onClick={copyBookmarklet}>{bookmarkletCopied ? "Copied" : "Copy Save bookmarklet"}</button>
-        <span className="mono">{sources.length}</span>
+        <span className="sources-count" aria-label={`${sources.length} sources`}>{sources.length}</span>
       </div>
       {error && <div className="form-error">{error}</div>}
-      {sources.length === 0 ? <div className="sources-empty">Sources appear here after you add an article, text, or PDF.</div> : (
+      {sources.length === 0 ? <div className="sources-empty">Sources show up here once you add an article, some notes, or a PDF.</div> : (
         <div className="source-list">
           {sources.map((source) => (
             <div className="source-row" key={source.id}>
