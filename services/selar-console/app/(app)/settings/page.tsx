@@ -382,7 +382,7 @@ export default function SettingsPage() {
               Download export
             </a>
           </Row>
-          <Row k="Delete my account" sub="Permanently deletes your account, documents, files and all activity. This cannot be undone.">
+          <Row k="Delete my account" sub="Permanently deletes your account, documents, files and all activity. An anonymous record that a participant withdrew (study group and dates only) is kept. This cannot be undone.">
             <form onSubmit={onDelete} style={form}>
               <input aria-label="Current password (to delete account)" type="password" required autoComplete="current-password" placeholder="Current password" style={input} value={deletePw} onChange={(e) => setDeletePw(e.target.value)} />
               <input aria-label={`Type ${DELETE_ACCOUNT_CONFIRMATION} to confirm`} placeholder={`Type “${DELETE_ACCOUNT_CONFIRMATION}”`} style={input} value={deleteText} onChange={(e) => setDeleteText(e.target.value)} />
