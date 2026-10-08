@@ -62,6 +62,35 @@ export async function getSession(): Promise<SessionUser | null> {
   }
 }
 
+export type SessionStatus =
+  | { status: "anonymous" }
+  | { status: "authenticated"; user: SessionUser }
+  /** The Go API rejected the token (401): the cookie must be cleared. */
+  | { status: "invalid" }
+  /** The API could not be reached or errored: keep the cookie. */
+  | { status: "unavailable" };
+
+/**
+ * Like getSession(), but distinguishes a rejected token from an API outage,
+ * so callers only force a logout when the token is actually invalid.
+ */
+export async function getSessionStatus(): Promise<SessionStatus> {
+  const token = await getAuthToken();
+  if (!token) return { status: "anonymous" };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (res.status === 401) return { status: "invalid" };
+    if (!res.ok) return { status: "unavailable" };
+    return { status: "authenticated", user: (await res.json()) as SessionUser };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
 /** The user shape returned by getSession(). */
 export interface SessionUser {
   id: string;
