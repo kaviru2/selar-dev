@@ -212,6 +212,7 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
             assert reader.locator(".article-byline a").get_attribute("href") == ARTICLE_URL
             assert reader.locator("figure figcaption").inner_text() == "Invented orchard diagram"
             assert reader.locator("figure img").count() == 1
-            assert "Invented comparison notebook" in page.locator(".mental-link-card").inner_text()
+            panel = page.get_by_role("complementary", name="Connections")
+            panel.get_by_text("Invented comparison notebook").first.wait_for(timeout=20000)
             browser.close()
         assert requests == ["/robots.txt", "/fictional-garden", "/orchard.png"]
