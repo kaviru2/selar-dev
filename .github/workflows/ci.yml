@@ -105,8 +105,8 @@ jobs:
           DATABASE_URL="$TEST_DATABASE_URL" go run ./cmd/migrate -status 2>&1 | grep -q ", 0 pending"
         working-directory: services/selar-api
 
-      - name: Test migration runner and compiled API boot against Postgres
-        run: go test ./internal/migrate ./cmd/server -v -count=1
+      - name: Test migration runner, compiled API boot and direct uploads against Postgres
+        run: go test ./internal/migrate ./cmd/server ./internal/handler -v -count=1
         working-directory: services/selar-api
 
       - name: Test real Go graph and review store against Postgres

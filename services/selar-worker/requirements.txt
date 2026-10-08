@@ -10,3 +10,4 @@ google-genai
 python-dotenv
 asyncpg
 pydantic
+boto3

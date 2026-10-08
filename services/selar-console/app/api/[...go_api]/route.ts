@@ -69,6 +69,9 @@ async function handleProxyRequest(
       method: request.method,
       headers,
       cache: "no-store",
+      // Object-storage downloads come back as 302s to short-lived signed
+      // URLs; hand them to the browser instead of proxying the bytes.
+      redirect: "manual",
     };
 
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -78,6 +81,15 @@ async function handleProxyRequest(
     }
 
     const res = await fetch(targetUrl, init);
+    if (res.status >= 300 && res.status < 400 && res.headers.get("Location")) {
+      return new NextResponse(null, {
+        status: res.status,
+        headers: {
+          Location: res.headers.get("Location") as string,
+          "Cache-Control": res.headers.get("Cache-Control") || "private, no-store",
+        },
+      });
+    }
     const contentType = res.headers.get("Content-Type") || "";
 
     // If it's a JSON response, we can safely read text, but for streaming/binaries

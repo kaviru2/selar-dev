@@ -250,7 +250,5 @@ func (h *Handler) ServeAsset(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", asset.MimeType)
-	w.Header().Set("Cache-Control", "private, max-age=86400")
-	http.ServeFile(w, r, asset.StoragePath)
+	h.serveObject(w, r, asset.StoragePath, asset.MimeType, "private, max-age=86400")
 }
