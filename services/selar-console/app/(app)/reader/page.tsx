@@ -168,7 +168,7 @@ export default function ReaderPage() {
     setAnnotations((current) => [...current, annotation]);
   }
 
-  async function respondToPassage(id: string, action: "confirmed" | "rejected"): Promise<boolean> {
+  async function respondToPassage(id: string, action: "rejected"): Promise<boolean> {
     const previous = suggestions;
     setSuggestionActionError("");
     setSuggestions((current) => current.map((item) => item.id === id ? { ...item, status: action } : item));

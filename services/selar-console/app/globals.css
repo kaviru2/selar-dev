@@ -1082,6 +1082,7 @@ body {
 .suggestion-popover-head button { margin-left: auto; border: 0; background: transparent; color: var(--ink-4); cursor: pointer; font-size: 16px; }
 .suggestion-popover h3 { margin: 7px 0 5px; font-size: 13px; }
 .suggestion-popover p { max-height: 72px; overflow: hidden; margin: 0 0 9px; color: var(--ink-3); font-size: 10px; line-height: 1.45; }
+.suggestion-popover p.suggestion-popover-note { max-height: none; color: var(--ink-4); font-style: italic; }
 .suggestion-popover-actions { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .suggestion-popover-actions button { padding: 5px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--ink-2); cursor: pointer; font-size: 9px; }
 .suggestion-popover-actions button:disabled { cursor: default; opacity: .45; }
