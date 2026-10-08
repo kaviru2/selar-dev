@@ -21,10 +21,12 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/cors"
+	"github.com/selar-dev/selar-api/internal/allowlist"
 	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/dbconfig"
 	"github.com/selar-dev/selar-api/internal/googleauth"
 	"github.com/selar-dev/selar-api/internal/handler"
+	"github.com/selar-dev/selar-api/internal/linktoken"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/recaptcha"
 	"github.com/selar-dev/selar-api/internal/storage"
@@ -107,6 +109,16 @@ func main() {
 		h.SetGoogle(google)
 	}
 	log.Printf("google sign-in enabled: %t", h.GoogleEnabled())
+	// Optional quiz-window calendar feed (#113): off unless CALENDAR_FEED_ENABLED=true
+	// AND the account is in CALENDAR_FEED_ALLOWLIST.
+	calendarGate := allowlist.FromEnv(os.Getenv("CALENDAR_FEED_ENABLED"), os.Getenv("CALENDAR_FEED_ALLOWLIST"))
+	h.SetCalendarConfig(handler.CalendarConfig{
+		Gate:         calendarGate,
+		Signer:       linktoken.New(linkTokenSecret(jwtSecret)),
+		PublicAPIURL: os.Getenv("PUBLIC_API_URL"),
+		ConsoleURL:   getEnv("PUBLIC_CONSOLE_URL", firstOrigin(corsOrigins)),
+	})
+	log.Printf("calendar feed: %s", calendarGate.Describe())
 
 	// Router
 	r := chi.NewRouter()
@@ -128,6 +140,8 @@ func main() {
 	r.Post("/auth/register", h.Register)
 	r.Post("/auth/login", h.Login)
 	r.Post("/auth/google", h.GoogleSignIn)
+	// Token-authenticated calendar feed (no session; see handler/calendar.go).
+	r.Get("/calendar/{token}", h.ServeCalendarFeed)
 
 	// Protected API routes
 	r.Route("/api", func(r chi.Router) {
@@ -143,6 +157,7 @@ func main() {
 		r.Post("/users/me/password", h.ChangePassword)
 		r.Get("/users/me/export", h.ExportMyData)
 		r.Post("/users/me/delete", h.DeleteAccount)
+		h.MountCalendarRoutes(r)
 
 		// Documents
 		r.Get("/documents", h.ListDocuments)
@@ -258,6 +273,23 @@ func analyticsEnabled(raw string) bool {
 		return false
 	}
 	return true
+}
+
+// linkTokenSecret is the key for signed links (calendar feeds, unsubscribe).
+// LINK_TOKEN_SECRET lets it rotate independently; by default it is derived
+// from JWT_SECRET (linktoken separates the keys per purpose).
+func linkTokenSecret(jwtSecret string) string {
+	if v := strings.TrimSpace(os.Getenv("LINK_TOKEN_SECRET")); v != "" {
+		return v
+	}
+	return jwtSecret
+}
+
+func firstOrigin(origins []string) string {
+	if len(origins) == 0 {
+		return ""
+	}
+	return origins[0]
 }
 
 func validateRuntimeConfig(appEnv, jwtSecret string) error {
