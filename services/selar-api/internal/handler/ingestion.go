@@ -177,6 +177,7 @@ func (h *Handler) createIngestionSnapshot(r *http.Request, source *model.Content
 		_ = h.store.DeleteDocument(r.Context(), doc.ID, source.UserID)
 		return nil, nil, err
 	}
+	h.notifyWorker(r, job.ID)
 	return doc, run, nil
 }
 
@@ -224,6 +225,7 @@ func (h *Handler) RetryDocumentIngestion(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "document cannot be retried while work is active or no prior ingestion payload exists"})
 		return
 	}
+	h.notifyWorker(r, job.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"run": run, "job": job})
 }
 

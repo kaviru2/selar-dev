@@ -19,6 +19,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/model"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
+	"github.com/selar-dev/selar-api/internal/workertrigger"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,12 +28,13 @@ type Handler struct {
 	store   *store.Store
 	auth    *middleware.Auth
 	storage storage.Store
+	worker  *workertrigger.Client
 }
 
 // New creates a new Handler with the given store. Upload storage defaults to
 // the local /tmp/selar_uploads directory until SetStorage is called.
 func New(st *store.Store) *Handler {
-	return &Handler{store: st, storage: &storage.Local{Root: "/tmp/selar_uploads"}}
+	return &Handler{store: st, storage: &storage.Local{Root: "/tmp/selar_uploads"}, worker: &workertrigger.Client{}}
 }
 
 // SetStorage selects the upload storage backend.
@@ -40,6 +42,20 @@ func (h *Handler) SetStorage(s storage.Store) {
 	if s != nil {
 		h.storage = s
 	}
+}
+
+// SetWorkerTrigger configures the serverless worker notification client.
+func (h *Handler) SetWorkerTrigger(client *workertrigger.Client) {
+	if client != nil {
+		h.worker = client
+	}
+}
+
+// notifyWorker tells a serverless worker a job is ready. It never blocks the
+// request and failures are tolerated: the job is durable and the scheduled
+// sweep claims it.
+func (h *Handler) notifyWorker(r *http.Request, jobID string) {
+	h.worker.NotifyAsync(r.Context(), jobID)
 }
 
 // SetAuth sets the auth middleware reference for token generation.

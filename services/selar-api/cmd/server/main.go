@@ -26,6 +26,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
+	"github.com/selar-dev/selar-api/internal/workertrigger"
 )
 
 const developmentJWTSecret = "dev-secret-change-in-production"
@@ -81,6 +82,9 @@ func main() {
 		log.Fatalf("invalid storage configuration: %v", err)
 	}
 	h.SetStorage(uploads)
+	trigger := workertrigger.FromEnv(os.Getenv)
+	h.SetWorkerTrigger(trigger)
+	log.Printf("worker trigger enabled: %t", trigger.Enabled())
 	log.Printf("upload storage backend: %s", uploads.Backend())
 	auth := middleware.NewAuth(jwtSecret)
 	h.SetAuth(auth)

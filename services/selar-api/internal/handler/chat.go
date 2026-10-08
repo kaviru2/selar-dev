@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
+	"github.com/selar-dev/selar-api/internal/workertrigger"
 )
 
 func (h *Handler) ListChatThreads(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +78,7 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 		history = history[len(history)-8:]
 	}
 
-	answer, err := requestChatAnswer(userID, threadID, request.Content, history)
+	answer, err := requestChatAnswer(h.worker, userID, threadID, request.Content, history)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -91,7 +92,7 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, assistantMessage)
 }
 
-func requestChatAnswer(userID, threadID, question string, history []model.ChatMessage) (*model.ChatAnswer, error) {
+func requestChatAnswer(worker *workertrigger.Client, userID, threadID, question string, history []model.ChatMessage) (*model.ChatAnswer, error) {
 	workerURL := os.Getenv("WORKER_URL")
 	if workerURL == "" {
 		workerURL = "http://localhost:8000"
@@ -107,6 +108,7 @@ func requestChatAnswer(userID, threadID, question string, history []model.ChatMe
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	worker.Authorize(request)
 	client := &http.Client{Timeout: 50 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {
