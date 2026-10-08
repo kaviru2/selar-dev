@@ -25,6 +25,7 @@ import (
 	"github.com/selar-dev/selar-api/internal/dbconfig"
 	"github.com/selar-dev/selar-api/internal/handler"
 	"github.com/selar-dev/selar-api/internal/middleware"
+	"github.com/selar-dev/selar-api/internal/recaptcha"
 	"github.com/selar-dev/selar-api/internal/storage"
 	"github.com/selar-dev/selar-api/internal/store"
 	"github.com/selar-dev/selar-api/internal/workertrigger"
@@ -97,6 +98,8 @@ func main() {
 	// Quiz admin routes share the users.role check (ADMIN_EMAILS entries are
 	// promoted on first use), so /api/admin/quizzes and /api/admin/* agree.
 	h.SetAdminChecker(h.RoleAdminChecker())
+	h.SetCaptcha(recaptcha.FromEnv(os.Getenv))
+	log.Printf("recaptcha on registration enabled: %t", h.CaptchaEnabled())
 
 	// Router
 	r := chi.NewRouter()

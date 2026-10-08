@@ -232,6 +232,37 @@ Do **not** also run the Docker poller against the production database unless you
 
 Session cookies are `httpOnly`, `secure` in production and `SameSite=Lax`. The browser never sees the JWT or any storage credential.
 
+## 6. Sign-up protection (Google reCAPTCHA Enterprise)
+
+Account creation is protected by an invisible, score-based reCAPTCHA Enterprise
+key in GCP project `selar-research-261008` (free tier: 10,000 assessments a
+month; one assessment per sign-up attempt). It is **off** unless the variables
+below are set, so local development, CI and tests never call Google.
+
+| Where | Variable | Value |
+|---|---|---|
+| Console (build time) | `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | the site key (public; key `selar-console-register`, domains `selar-console.vercel.app`, `localhost`) |
+| API | `RECAPTCHA_PROJECT_ID` | `selar-research-261008` |
+| API | `RECAPTCHA_SITE_KEY` | same site key |
+| API | `RECAPTCHA_API_KEY` | API key restricted to `recaptchaenterprise.googleapis.com` (secret) |
+| API (optional) | `RECAPTCHA_MIN_SCORE` | default `0.3` (only very-likely-bot traffic is refused) |
+
+- Only `/register` (and any future Google sign-up page) loads `enterprise.js`. The
+  badge is hidden and Google's required attribution text is shown under the form.
+- The API calls `createAssessment` before creating the user and checks the token is
+  valid, for action `register`, for our site key, and scores at or above the
+  threshold. A missing, invalid or low-score token gets **403** with
+  `code: recaptcha_failed`.
+- **Fail-open is limited to outages**: if Google is unreachable, times out (3 s) or
+  answers 429/5xx, registration continues and the API logs
+  `WARNING recaptcha unavailable…`. A bad API key (400/403) fails closed.
+- Any other account-creating path (e.g. Google sign-up) must call
+  `h.requireHuman(w, r, token, handler.RecaptchaActionRegister)` before creating
+  the user and the console must send `recaptcha_token` the same way.
+- To turn it off in an emergency, remove `RECAPTCHA_API_KEY` from the API and redeploy.
+
+Create or inspect the key: `gcloud recaptcha keys list --project selar-research-261008`.
+
 ## Environment variable reference
 
 | Variable | API | Worker | Console | Default / notes |
@@ -256,6 +287,8 @@ Session cookies are `httpOnly`, `secure` in production and `SameSite=Lax`. The b
 | `GEMINI_MULTIMODAL_EMBEDDING_MODEL`, `GEMINI_EMBEDDING_DIMENSION`, `GEMINI_TEXT_MODEL` | | ✓ | | see `.env.example` |
 | `INGESTION_QUEUE_ENABLED`, `INGESTION_CONCURRENCY`, `INGESTION_POLL_SECONDS` | | local poller | | Modal forces `INGESTION_QUEUE_ENABLED=false` |
 | `INGESTION_LEASE_SECONDS`, `INGESTION_WORKER_ID` | | ✓ | | `300`, hostname-pid |
+| `RECAPTCHA_PROJECT_ID`, `RECAPTCHA_SITE_KEY`, `RECAPTCHA_API_KEY`, `RECAPTCHA_MIN_SCORE` | ✓ | | | unset = no reCAPTCHA check (see §6) |
+| `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | | | ✓ | build time; unset = no script on `/register` |
 
 Generate secrets with `openssl rand -base64 48`. Never commit them; `.env*` files other than `.env.example` are git-ignored.
 

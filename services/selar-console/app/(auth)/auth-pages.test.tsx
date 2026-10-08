@@ -110,6 +110,38 @@ describe("register page", () => {
     expect($<HTMLInputElement>("#password").getAttribute("aria-describedby")).toBe("password-hint");
   });
 
+  it("sends no reCAPTCHA token when the site key is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_RECAPTCHA_SITE_KEY", "");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    await act(async () => root.render(<RegisterPage />));
+    expect($("[data-testid=recaptcha-notice]")).toBeNull();
+    type("#email", "a@b.edu");
+    type("#password", "longenough");
+    type("#confirm", "longenough");
+    await submit();
+    await settle();
+    expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({ email: "a@b.edu", password: "longenough", research_consent: false });
+    vi.unstubAllEnvs();
+  });
+
+  it("attaches a register-action reCAPTCHA token and shows the attribution when enabled", async () => {
+    vi.stubEnv("NEXT_PUBLIC_RECAPTCHA_SITE_KEY", "site-key-1");
+    const execute = vi.fn().mockResolvedValue("tok-xyz");
+    window.grecaptcha = { enterprise: { ready: (cb: () => void) => cb(), execute } };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    await act(async () => root.render(<RegisterPage />));
+    expect($("[data-testid=recaptcha-notice]")?.textContent).toMatch(/protected by reCAPTCHA/);
+    type("#email", "a@b.edu");
+    type("#password", "longenough");
+    type("#confirm", "longenough");
+    await submit();
+    await settle();
+    expect(execute).toHaveBeenCalledWith("site-key-1", { action: "register" });
+    expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({ email: "a@b.edu", password: "longenough", research_consent: false, recaptcha_token: "tok-xyz" });
+    delete window.grecaptcha;
+    vi.unstubAllEnvs();
+  });
+
   it("keeps the research-prototype framing honest", async () => {
     await act(async () => root.render(<RegisterPage />));
     const text = container.textContent || "";

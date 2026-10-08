@@ -69,6 +69,8 @@
 }
 .auth-error svg { flex: 0 0 auto; margin-top: 2px; color: var(--error); }
 
+.auth-recaptcha { margin: 14px 0 0; color: var(--ink-3); font-size: 12.5px; line-height: 1.5; }
+.auth-recaptcha a { color: inherit; text-underline-offset: 2px; }
 .auth-switch { margin: 22px 0 0; text-align: center; color: var(--ink-3); font-size: 14.5px; }
 .auth-switch a { color: var(--accent); font-weight: 700; text-underline-offset: 3px; }
 

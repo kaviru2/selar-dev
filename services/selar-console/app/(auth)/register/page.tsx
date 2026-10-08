@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { AuthError, AuthField, AuthShell } from "@/components/auth/AuthShell";
+import { getRecaptchaToken, RecaptchaNotice, RecaptchaScript } from "@/components/auth/Recaptcha";
 import { CONSENT_WORDING } from "@/lib/consent";
 
 export default function RegisterPage() {
@@ -39,10 +40,11 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
+      const recaptcha_token = await getRecaptchaToken("register");
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, research_consent: researchConsent }),
+        body: JSON.stringify({ email, password, research_consent: researchConsent, ...(recaptcha_token ? { recaptcha_token } : {}) }),
       });
 
       const data = await res.json();
@@ -123,6 +125,8 @@ export default function RegisterPage() {
           {!loading && <Icon name="arrow_right" size={14} />}
         </button>
       </form>
+      <RecaptchaScript />
+      <RecaptchaNotice />
       <p className="auth-switch">
         Already have an account? <Link href="/login">Sign in</Link>
       </p>
