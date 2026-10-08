@@ -1,0 +1,108 @@
+/* auth.css — /login and /register (components/auth/AuthShell.tsx). */
+
+.auth {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+.auth-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px clamp(16px, 4vw, 40px);
+}
+.auth-home { text-decoration: none; color: inherit; border-radius: var(--r-md); }
+
+.auth-main {
+  display: grid;
+  grid-template-columns: minmax(0, 460px) minmax(0, 460px);
+  justify-content: center;
+  max-width: 1080px; width: 100%; margin: 0 auto;
+  align-items: center;
+  gap: clamp(24px, 5vw, 72px);
+  padding: clamp(12px, 3vw, 40px) clamp(16px, 4vw, 40px);
+}
+
+.auth-card {
+  background: var(--bg-raised);
+  border: 1.5px solid var(--rule-2);
+  border-radius: var(--selar-radius-lg);
+  box-shadow: var(--shadow-2);
+  padding: clamp(24px, 4vw, 40px);
+}
+.auth-card h1 {
+  margin: 0 0 6px;
+  font: 600 clamp(28px, 3vw, 34px)/1.15 var(--font-display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+.auth-lede { margin: 0 0 24px; color: var(--ink-3); font-size: 15.5px; line-height: 1.55; }
+
+.auth-form { display: grid; gap: 16px; }
+.auth-form .ui-btn { margin-top: 12px; }
+.auth-field label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.auth-field input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--ink-4);
+  border-radius: var(--selar-radius-md);
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px var(--font-sans);
+  transition: border-color var(--selar-dur) var(--selar-ease), box-shadow var(--selar-dur) var(--selar-ease);
+}
+.auth-field input::placeholder { color: var(--ink-4); }
+.auth-field input:hover { border-color: var(--ink-3); }
+.auth-field input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); border-radius: var(--selar-radius-md); }
+.auth-hint { margin: 6px 0 0; font-size: 13px; color: var(--ink-3); }
+
+.auth-error {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin-bottom: 16px; padding: 12px 14px;
+  border-radius: var(--selar-radius-md);
+  background: color-mix(in srgb, var(--error) 10%, var(--bg-raised));
+  border: 1.5px solid color-mix(in srgb, var(--error) 35%, transparent);
+  color: var(--ink);
+  font-size: 14px; line-height: 1.45;
+}
+.auth-error svg { flex: 0 0 auto; margin-top: 2px; color: var(--error); }
+
+.auth-switch { margin: 22px 0 0; text-align: center; color: var(--ink-3); font-size: 14.5px; }
+.auth-switch a { color: var(--accent); font-weight: 700; text-underline-offset: 3px; }
+
+.auth-aside { padding: 8px 0; }
+.auth-aside-art {
+  position: relative; margin: 0 0 20px -12px; max-width: 440px;
+}
+.auth-aside-art::before {
+  content: ""; position: absolute; inset: 6% 2% 4% 4%; z-index: 0;
+  background: var(--tint-green); border-radius: 42% 58% 54% 46% / 48% 40% 60% 52%;
+}
+.auth-aside-art .ui-illo { position: relative; }
+.auth-aside h2 { margin: 0 0 8px; font: 600 22px/1.2 var(--font-display); letter-spacing: -0.01em; }
+.auth-aside-body p { margin: 0; color: var(--ink-3); font-size: 15px; line-height: 1.6; max-width: 44ch; text-wrap: pretty; }
+.auth-principle { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 8px; }
+.auth-principle li { display: flex; align-items: center; gap: 10px; font-size: 14.5px; font-weight: 600; color: var(--ink-2); }
+.auth-principle li > span {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--tint-green-2); color: var(--accent);
+}
+.auth-principle li:nth-child(1) > span { background: var(--tint-sky); color: var(--text-sky); }
+.auth-principle li:nth-child(2) > span { background: var(--accent-warm-tint); color: var(--accent-warm-ink); }
+
+.auth-foot {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px;
+  padding: 18px 16px 24px; color: var(--ink-3); font-size: 13.5px; text-align: center;
+}
+.auth-foot a { color: var(--accent); font-weight: 600; }
+.auth-loading { padding: 48px; text-align: center; color: var(--ink-3); }
+
+@media (max-width: 520px) {
+  .auth-top .ui-wordmark-sub { display: none; }
+}
+@media (max-width: 900px) {
+  .auth-main { grid-template-columns: minmax(0, 480px); }
+  .auth-aside { display: none; }
+}
