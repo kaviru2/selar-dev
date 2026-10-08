@@ -1,0 +1,44 @@
+# SELAR quiz template (YAML). Every question below is INVENTED DEMO content.
+# Replace it with your own items. Real study items (the initial test and the
+# day-7 follow-up) need supervisor and ethics sign-off before they are entered.
+# Format reference: docs/QUIZZES.md
+title: "DEMO: Zorb fruit practice quiz"
+description: Invented demo content for trying out SELAR quizzes. Not study material.
+kind: practice            # initial | follow_up | practice
+feedback: after_submit    # never | after_submit | after_close  (initial/follow_up default: never)
+max_attempts: 1           # 0 = unlimited
+time_limit_minutes: 10    # omit or 0 = no limit
+# open_at: "2026-10-10T09:00:00+05:30"   # RFC 3339 with a time zone
+# close_at: "2026-10-17T23:59:00+05:30"
+audience: all             # all | cohort:<control|treatment_auto|treatment_hitl> | group:<label>
+# after: {anchor: first_reading, days: 7, window_days: 2}   # or document / quiz_submitted
+shuffle_questions: false
+shuffle_options: true
+no_going_back: false
+questions:
+  - type: single_choice
+    prompt: In the demo text, what colour is a ripe Zorb fruit?
+    options: ["Red", "*Blue", "Green"]       # prefix the correct option with *
+    points: 1
+    explanation: The demo text describes ripe Zorbs as blue.
+  - type: multiple_choice
+    prompt: Which two of these are the invented moons of planet Quilla?
+    options:
+      - {text: Ith, correct: true}
+      - {text: Ombra, correct: true}
+      - {text: Luna}
+  - type: true_false
+    prompt: Zorbs grow underwater.
+    answer: false
+  - type: short_answer
+    prompt: Name the valley where Zorbs grow.
+    answers: ["Vell", "Vell Valley"]          # matched ignoring case, spacing and trailing punctuation
+  - type: cued_recall
+    prompt: Complete the ripening rule from the demo text.
+    cue: "Zorbs ripen when ..."
+    rubric: Full credit for mentioning the second moon rising; half credit for "moonlight" alone.
+    source: {document: "DEMO reading: Zorbs of Vell"}
+  - type: free_recall
+    prompt: Write down everything you remember about Zorbs.
+    points: 5
+    rubric: One point per distinct correct idea (colour, valley, moons, ripening, taste), maximum 5.

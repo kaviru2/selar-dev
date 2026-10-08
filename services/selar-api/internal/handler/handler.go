@@ -29,6 +29,7 @@ type Handler struct {
 	auth    *middleware.Auth
 	storage storage.Store
 	worker  *workertrigger.Client
+	admins  AdminChecker
 }
 
 // New creates a new Handler with the given store. Upload storage defaults to
