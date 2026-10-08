@@ -99,8 +99,10 @@ if [ -n "$LOCAL_ONLY" ]; then
   exit 0
 fi
 
-# objectCreator cannot overwrite; names are unique per second + sha.
-gcloud storage cp --no-clobber --content-type=application/octet-stream \
+# No --no-clobber: it needs storage.objects.get, which objectCreator lacks on
+# purpose. objectCreator also cannot overwrite (that needs delete), and names
+# are unique per second + sha.
+gcloud storage cp --content-type=application/octet-stream \
   --custom-metadata="sha256=${SUM%% *},git=$SHA,format=pg_dump-custom+age" \
   "$OUT" "$DEST" >/dev/null
 ok "uploaded $DEST"

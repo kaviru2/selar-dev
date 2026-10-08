@@ -54,6 +54,8 @@ jobs:
           SELAR_SECRETS: env
           DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
           BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        shell: bash -euo pipefail {0}
         run: |
           pg_dump --version
           scripts/deploy/backup-db.sh | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q '^BACKUP_OBJECT=gs://' "$GITHUB_STEP_SUMMARY"
