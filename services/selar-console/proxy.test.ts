@@ -16,8 +16,13 @@ function location(res: Response) {
 
 describe("proxy auth redirects", () => {
   describe("signed-out visitor", () => {
-    it("is sent from / to /login (no self-referencing from=)", () => {
-      expect(location(proxy(req("/")))).toBe("/login");
+    it("sees the public landing page at / and /about", () => {
+      expect(location(proxy(req("/")))).toBeNull();
+      expect(location(proxy(req("/about")))).toBeNull();
+    });
+
+    it("does not treat look-alikes of /about as public", () => {
+      expect(location(proxy(req("/aboutx")))).toBe("/login?from=%2Faboutx");
     });
 
     it("sees /login and /register", () => {
@@ -66,6 +71,10 @@ describe("proxy auth redirects", () => {
     it("is never redirected away from the session-clearing endpoints", () => {
       expect(location(proxy(req("/api/auth/session-expired", "tok")))).toBeNull();
       expect(location(proxy(req("/api/auth/logout", "tok")))).toBeNull();
+    });
+
+    it("can still read /about", () => {
+      expect(location(proxy(req("/about", "tok")))).toBeNull();
     });
 
     it("reaches protected pages directly", () => {
