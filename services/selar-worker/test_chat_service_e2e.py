@@ -12,7 +12,7 @@ import asyncpg
 import httpx
 import pytest
 
-from test_synthetic_service_e2e import PASSWORD, _drain_job, _request, services
+from test_synthetic_service_e2e import PASSWORD, _dismiss_optional_consent, _drain_job, _request, services
 
 PRIMARY = "# Original CedarAgent paper\nCedarAgent introduces an agent architecture for tools.\n"
 COMPARISON = "# Birch comparison paper\nBirch compared a modified CedarAgent baseline on BeaconBench.\n"
@@ -119,6 +119,7 @@ def test_original_source_question_abstains_through_api_worker_and_database(servi
             assert login.status == 200, login.text()
             page.goto(f"{_console}/chat")
             page.locator(".chat-message.assistant").get_by_text("cannot verify", exact=False).wait_for()
+            _dismiss_optional_consent(page)
             page.locator(".chat-composer textarea").fill("What did Birch compare on BeaconBench?")
             with page.expect_response(lambda response: (
                 response.request.method == "POST"

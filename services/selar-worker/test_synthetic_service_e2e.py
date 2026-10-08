@@ -118,6 +118,13 @@ def _request(client, method, url, token=None, expected=200, **kwargs):
     return response.json()
 
 
+def _dismiss_optional_consent(page):
+    prompt = page.get_by_role("dialog", name="Help improve SELAR?")
+    if prompt.count() and prompt.is_visible():
+        prompt.get_by_role("button", name="No thanks").click()
+        prompt.wait_for(state="hidden", timeout=5000)
+
+
 async def _drain_job(document_id):
     import main
     job = await main.claim_ingestion_job()
@@ -302,6 +309,7 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert quiz is not None and quiz.status == 404
             page.goto(f"{console}/reader?docId={pdf_id}&page=1")
             page.locator(".pdf-page-container .textLayer").get_by_text(PDF_LINE).wait_for(timeout=20000)
+            _dismiss_optional_consent(page)
             assert "1 / 1" in page.locator(".page-indicator").first.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
             card = page.get_by_role("region", name="Review a suggested connection")
