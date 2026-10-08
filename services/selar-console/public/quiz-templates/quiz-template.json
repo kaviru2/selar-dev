@@ -1,0 +1,18 @@
+{
+  "title": "DEMO: Zorb fruit practice quiz",
+  "description": "Invented demo content for trying out SELAR quizzes. Not study material.",
+  "kind": "practice",
+  "feedback": "after_submit",
+  "max_attempts": 1,
+  "time_limit_minutes": 10,
+  "audience": "all",
+  "shuffle_options": true,
+  "questions": [
+    {"type": "single_choice", "prompt": "In the demo text, what colour is a ripe Zorb fruit?", "options": ["Red", "*Blue", "Green"], "explanation": "The demo text describes ripe Zorbs as blue."},
+    {"type": "multiple_choice", "prompt": "Which two of these are the invented moons of planet Quilla?", "options": [{"text": "Ith", "correct": true}, {"text": "Ombra", "correct": true}, {"text": "Luna"}]},
+    {"type": "true_false", "prompt": "Zorbs grow underwater.", "answer": false},
+    {"type": "short_answer", "prompt": "Name the valley where Zorbs grow.", "answers": ["Vell", "Vell Valley"]},
+    {"type": "cued_recall", "prompt": "Complete the ripening rule from the demo text.", "cue": "Zorbs ripen when ...", "rubric": "Full credit for mentioning the second moon rising.", "source": {"document": "DEMO reading: Zorbs of Vell"}},
+    {"type": "free_recall", "prompt": "Write down everything you remember about Zorbs.", "points": 5, "rubric": "One point per distinct correct idea, maximum 5."}
+  ]
+}

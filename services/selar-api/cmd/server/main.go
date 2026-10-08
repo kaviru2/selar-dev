@@ -88,6 +88,15 @@ func main() {
 	log.Printf("upload storage backend: %s", uploads.Backend())
 	auth := middleware.NewAuth(jwtSecret)
 	h.SetAuth(auth)
+	// Quiz admin routes. Interim allowlist until the shared users.role admin
+	// check lands; an empty ADMIN_EMAILS denies admin access to everyone.
+	h.SetAdminChecker(handler.NewEmailAllowlist(os.Getenv("ADMIN_EMAILS"), func(ctx context.Context, id string) (string, error) {
+		u, err := st.GetUserByID(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		return u.Email, nil
+	}))
 
 	// Router
 	r := chi.NewRouter()
@@ -172,6 +181,9 @@ func main() {
 		// Deterministic learner signals and local evaluation metrics
 		r.Post("/learner-signals", h.RecordLearnerSignal)
 		r.Get("/evaluation/metrics", h.GetEvaluationMetrics)
+
+		// Quizzes (learner + admin; admin routes check AdminChecker)
+		h.MountQuizRoutes(r)
 
 		// Reading Sessions
 		r.Post("/sessions/start", h.StartSession)
