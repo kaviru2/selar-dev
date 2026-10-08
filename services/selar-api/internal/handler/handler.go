@@ -246,6 +246,7 @@ func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		pdfLocator = job.FilePath
 	}
 	if err := h.store.DeleteDocument(r.Context(), id, userID); err != nil {
+		log.Printf("failed to delete document %s: %v", id, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete document"})
 		return
 	}
