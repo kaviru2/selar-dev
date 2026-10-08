@@ -533,6 +533,26 @@ def embed_visual_asset(asset: Dict[str, Any]) -> List[float]:
     return result.embeddings[0].values
 
 
+async def release_document_links(conn, doc_id: str) -> None:
+    """Prepare grounded mental-model links before a document's passages are replaced.
+
+    Unreviewed machine suggestions (review_revision = 0) that touch the document
+    are deleted; ingestion regenerates them from the new passages. Links with any
+    learner review history are kept untouched: when their evidence chunks are
+    deleted, ON DELETE SET NULL releases only the dead pointer (migration 012) and
+    the quoted evidence JSON stays as a frozen snapshot. Those links then fail
+    valid_grounded_mental_link() and leave active reads until re-reviewed.
+    """
+    await conn.execute("""
+        DELETE FROM mental_model_links l
+        WHERE l.review_revision = 0 AND (
+          l.source_model_id IN (SELECT m.id FROM document_mental_models m WHERE m.document_id = $1)
+          OR l.target_model_id IN (SELECT m.id FROM document_mental_models m WHERE m.document_id = $1)
+          OR l.source_evidence_chunk_id IN (SELECT c.id FROM chunks c WHERE c.document_id = $1)
+          OR l.target_evidence_chunk_id IN (SELECT c.id FROM chunks c WHERE c.document_id = $1))
+    """, doc_id)
+
+
 async def process_document_task(
     doc_id: str,
     file_path: str = "",
@@ -656,6 +676,7 @@ async def process_document_task(
         # Serialize retries for the same document and replace its derived chunks.
         # The connection-scoped lock is released automatically on close/failure.
         await conn.execute("SELECT pg_advisory_lock(hashtextextended($1, 0))", doc_id)
+        await release_document_links(conn, doc_id)
         await conn.execute("DELETE FROM chunks WHERE document_id = $1", doc_id)
         await conn.execute("DELETE FROM content_blocks WHERE document_id = $1", doc_id)
         await conn.execute("DELETE FROM assets WHERE document_id = $1", doc_id)
@@ -889,7 +910,7 @@ Rules:
             # ── Phase 6: Bounded document-to-library mental-model linking ──
             await conn.execute("""
                 DELETE FROM mental_model_links
-                WHERE source_model_id = $1 AND status = 'candidate'
+                WHERE source_model_id = $1 AND status = 'candidate' AND review_revision = 0
             """, mental_model_id)
             prior_models = await conn.fetch("""
                 SELECT mm.id, mm.document_id, d.title, mm.main_claim, mm.key_concepts,
@@ -974,6 +995,7 @@ Rules:
             conn = await asyncpg.connect(DATABASE_URL)
             # A failed snapshot must not leak partially indexed chunks into
             # retrieval. Cascades also remove derived links and asset joins.
+            await release_document_links(conn, doc_id)
             await conn.execute("DELETE FROM chunks WHERE document_id = $1", doc_id)
             await conn.execute("DELETE FROM content_blocks WHERE document_id = $1", doc_id)
             await conn.execute("DELETE FROM assets WHERE document_id = $1", doc_id)
