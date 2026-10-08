@@ -211,3 +211,6 @@
   box-shadow: 0 0 0 1000px var(--bg-3) inset;
   caret-color: var(--ink);
 }
+@media (pointer: coarse) {
+  .ui-theme-toggle button { width: 40px; height: 40px; }
+}
