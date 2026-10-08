@@ -37,7 +37,7 @@ done
 load_secrets
 require_vars DATABASE_URL_DIRECT BACKUP_AGE_RECIPIENT
 require_cmds pg_dump age python3
-[ -n "$LOCAL_ONLY" ] || require_cmds gcloud
+[ -n "$LOCAL_ONLY" ] || require_cmds gcloud curl
 if is_pooled_db_url "$DATABASE_URL_DIRECT"; then
   die "DATABASE_URL_DIRECT is a pooled (-pooler) URL; pg_dump needs the direct endpoint"
 fi
@@ -99,12 +99,36 @@ if [ -n "$LOCAL_ONLY" ]; then
   exit 0
 fi
 
-# No --no-clobber: it needs storage.objects.get, which objectCreator lacks on
-# purpose. objectCreator also cannot overwrite (that needs delete), and names
-# are unique per second + sha.
-gcloud storage cp --content-type=application/octet-stream \
-  --custom-metadata="sha256=${SUM%% *},git=$SHA,format=pg_dump-custom+age" \
-  "$OUT" "$DEST" >/dev/null
+# Upload through the JSON API (resumable session, ifGenerationMatch=0: create
+# only, never overwrite). `gcloud storage cp` pre-reads the destination
+# (storage.objects.get), which the backup service account deliberately lacks:
+# it can create backups but never read them.
+upload_object() {
+  local token meta loc code
+  token="$(gcloud auth print-access-token 2>/dev/null)" || die "gcloud has no access token"
+  meta="$(printf '{"name":"%s","contentType":"application/octet-stream","metadata":{"sha256":"%s","git":"%s","format":"pg_dump-custom+age"}}' \
+    "$BACKUP_PREFIX/$NAME" "${SUM%% *}" "$SHA")"
+  # The token reaches curl through a 0600 config file, never argv.
+  printf 'header = "Authorization: Bearer %s"\n' "$token" > "$TMP/curl.cfg"
+  loc="$(curl -sS --fail -K "$TMP/curl.cfg" -D - -o /dev/null \
+      -H 'Content-Type: application/json; charset=UTF-8' \
+      -H "X-Upload-Content-Length: $BYTES" \
+      --data-binary "$meta" \
+      "https://storage.googleapis.com/upload/storage/v1/b/$BACKUP_BUCKET/o?uploadType=resumable&ifGenerationMatch=0" \
+    | tr -d '\r' | sed -n 's/^[Ll]ocation: //p')" || die "could not start the upload session"
+  [ -n "$loc" ] || die "upload session returned no Location header"
+  code="$(curl -sS -K "$TMP/curl.cfg" -o "$TMP/upload.json" -w '%{http_code}' -X PUT \
+      -H 'Content-Type: application/octet-stream' --data-binary @"$OUT" "$loc")" || die "upload failed"
+  rm -f "$TMP/curl.cfg"
+  case "$code" in
+    200|201) ;;
+    412) die "object already exists: $DEST" ;;
+    *) die "upload returned HTTP $code" ;;
+  esac
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("size")==sys.argv[2] else 1)' \
+    "$TMP/upload.json" "$BYTES" || die "uploaded object size does not match $BYTES bytes"
+}
+upload_object
 ok "uploaded $DEST"
 echo "BACKUP_OBJECT=$DEST"
 echo "BACKUP_BYTES=$BYTES"
