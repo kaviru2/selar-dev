@@ -51,11 +51,12 @@ func (h *Handler) SetWorkerTrigger(client *workertrigger.Client) {
 	}
 }
 
-// notifyWorker tells a serverless worker a job is ready. It never blocks the
-// request and failures are tolerated: the job is durable and the scheduled
-// sweep claims it.
+// notifyWorker tells a serverless worker a job is ready. It waits at most
+// WORKER_TRIGGER_TIMEOUT (serverless functions are frozen once they respond,
+// so a background goroutine would never deliver it) and failures are
+// tolerated: the job is durable and the scheduled sweep claims it.
 func (h *Handler) notifyWorker(r *http.Request, jobID string) {
-	h.worker.NotifyAsync(r.Context(), jobID)
+	h.worker.NotifyBestEffort(r.Context(), jobID)
 }
 
 // SetAuth sets the auth middleware reference for token generation.

@@ -130,3 +130,38 @@ func TestAuthorizeAddsHeaderOnlyWhenConfigured(t *testing.T) {
 		t.Fatal("no header without a secret")
 	}
 }
+
+// Serverless runtimes (Vercel) freeze the function once the handler returns,
+// so the trigger must already be delivered when NotifyBestEffort returns.
+func TestNotifyBestEffortDeliversBeforeReturning(t *testing.T) {
+	var hits int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	client := FromEnv(env(map[string]string{"WORKER_URL": server.URL, "WORKER_TRIGGER_SECRET": "s3cret-value-long-enough"}))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // a client that already disconnected must not drop the trigger
+	client.NotifyBestEffort(ctx, "11111111-1111-1111-1111-111111111111")
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("trigger delivered %d times before return, want 1", got)
+	}
+}
+
+func TestNotifyBestEffortIsBoundedAndTolerant(t *testing.T) {
+	block := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-block }))
+	defer server.Close()
+	defer close(block)
+	client := FromEnv(env(map[string]string{
+		"WORKER_URL": server.URL, "WORKER_TRIGGER_SECRET": "s3cret-value-long-enough", "WORKER_TRIGGER_TIMEOUT": "150ms",
+	}))
+	started := time.Now()
+	client.NotifyBestEffort(context.Background(), "11111111-1111-1111-1111-111111111111")
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("best-effort notify took %s; it must be bounded by WORKER_TRIGGER_TIMEOUT", elapsed)
+	}
+	FromEnv(env(map[string]string{})).NotifyBestEffort(context.Background(), "11111111-1111-1111-1111-111111111111")
+}
