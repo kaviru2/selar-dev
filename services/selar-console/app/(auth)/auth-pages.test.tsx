@@ -15,6 +15,8 @@ vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a>,
 }));
 
+vi.mock("@/components/auth/google-font", () => ({ roboto: { className: "roboto" } }));
+
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
 
@@ -147,5 +149,43 @@ describe("register page", () => {
     const text = container.textContent || "";
     expect(text).toMatch(/research prototype/i);
     expect(text).not.toMatch(/improve(s|d)? (your )?(memory|retention|grades)/i);
+  });
+});
+
+describe("Continue with Google (feature flag)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is hidden on /login and /register when NEXT_PUBLIC_GOOGLE_CLIENT_ID is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "");
+    await act(async () => root.render(<LoginPage />));
+    expect($("[data-testid=google-sign-in]")).toBeNull();
+    expect(container.textContent).not.toMatch(/Google/);
+    await act(async () => root.render(<RegisterPage />));
+    expect($("[data-testid=google-sign-in]")).toBeNull();
+  });
+
+  it("links to the start route, carrying a safe from=, when the client id is set", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "123.apps.googleusercontent.com");
+    search = new URLSearchParams("from=/reader?doc=1");
+    await act(async () => root.render(<LoginPage />));
+    const link = $<HTMLAnchorElement>("[data-testid=google-sign-in]");
+    expect(link.textContent).toBe("Continue with Google");
+    expect(link.getAttribute("href")).toBe("/api/auth/google/start?from=%2Freader%3Fdoc%3D1");
+    expect(link.querySelector("svg[aria-hidden=true]")).toBeTruthy();
+    await act(async () => root.render(<RegisterPage />));
+    expect($<HTMLAnchorElement>("[data-testid=google-sign-in]").getAttribute("href")).toBe("/api/auth/google/start");
+  });
+
+  it("does not pass an unsafe from= to the start route", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "123.apps.googleusercontent.com");
+    search = new URLSearchParams("from=//evil.example");
+    await act(async () => root.render(<LoginPage />));
+    expect($<HTMLAnchorElement>("[data-testid=google-sign-in]").getAttribute("href")).toBe("/api/auth/google/start?from=%2Flibrary");
+  });
+
+  it("shows the callback's error on /login", async () => {
+    search = new URLSearchParams("google_error=unverified");
+    await act(async () => root.render(<LoginPage />));
+    expect($("[role=alert]")?.textContent).toMatch(/isn't verified/);
   });
 });

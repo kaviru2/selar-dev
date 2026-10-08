@@ -66,6 +66,9 @@ type NewUser struct {
 	// nil = not asked, false = declined, true = opted in (ConsentVersion set).
 	Consent        *bool
 	ConsentVersion string
+	// GoogleSub links the new account to a Google identity (Sign in with
+	// Google); empty for password registrations.
+	GoogleSub string
 }
 
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string, cohort model.Cohort) (*model.User, error) {
@@ -90,12 +93,16 @@ func (s *Store) CreateUserWith(ctx context.Context, in NewUser) (*model.User, er
 			consentedAt, version = &now, &in.ConsentVersion
 		}
 	}
+	var googleSub *string
+	if in.GoogleSub != "" {
+		googleSub = &in.GoogleSub
+	}
 	u := &model.User{}
 	err := scanUser(s.pool.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, cohort, role, consented_at, consent_version, consent_decided_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO users (email, password_hash, cohort, role, consented_at, consent_version, consent_decided_at, google_sub)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING `+userColumns,
-		in.Email, in.PasswordHash, in.Cohort, role, consentedAt, version, decidedAt,
+		in.Email, in.PasswordHash, in.Cohort, role, consentedAt, version, decidedAt, googleSub,
 	), u)
 	if err != nil {
 		return nil, err

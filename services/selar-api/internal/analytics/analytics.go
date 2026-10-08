@@ -125,7 +125,7 @@ var (
 
 var dictionary = map[Event]Spec{
 	SignedIn: {Source: SourceServer, Description: "A login or registration succeeded (start of an authenticated session).",
-		Props: map[string]PropSpec{"method": enum("login", "register")}},
+		Props: map[string]PropSpec{"method": enum("login", "register", "google")}},
 	DocumentUploaded: {Source: SourceServer, Description: "A document was accepted and queued for ingestion.",
 		Props: map[string]PropSpec{"document_id": id(), "source_type": enum("pdf", "web", "text")}},
 	ReadingSessionStart: {Source: SourceServer, Description: "The reader opened a document (reading_sessions row created).",

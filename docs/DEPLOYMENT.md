@@ -276,6 +276,8 @@ Create or inspect the key: `gcloud recaptcha keys list --project selar-research-
 | `JWT_SECRET` | ✓ | | | API only; 32+ random characters in production |
 | `CORS_ORIGIN` | ✓ | | | exact origins, comma-separated |
 | `API_INTERNAL_URL` | | | ✓ | URL of the Go API |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | ✓ | | | Sign in with Google; unset = off. The secret lives only in the API |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | | | ✓ | same client id; inlined at build time, so redeploy after setting it. Unset = no Google button. Redirect URI: `<console>/api/auth/google/callback` |
 | `WORKER_URL` | ✓ | | | Modal `web` URL; local `http://localhost:8000` |
 | `WORKER_TRIGGER_URL` | ✓ | | | optional full trigger URL override |
 | `WORKER_TRIGGER_SECRET` | ✓ | ✓ | | unset = triggers off (local polling mode) |

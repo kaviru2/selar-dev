@@ -75,7 +75,7 @@ A test fails if an event is missing from this table.
 
 | Event | Source | When | Properties |
 |---|---|---|---|
-| `signed_in` | server | Login or registration succeeded | `method` (login, register) |
+| `signed_in` | server | Login or registration succeeded | `method` (login, register, google) |
 | `research_consent_granted` | server | User opted in | `via` (register, prompt, settings) |
 | `analytics_data_deleted` | server | User deleted their analytics (anonymous count only, never per user) | — |
 | `document_uploaded` | server | A document was accepted and queued | `document_id`, `source_type` (pdf, web, text) |

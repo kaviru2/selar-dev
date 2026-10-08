@@ -34,6 +34,7 @@ type Handler struct {
 	storage storage.Store
 	worker  *workertrigger.Client
 	admins  AdminChecker
+	google  GoogleExchanger
 
 	// adminEmails (ADMIN_EMAILS) are promoted to admin on login/registration.
 	adminEmails analytics.EmailSet
@@ -142,15 +143,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Random cohort assignment via block randomization
-	cohort := model.CohortTreatmentHITL // TODO: implement proper randomization
-
-	newUser := store.NewUser{Email: req.Email, PasswordHash: string(hash), Cohort: cohort, Role: h.roleFor(req.Email)}
-	if req.ResearchConsent != nil {
-		newUser.Consent = req.ResearchConsent
-		newUser.ConsentVersion = analytics.ConsentVersion
-	}
-	user, err := h.store.CreateUserWith(r.Context(), newUser)
+	user, err := h.store.CreateUserWith(r.Context(), h.newRegistration(req.Email, string(hash), req.ResearchConsent, ""))
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "email already in use"})
 		return
