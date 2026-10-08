@@ -8,7 +8,7 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM quiz_responses) OR EXISTS (SELECT 1 FROM quiz_attempts)
      OR EXISTS (SELECT 1 FROM quiz_questions) OR EXISTS (SELECT 1 FROM quizzes) THEN
-    RAISE EXCEPTION 'legacy quiz tables contain rows; export them before migration 012 replaces them';
+    RAISE EXCEPTION 'legacy quiz tables contain rows; export them before migration 013 replaces them';
   END IF;
 END $$;
 

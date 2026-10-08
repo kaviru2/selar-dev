@@ -97,7 +97,7 @@ func TestIntegrationAdoptsDockerInitdbDatabaseAndAppliesTheRest(t *testing.T) {
 	if strings.Join(result.Adopted, ",") != "001,002,003,004,005,006,007,008,009" {
 		t.Fatalf("adopted = %v", result.Adopted)
 	}
-	if strings.Join(result.Applied, ",") != "010,011,012" {
+	if strings.Join(result.Applied, ",") != "010,011,012,013" {
 		t.Fatalf("applied = %v", result.Applied)
 	}
 	var adoptedRows int

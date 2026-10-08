@@ -201,4 +201,4 @@ Admin: `GET/POST /api/admin/quizzes`, `POST /api/admin/quizzes/import`, `GET/PUT
 
 ## Schema
 
-Migration `012_quiz_system.sql` replaces the unused placeholder tables from `001` (it refuses to run if they contain rows) with `quizzes`, `quiz_questions`, `quiz_group_members`, `quiz_attempts` and `quiz_answers`.
+Migration `013_quiz_system.sql` replaces the unused placeholder tables from `001` (it refuses to run if they contain rows) with `quizzes`, `quiz_questions`, `quiz_group_members`, `quiz_attempts` and `quiz_answers`.
