@@ -2,19 +2,23 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { ArticleReader } from "@/components/ArticleReader";
 import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-telemetry";
-import { createDwellTracker, track, type DwellTracker } from "@/lib/analytics";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { PanelResizer } from "@/components/PanelResizer";
 import { SuggestionVisibilityToggle } from "@/components/SuggestionVisibilityToggle";
 import { isTypingTarget, useReaderLayout } from "@/lib/reader-layout";
 import { nextMatchLabel } from "@/lib/format";
 import { useSelar } from "@/lib/context";
-import { initialZoom, loadSettings, readerSettings, suggestionVisibility, suggestionsOnOpen } from "@/lib/settings";
+import { loadSettings, suggestionVisibility, suggestionsOnOpen } from "@/lib/settings";
+import { parsePageTarget, type ScrollAnchor, type ZoomMode } from "@/lib/reader/navigation";
+import { browserPositionStore, readerPreferences } from "@/lib/reader/position";
+import { createDwellTracker, type DwellTracker } from "@/lib/reader/dwell";
+import { createDwellTracker as createAnalyticsDwell, track } from "@/lib/analytics";
+import type { NavRequest, ViewerState } from "@/components/reader/PdfViewer";
 import {
   clientFetch,
   type Annotation,
@@ -24,15 +28,28 @@ import {
   type MentalModelLink,
 } from "@/lib/api";
 
-const PdfCanvas = dynamic(() => import("@/components/PdfCanvas"), {
+const PdfViewer = dynamic(() => import("@/components/reader/PdfViewer"), {
   ssr: false,
-  loading: () => (
-    <div className="reader-empty">Initializing PDF engine…</div>
-  ),
+  loading: () => <div className="reader-empty">Initializing PDF engine…</div>,
 });
+
+/** A page only counts as "viewed" for the study after this much dwell. */
+const VIEWED_DWELL_MS = 1500;
+
+interface OpenTarget {
+  page: number;
+  fraction: number;
+  /** True when the page came from the URL or a jump, not from memory. */
+  explicit: boolean;
+}
 
 export default function ReaderPage() {
   const searchParams = useSearchParams();
+  // Reader defaults from Settings (lib/settings.ts, same shape as readerPreferences()).
+  const { preferences } = useSelar();
+  const prefs = useMemo(() => readerPreferences(preferences), [preferences]);
+  const positions = useMemo(() => browserPositionStore(), []);
+
   const [docId, setDocId] = useState(searchParams.get("docId") || "");
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [mentalLinks, setMentalLinks] = useState<MentalModelLink[]>([]);
@@ -42,22 +59,18 @@ export default function ReaderPage() {
   const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestionActionError, setSuggestionActionError] = useState("");
-  // Defaults from Settings (account preferences; see lib/settings.ts).
-  const { preferences } = useSelar();
-  const readerDefaults = readerSettings(preferences);
-  const [zoom, setZoom] = useState(() => initialZoom(readerDefaults.defaultZoom));
   const [annotationsOn, setAnnotationsOn] = useState(true);
+  // Study-relevant: suggestions.show_on_open may be locked per cohort (#103).
   const fallbackSuggestionsOn = suggestionsOnOpen(preferences);
   const [suggestionsOn, setSuggestionsOn] = useState(fallbackSuggestionsOn);
   const [suggestionsLocked, setSuggestionsLocked] = useState(false);
-  const [numPages, setNumPages] = useState(0);
-  const [pageNumber, setPageNumber] = useState(() => {
-    const requestedPage = Number(searchParams.get("page") || "1");
-    return Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1;
-  });
+  const [showThumbnails, setShowThumbnails] = useState(prefs.showThumbnails);
+  const [viewer, setViewer] = useState<ViewerState>({ page: 1, numPages: 0 });
+  const [navRequest, setNavRequest] = useState<NavRequest | null>(null);
+  const navSeq = useRef(0);
   const telemetryRef = useRef<ReaderTelemetry | null>(null);
   const panels = useReaderLayout();
-  const { layout, toggle: togglePanel } = panels;
+  const { layout, toggle: togglePanel, setOpen: setPanelOpen } = panels;
 
   // [ toggles the Library, ] toggles Connections (ignored while typing).
   useEffect(() => {
@@ -69,6 +82,22 @@ export default function ReaderPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [togglePanel]);
+
+  // Where to open the current document: URL (?page / #page) > remembered position > page 1.
+  const [openTarget, setOpenTarget] = useState<OpenTarget>(() => {
+    const fromUrl = typeof window === "undefined" ? null : parsePageTarget(window.location.search, window.location.hash);
+    const id = searchParams.get("docId") || "";
+    const remembered = !fromUrl && id && prefs.rememberPosition ? positions.load(id) : null;
+    return { page: fromUrl ?? remembered?.page ?? 1, fraction: remembered?.fraction ?? 0, explicit: Boolean(fromUrl) };
+  });
+  const [zoom, setZoom] = useState<ZoomMode>(() => {
+    const id = searchParams.get("docId") || "";
+    return (id && prefs.rememberPosition && positions.load(id)?.zoom) || prefs.defaultZoom;
+  });
+  const zoomRef = useRef(zoom);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   useEffect(() => {
     if (!docId) return;
@@ -144,27 +173,37 @@ export default function ReaderPage() {
     };
   }, [docId, documentContent?.document.status]);
 
-  useEffect(() => {
-    telemetryRef.current?.visitPage(pageNumber);
-  }, [pageNumber]);
-
-  // Visible dwell time per page (one event per page left; no-op without consent).
+  // Pages count as viewed after a short dwell, so scrolling past a page does not.
   const dwellRef = useRef<DwellTracker | null>(null);
   useEffect(() => {
-    if (!docId || documentContent?.document.status !== "ready") return;
-    const dwell = createDwellTracker((page, dwellMs) => track("reader_page_viewed", { document_id: docId, page, dwell_ms: dwellMs }));
-    dwellRef.current = dwell;
-    const onVisibility = () => (document.visibilityState === "hidden" ? dwell.pause() : dwell.resume());
+    const dwell = createDwellTracker({
+      thresholdMs: VIEWED_DWELL_MS,
+      onViewed: (page) => telemetryRef.current?.visitPage(page),
+    });
+    // Consent-gated usage analytics (docs/ANALYTICS.md): one event per page left, visible time only.
+    const pageDwell = createAnalyticsDwell((page, dwellMs) => {
+      track("reader_page_viewed", { document_id: docId || undefined, page, dwell_ms: dwellMs });
+    });
+    dwellRef.current = {
+      ...dwell,
+      setPage: (page: number) => { dwell.setPage(page); pageDwell.enter(page); },
+      pause: () => { dwell.pause(); pageDwell.pause(); },
+      resume: () => { dwell.resume(); pageDwell.resume(); },
+    };
+    const timer = window.setInterval(() => dwell.tick(), 500);
+    const onVisibility = () => (document.hidden ? dwellRef.current?.pause() : dwellRef.current?.resume());
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
-      dwell.stop();
-      if (dwellRef.current === dwell) dwellRef.current = null;
+      pageDwell.stop();
+      dwellRef.current = null;
     };
-  }, [docId, documentContent?.document.status]);
+  }, [docId]);
   useEffect(() => {
-    dwellRef.current?.enter(pageNumber);
-  }, [pageNumber, docId, documentContent?.document.status]);
+    if (documentContent?.document.status === "ready" && viewer.numPages) dwellRef.current?.setPage(viewer.page);
+  }, [viewer.page, viewer.numPages, documentContent?.document.status]);
+
 
   useEffect(() => {
     for (const suggestion of suggestions) {
@@ -172,59 +211,98 @@ export default function ReaderPage() {
     }
   }, [suggestions]);
 
-  const openDocument = useCallback((id: string, page = 1) => {
+  // Keep ?page= in the address bar in step with the reader (no history spam).
+  useEffect(() => {
+    if (!docId || !viewer.numPages) return;
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("docId") === docId && params.get("page") === String(viewer.page)) return;
+      params.set("docId", docId);
+      params.set("page", String(viewer.page));
+      params.delete("block");
+      window.history.replaceState(window.history.state, "", `/reader?${params}`);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [docId, viewer.page, viewer.numPages]);
+
+  const saveTimerRef = useRef(0);
+  const savePosition = useCallback((id: string, anchor: ScrollAnchor) => {
+    window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => positions.save(id, { page: anchor.page, fraction: Math.round(anchor.fraction * 1000) / 1000, zoom: zoomRef.current }), 300);
+  }, [positions]);
+  const onPositionChange = useCallback((anchor: ScrollAnchor) => {
+    if (docId && prefs.rememberPosition) savePosition(docId, anchor);
+  }, [docId, prefs.rememberPosition, savePosition]);
+
+  const onScrollDepth = useCallback((depth: number) => telemetryRef.current?.recordScrollDepth(depth), []);
+
+  const openDocument = useCallback((id: string, page?: number, flash?: Omit<NavRequest, "id" | "page">) => {
+    const remembered = page === undefined && prefs.rememberPosition ? positions.load(id) : null;
+    const target = page ?? remembered?.page ?? 1;
     setLoading(true);
     setSuggestionError("");
     setSuggestionActionError("");
-    setPageNumber(Math.max(1, page));
+    setOpenTarget({ page: Math.max(1, target), fraction: remembered?.fraction ?? 0, explicit: page !== undefined });
+    setZoom((prefs.rememberPosition && positions.load(id)?.zoom) || prefs.defaultZoom);
+    setViewer({ page: Math.max(1, target), numPages: 0 });
+    setNavRequest(flash && page ? { id: ++navSeq.current, page, ...flash } : null);
     setSuggestions([]);
     setMentalLinks([]);
     setMentalModel(null);
     setAnnotations([]);
     setDocumentContent(null);
     setDocId(id);
-  }, []);
+    const params = new URLSearchParams({ docId: id });
+    if (page) params.set("page", String(page));
+    if (id !== docId) window.history.pushState(null, "", `/reader?${params}`);
+  }, [docId, positions, prefs.defaultZoom, prefs.rememberPosition]);
 
-  const selectDocument = useCallback((id: string) => openDocument(id, 1), [openDocument]);
+  const selectDocument = useCallback((id: string) => {
+    if (id !== docId) openDocument(id);
+  }, [docId, openDocument]);
+
+  const jumpTo = useCallback((page: number, flash?: Omit<NavRequest, "id" | "page">) => {
+    setNavRequest({ id: ++navSeq.current, page, ...flash });
+    // On narrow windows the panels float over the document; get them out of the way.
+    if (window.matchMedia?.("(max-width: 800px)").matches) {
+      setPanelOpen("library", false);
+      setPanelOpen("connections", false);
+    }
+  }, [setPanelOpen]);
 
   const visibleSuggestions = suggestions.filter((item) => item.status !== "rejected");
-  const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === pageNumber).length;
+  const currentPageSuggestionCount = visibleSuggestions.filter((item) => item.src_page === viewer.page).length;
   const isPdf = !documentContent || documentContent.document.source_type === "pdf";
   const ingestionState = documentContent?.document.status;
+  const reviewCount = mentalLinks.filter((link) => link.status === "candidate").length;
 
   const goToNextSuggestion = useCallback(() => {
-    const pages = Array.from(new Set(
-      suggestions
-        .filter((item) => item.status !== "rejected" && item.src_page > 0)
-        .map((item) => item.src_page)
-    )).sort((left, right) => left - right);
-    if (!pages.length) return;
+    const ordered = suggestions
+      .filter((item) => item.status !== "rejected" && item.src_page > 0)
+      .sort((left, right) => left.src_page - right.src_page);
+    if (!ordered.length) return;
+    const next = ordered.find((item) => item.src_page > viewer.page) || ordered[0];
     if (!suggestionsLocked) setSuggestionsOn(true);
-    setPageNumber(pages.find((page) => page > pageNumber) || pages[0]);
-  }, [pageNumber, suggestions, suggestionsLocked]);
+    jumpTo(next.src_page, { quote: next.src_text, bboxes: next.src_bboxes });
+  }, [viewer.page, suggestions, jumpTo, suggestionsLocked]);
 
-  async function createAnnotation(
+  const createAnnotation = useCallback(async (
     type: string,
     bboxes: Array<{ x: number; y: number; w: number; h: number }>,
     color: string,
     page: number,
-    comment = ""
-  ) {
+    comment = "",
+  ) => {
     const annotation = await clientFetch<Annotation>("/api/annotations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        document_id: docId,
-        page,
-        bbox: bboxes,
-        type,
-        color,
-        comment,
-      }),
+      body: JSON.stringify({ document_id: docId, page, bbox: bboxes, type, color, comment }),
     });
     setAnnotations((current) => [...current, annotation]);
-  }
+  }, [docId]);
 
+  // Passage matches are similarity-only (relation "unclassified"); the API
+  // refuses to confirm them, so the reader can only dismiss them (#96).
   async function respondToPassage(id: string, action: "rejected"): Promise<boolean> {
     const previous = suggestions;
     setSuggestionActionError("");
@@ -252,6 +330,70 @@ export default function ReaderPage() {
     return links;
   }, [docId]);
 
+  // Compare-step "open ↗" for a passage in this same document: scroll in place
+  // and flash it, instead of reloading the app and losing the guided card.
+  const openWitness = useCallback((targetDocId: string, locator: { page?: number; block_index?: number } | undefined, quote: string) => {
+    if (targetDocId !== docId || !isPdf || !locator?.page) return false;
+    jumpTo(locator.page, { quote });
+    return true;
+  }, [docId, isPdf, jumpTo]);
+
+  const onViewerState = useCallback((state: ViewerState) => setViewer(state), []);
+
+  const markToggles = (
+    <div className="rd-grp">
+      <button type="button" className={annotationsOn ? "on" : ""} aria-pressed={annotationsOn} aria-label="Show my marks" title="Show my marks" onClick={() => setAnnotationsOn((value) => !value)}>
+        <Icon name="highlight" size={12} /> <span className="rd-hide-sm">Marks</span>
+      </button>
+      <SuggestionVisibilityToggle
+        enabled={suggestionsOn}
+        locked={suggestionsLocked}
+        count={visibleSuggestions.length}
+        onToggle={() => setSuggestionsOn((value) => !value)}
+      />
+      <button
+        type="button"
+        aria-label="Go to next suggested passage"
+        disabled={visibleSuggestions.length === 0}
+        onClick={goToNextSuggestion}
+        title={visibleSuggestions.length === 0 ? "No suggested passages for this document" : currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} suggestion(s) on this page` : "Go to the next page with a suggestion"}
+      >
+        {nextMatchLabel(visibleSuggestions.length, currentPageSuggestionCount)}
+      </button>
+    </div>
+  );
+
+  const libraryToggle = (
+    <button
+      type="button"
+      className={`panel-toggle${layout.libraryOpen ? " on" : ""}`}
+      aria-controls="reader-library"
+      aria-expanded={layout.libraryOpen}
+      aria-keyshortcuts="["
+      onClick={() => togglePanel("library")}
+      title={`${layout.libraryOpen ? "Hide" : "Show"} library  [`}
+    >
+      <Icon name="book" size={13} /><span className="panel-toggle-label">Library</span>
+    </button>
+  );
+  const toolbarEnd = (
+    <>
+      {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
+      <button
+        type="button"
+        className={`panel-toggle${layout.connectionsOpen ? " on" : ""}`}
+        aria-controls="reader-connections"
+        aria-expanded={layout.connectionsOpen}
+        aria-keyshortcuts="]"
+        onClick={() => togglePanel("connections")}
+        title={`${layout.connectionsOpen ? "Hide" : "Show"} connections  ]`}
+      >
+        <Icon name="link" size={13} /><span className="panel-toggle-label">Connections{reviewCount ? ` (${reviewCount})` : ""}</span>
+      </button>
+    </>
+  );
+  const showViewer = Boolean(docId && isPdf && !loading && ingestionState !== "processing" && ingestionState !== "failed");
+
   return (
     <div className={`reader${layout.libraryOpen ? " has-library" : ""}${layout.connectionsOpen ? " has-connections" : ""}`}>
       <div
@@ -274,95 +416,62 @@ export default function ReaderPage() {
       )}
 
       <main className="doc-pane">
-        <div className="doc-toolbar">
-          <button
-            type="button"
-            className={`panel-toggle${layout.libraryOpen ? " on" : ""}`}
-            aria-controls="reader-library"
-            aria-expanded={layout.libraryOpen}
-            aria-keyshortcuts="["
-            onClick={() => togglePanel("library")}
-            title={`${layout.libraryOpen ? "Hide" : "Show"} library  [`}
-          >
-            <Icon name="menu" size={13} /><span className="panel-toggle-label">Library</span>
-          </button>
-          {isPdf && <div className="grp">
-            <button aria-label="Previous page" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => Math.max(1, page - 1))}>‹</button>
-            <span className="page-indicator">{pageNumber} / {numPages || "?"}</span>
-            <button aria-label="Next page" disabled={!numPages || pageNumber >= numPages} onClick={() => setPageNumber((page) => Math.min(numPages, page + 1))}>›</button>
-          </div>}
-          {isPdf && <div className="grp">
-            <button aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(0.6, value - 0.1))}><Icon name="zoom_out" size={12} /></button>
-            <span className="page-indicator">{Math.round(zoom * 100)}%</span>
-            <button aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(1.8, value + 0.1))}><Icon name="zoom_in" size={12} /></button>
-          </div>}
-          <div className="grp">
-            <button className={annotationsOn ? "on" : ""} onClick={() => setAnnotationsOn((value) => !value)}>
-              <Icon name="highlight" size={12} /> Marks
-            </button>
-            <SuggestionVisibilityToggle
-              enabled={suggestionsOn}
-              locked={suggestionsLocked}
-              count={visibleSuggestions.length}
-              onToggle={() => setSuggestionsOn((value) => !value)}
-            />
-            <button
-              aria-label="Go to next suggested passage"
-              disabled={visibleSuggestions.length === 0}
-              onClick={goToNextSuggestion}
-              title={visibleSuggestions.length === 0 ? "No suggested passages for this document" : currentPageSuggestionCount > 0 ? `${currentPageSuggestionCount} suggestion(s) on this page` : "Go to the next page with a suggestion"}
-            >{nextMatchLabel(visibleSuggestions.length, currentPageSuggestionCount)}</button>
+        {!showViewer && (
+          <div className="doc-toolbar">
+            {libraryToggle}
+            <div className="tool-spacer" />
+            {toolbarEnd}
           </div>
-          <div className="tool-spacer" />
-          {mentalModel && <span className="mental-domain-chip">{mentalModel.domain || "Mental model ready"}</span>}
-          <button
-            type="button"
-            className={`panel-toggle${layout.connectionsOpen ? " on" : ""}`}
-            aria-controls="reader-connections"
-            aria-expanded={layout.connectionsOpen}
-            aria-keyshortcuts="]"
-            onClick={() => togglePanel("connections")}
-            title={`${layout.connectionsOpen ? "Hide" : "Show"} connections  ]`}
-          >
-            <Icon name="link" size={13} /><span className="panel-toggle-label">Connections</span>
-          </button>
-        </div>
-
-        <div className={isPdf ? "pdf-container" : "article-container"}>
-          {loading ? (
-            <div className="reader-empty">Loading source snapshot…</div>
-          ) : ingestionState === "processing" ? (
-            <div className="reader-empty"><Icon name="spinner" size={20} className="animate-spin" /><strong>Processing this source</strong><span>You can return to the Library while the durable ingestion job runs.</span></div>
-          ) : ingestionState === "failed" ? (
-            <div className="reader-empty"><Icon name="x" size={20} /><strong>Source processing failed</strong><span>{documentContent?.document.ingestion_error || "Open the Library to retry this document."}</span></div>
-          ) : docId && !isPdf && documentContent ? (
+        )}
+        {loading ? (
+          <div className="pdf-container"><div className="reader-empty">Loading source snapshot…</div></div>
+        ) : ingestionState === "processing" ? (
+          <div className="pdf-container"><div className="reader-empty"><Icon name="spinner" size={20} className="animate-spin" /><strong>Processing this source</strong><span>You can return to the Library while the durable ingestion job runs.</span></div></div>
+        ) : ingestionState === "failed" ? (
+          <div className="pdf-container"><div className="reader-empty"><Icon name="x" size={20} /><strong>Source processing failed</strong><span>{documentContent?.document.ingestion_error || "Open the Library to retry this document."}</span></div></div>
+        ) : docId && !isPdf && documentContent ? (
+          <div className="article-container">
             <ArticleReader content={documentContent} targetBlock={searchParams.has("block") ? Number(searchParams.get("block")) : undefined} />
-          ) : docId ? (
-            <PdfCanvas
-              docId={docId}
-              zoom={zoom}
-              highlightColor={readerDefaults.highlightColor}
-              pageNumber={pageNumber}
-              annotationsOn={annotationsOn}
-              suggestionsOn={suggestionsOn}
-              suggestions={suggestions}
-              annotations={annotations}
-              onCreateAnnotation={createAnnotation}
-              onPageLoad={setNumPages}
-              onScrollDepth={(depth) => telemetryRef.current?.recordScrollDepth(depth)}
-              onRespondSuggestion={respondToPassage}
-              onOpenSuggestionTarget={(suggestion) => {
-                if (suggestion.tgt_document_id) openDocument(suggestion.tgt_document_id, suggestion.tgt_page);
-              }}
-            />
-          ) : (
+          </div>
+        ) : docId ? (
+          <PdfViewer
+            key={docId}
+            docId={docId}
+            initialPage={openTarget.page}
+            initialFraction={openTarget.explicit ? 0 : openTarget.fraction}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            navRequest={navRequest}
+            annotationsOn={annotationsOn}
+            suggestionsOn={suggestionsOn}
+            suggestions={suggestions}
+            annotations={annotations}
+            showThumbnails={showThumbnails}
+            highlightColor={prefs.highlightColor}
+            onToggleThumbnails={() => setShowThumbnails((value) => !value)}
+            toolbarStart={libraryToggle}
+            toolbarExtras={markToggles}
+            toolbarEnd={toolbarEnd}
+            onStateChange={onViewerState}
+            onPositionChange={onPositionChange}
+            onScrollDepth={onScrollDepth}
+            onCreateAnnotation={createAnnotation}
+            onRespondSuggestion={respondToPassage}
+            onOpenSuggestionTarget={(suggestion) => {
+              if (!suggestion.tgt_document_id) return;
+              if (suggestion.tgt_document_id === docId) jumpTo(suggestion.tgt_page, { quote: suggestion.tgt_text });
+              else openDocument(suggestion.tgt_document_id, suggestion.tgt_page, { quote: suggestion.tgt_text });
+            }}
+          />
+        ) : (
+          <div className="pdf-container">
             <div className="reader-empty">
               <Icon name="book" size={24} />
               <strong>Select a document to begin reading</strong>
               <span>SELAR will surface evidence-backed connections here.</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </main>
 
       {layout.connectionsOpen && (
@@ -382,37 +491,38 @@ export default function ReaderPage() {
         style={{ width: layout.connectionsWidth }}
         hidden={!layout.connectionsOpen}
       >
-      <ConnectionsPanel
-        key={docId}
-        docId={docId}
-        links={mentalLinks}
-        loading={loading}
-        mentalModel={mentalModel}
-        reloadLinks={reloadLinks}
-        focusLinkId={searchParams.get("linkId")}
-        passageSection={
-          <details className="cx-passages">
-            <summary>Similar passages ({loading ? "…" : visibleSuggestions.length})</summary>
-            <p className="cx-note">Similarity-only passage matches: not verified relationships. Use them to explore, then compare the two sources yourself.</p>
-            {suggestionActionError && <div className="reader-action-error">Could not save response: {suggestionActionError}</div>}
-            {!loading && suggestionError && <PanelEmpty message={`Suggested passages could not be loaded: ${suggestionError}`} />}
-            {!loading && !suggestionError && suggestions.length === 0 && <PanelEmpty message="No similar passages were found for this reading." />}
-            {suggestions.map((suggestion) => (
-              <ConnectionCard
-                key={suggestion.id}
-                source={`${suggestion.src_doc} · p.${suggestion.src_page} → ${suggestion.tgt_doc} · p.${suggestion.tgt_page}`}
-                evidence={`${suggestion.src_doc} · p.${suggestion.src_page}: “${suggestion.src_text}”\n${suggestion.tgt_doc} · p.${suggestion.tgt_page}: “${suggestion.tgt_text}”`}
-                status={suggestion.status}
-                onReject={() => respondToPassage(suggestion.id, "rejected")}
-                onReveal={() => {
-                  if (!suggestionsLocked) setSuggestionsOn(true);
-                  setPageNumber(suggestion.src_page);
-                }}
-              />
-            ))}
-          </details>
-        }
-      />
+        <ConnectionsPanel
+          key={docId}
+          docId={docId}
+          links={mentalLinks}
+          loading={loading}
+          mentalModel={mentalModel}
+          reloadLinks={reloadLinks}
+          focusLinkId={searchParams.get("linkId")}
+          onOpenWitness={openWitness}
+          passageSection={
+            <details className="cx-passages">
+              <summary>Similar passages ({loading ? "…" : visibleSuggestions.length})</summary>
+              <p className="cx-note">Similarity-only passage matches: not verified relationships. Use them to explore, then compare the two sources yourself.</p>
+              {suggestionActionError && <div className="reader-action-error">Could not save response: {suggestionActionError}</div>}
+              {!loading && suggestionError && <PanelEmpty message={`Suggested passages could not be loaded: ${suggestionError}`} />}
+              {!loading && !suggestionError && suggestions.length === 0 && <PanelEmpty message="No similar passages were found for this reading." />}
+              {suggestions.map((suggestion) => (
+                <ConnectionCard
+                  key={suggestion.id}
+                  source={`${suggestion.src_doc} · p.${suggestion.src_page} → ${suggestion.tgt_doc} · p.${suggestion.tgt_page}`}
+                  evidence={`${suggestion.src_doc} · p.${suggestion.src_page}: “${suggestion.src_text}”\n${suggestion.tgt_doc} · p.${suggestion.tgt_page}: “${suggestion.tgt_text}”`}
+                  status={suggestion.status}
+                  onReject={() => respondToPassage(suggestion.id, "rejected")}
+                  onReveal={isPdf ? () => {
+                    if (!suggestionsLocked) setSuggestionsOn(true);
+                    jumpTo(suggestion.src_page, { quote: suggestion.src_text, bboxes: suggestion.src_bboxes });
+                  } : undefined}
+                />
+              ))}
+            </details>
+          }
+        />
       </div>
       {(layout.libraryOpen || layout.connectionsOpen) && (
         <button
@@ -420,7 +530,7 @@ export default function ReaderPage() {
           className="reader-scrim"
           aria-label="Close side panels"
           tabIndex={-1}
-          onClick={() => { panels.setOpen("library", false); panels.setOpen("connections", false); }}
+          onClick={() => { setPanelOpen("library", false); setPanelOpen("connections", false); }}
         />
       )}
     </div>

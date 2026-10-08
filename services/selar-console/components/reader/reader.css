@@ -1,0 +1,314 @@
+/* reader.css — PDF reader (continuous scroll, marks, find, popovers).
+ *
+ * Colours come only from design tokens or the --rd-* variables defined here,
+ * which are themselves built from tokens. The redesign/dark theme can retune
+ * the reader by overriding --rd-* (or the underlying tokens) without touching
+ * component code. */
+
+.rd-viewer {
+  /* Reader palette (token-derived). Override per theme. */
+  --rd-canvas: var(--bg-3);
+  --rd-page-bg: #fff;
+  --rd-page-shadow: var(--shadow-2);
+  --rd-control-bg: var(--bg);
+  --rd-control-ink: var(--ink-2);
+  --rd-control-rule: var(--rule);
+  --rd-control-hover: var(--bg-2);
+  --rd-control-on-bg: var(--ink);
+  --rd-control-on-ink: var(--bg);
+  --rd-flash: color-mix(in srgb, var(--accent, #1f5135) 34%, transparent);
+  --rd-flash-ring: var(--accent, #1f5135);
+  --rd-evidence-fill: color-mix(in srgb, var(--selar-amber, #d97706) 14%, transparent);
+  --rd-evidence-line: color-mix(in srgb, var(--selar-amber, #d97706) 80%, transparent);
+  --rd-evidence-confirmed-fill: color-mix(in srgb, var(--selar-green-500, #5b8a6f) 16%, transparent);
+  --rd-evidence-confirmed-line: var(--selar-green-500, #5b8a6f);
+  --rd-find: color-mix(in srgb, var(--selar-amber, #d97706) 38%, transparent);
+  --rd-find-current: color-mix(in srgb, var(--selar-rust, #b4532a) 55%, transparent);
+  --rd-hl-yellow: rgba(250, 204, 21, 0.38);
+  --rd-hl-green: rgba(74, 222, 128, 0.32);
+  --rd-hl-blue: rgba(96, 165, 250, 0.32);
+  --rd-hl-pink: rgba(244, 114, 182, 0.32);
+  --rd-hl-purple: rgba(167, 139, 250, 0.34);
+  --rd-hl-blend: multiply;
+
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--rd-canvas);
+  /* The toolbar adapts to the document column, which panels can squeeze. */
+  container-type: inline-size;
+  container-name: rd-viewer;
+}
+
+/* Progressive compaction: labels → domain chip → secondary groups. */
+@container rd-viewer (max-width: 860px) {
+  .rd-toolbar .rd-hide-sm,
+  .rd-toolbar .panel-toggle-label { display: none; }
+}
+@container rd-viewer (max-width: 720px) {
+  .rd-toolbar .mental-domain-chip { display: none; }
+}
+@container rd-viewer (max-width: 560px) {
+  .rd-toolbar.doc-toolbar { padding: 6px 8px; gap: 6px; }
+  .rd-zoom select { max-width: 86px; }
+}
+
+[data-theme="dark"] .rd-viewer {
+  /* Pages stay paper-white for legibility of arbitrary PDFs; marks switch to
+   * screen blending so they read as light tints on dark UI and on paper. */
+  --rd-page-shadow: 0 0 0 1px var(--rule), 0 8px 24px rgba(0, 0, 0, 0.45);
+  --rd-hl-yellow: rgba(250, 204, 21, 0.45);
+  --rd-hl-green: rgba(74, 222, 128, 0.4);
+  --rd-hl-blue: rgba(96, 165, 250, 0.42);
+  --rd-hl-pink: rgba(244, 114, 182, 0.42);
+  --rd-hl-purple: rgba(167, 139, 250, 0.45);
+  --rd-hl-blend: multiply;
+}
+
+/* ——— Toolbar ——— */
+.rd-toolbar.doc-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg);
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  position: relative;
+  z-index: 5;
+}
+.rd-grp {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rd-control-rule);
+  border-radius: var(--r-sm);
+  background: var(--rd-control-bg);
+}
+.rd-spacer { flex: 1; }
+.rd-icon, .rd-grp > button {
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rd-control-ink);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rd-icon:hover:not(:disabled), .rd-grp > button:hover:not(:disabled) { background: var(--rd-control-hover); }
+.rd-icon:disabled, .rd-grp > button:disabled { opacity: 0.4; cursor: default; }
+.rd-icon.on, .rd-grp > button.on { background: var(--rd-control-on-bg); color: var(--rd-control-on-ink); }
+.rd-page-form { display: flex; align-items: center; gap: 4px; padding: 0 4px; font-family: var(--font-mono); font-size: var(--t-sm); white-space: nowrap; }
+.rd-page-input {
+  width: 3.4em;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
+.rd-page-total { color: var(--ink-4); }
+.rd-zoom select {
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--rd-control-ink);
+  font: var(--t-sm) var(--font-mono);
+  cursor: pointer;
+}
+
+/* ——— Find bar ——— */
+.rd-findbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-2);
+  color: var(--ink-3);
+}
+.rd-findbar input {
+  flex: 1;
+  max-width: 320px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+.rd-find-count { min-width: 80px; font: var(--t-xs) var(--font-mono); color: var(--ink-4); }
+.textLayer mark.rd-find { background: var(--rd-find); color: transparent; border-radius: 2px; padding: 0; margin: 0; }
+.textLayer mark.rd-find.rd-find-current { background: var(--rd-find-current); outline: 2px solid var(--rd-find-current); }
+
+/* ——— Body: thumbnails + scroll column ——— */
+.rd-body { flex: 1; min-height: 0; display: flex; }
+.rd-document { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.rd-document > .reader-empty { flex: 1; }
+.rd-thumbs {
+  flex: 0 0 132px;
+  overflow-y: auto;
+  padding: 12px 10px;
+  border-right: 1px solid var(--rule);
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+.rd-thumb { display: grid; gap: 4px; justify-items: center; border: 0; background: transparent; padding: 0; cursor: pointer; color: var(--ink-4); font: var(--t-xs) var(--font-mono); }
+.rd-thumb-img { width: 96px; min-height: 124px; display: block; background: var(--rd-page-bg); border: 2px solid transparent; border-radius: 3px; box-shadow: var(--shadow-1); overflow: hidden; }
+.rd-thumb.on .rd-thumb-img { border-color: var(--accent); }
+.rd-thumb.on .rd-thumb-num { color: var(--ink); font-weight: 700; }
+.rd-thumb canvas { display: block; }
+
+.rd-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+  outline: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+.rd-scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.rd-column { position: relative; margin: 0 auto; }
+.rd-page {
+  position: absolute;
+  background: var(--rd-page-bg);
+  box-shadow: var(--rd-page-shadow);
+}
+.rd-page .react-pdf__Page { position: absolute !important; inset: 0; background: transparent !important; }
+.rd-page canvas { display: block; }
+.rd-page-placeholder { display: grid; place-items: center; color: color-mix(in srgb, var(--ink-4) 40%, transparent); font: 600 28px var(--font-mono); }
+.rd-page-loading { position: absolute; inset: 0; background: var(--rd-page-bg); }
+
+/* Marks never intercept the pointer: text stays selectable everywhere.
+ * Suggestion clicks are hit-tested on the page instead. */
+.rd-marks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.rd-mark { position: absolute; border-radius: 2px; pointer-events: none; }
+.rd-mark[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; pointer-events: auto; }
+.rd-user { mix-blend-mode: var(--rd-hl-blend); background: var(--rd-hl-yellow); }
+.rd-user.c-yellow, .rd-user.c-wheat { background: var(--rd-hl-yellow); }
+.rd-user.c-green, .rd-user.c-sage { background: var(--rd-hl-green); }
+.rd-user.c-blue { background: var(--rd-hl-blue); }
+.rd-user.c-pink, .rd-user.c-coral { background: var(--rd-hl-pink); }
+.rd-user.c-purple { background: var(--rd-hl-purple); }
+.rd-user.note { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ink) 55%, transparent); }
+/* SELAR evidence: dashed underline + faint tint, visibly not the learner's own mark. */
+.rd-evidence {
+  background: var(--rd-evidence-fill);
+  box-shadow: inset 0 -2px 0 var(--rd-evidence-line);
+  background-image: linear-gradient(90deg, var(--rd-evidence-line) 50%, transparent 50%);
+  background-size: 6px 2px;
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+}
+.rd-evidence.confirmed { background-color: var(--rd-evidence-confirmed-fill); box-shadow: inset 0 -2px 0 var(--rd-evidence-confirmed-line); background-image: none; }
+.rd-viewer[data-suggestions-hover] .rd-page { cursor: pointer; }
+.rd-flash {
+  background: var(--rd-flash);
+  box-shadow: 0 0 0 2px var(--rd-flash-ring);
+  animation: rd-flash 2.4s ease-out forwards;
+}
+@keyframes rd-flash {
+  0%, 55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-flash { animation: none; }
+}
+.rd-page .textLayer { z-index: 2; }
+.rd-page .annotationLayer { z-index: 3; }
+.rd-page .textLayer ::selection { background: color-mix(in srgb, var(--selar-sky-600, #2f5f8f) 35%, transparent); }
+
+/* ——— Selection menu & suggestion popover ——— */
+.rd-selection-menu, .rd-popover { position: absolute; z-index: 10; }
+.rd-selection-menu {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--rule-2, var(--rule));
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-3);
+}
+.rd-selection-menu button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 var(--t-sm) var(--font-sans);
+  cursor: pointer;
+}
+.rd-selection-menu button:hover { background: var(--bg-2); }
+.rd-popover {
+  width: min(300px, calc(100% - 16px));
+  padding: 12px;
+  border: 1px solid var(--rule-2, var(--rule));
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--shadow-3);
+  font-size: var(--t-sm);
+}
+.rd-popover.above { transform: translateY(-100%); }
+.rd-popover-head { display: flex; align-items: center; gap: 6px; color: var(--accent); font: 600 var(--t-xs) var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em; }
+.rd-popover-head button { margin-left: auto; border: 0; background: transparent; color: var(--ink-4); cursor: pointer; padding: 4px; }
+.rd-popover h3 { margin: 8px 0 4px; font-size: var(--t-md); line-height: 1.3; }
+.rd-popover p { margin: 0 0 8px; color: var(--ink-3); line-height: 1.5; max-height: 7.5em; overflow: auto; }
+.rd-popover .rd-popover-note { color: var(--ink-4); font-size: var(--t-xs); }
+.rd-popover-error { margin: 6px 0; color: var(--error); font-size: var(--t-xs); }
+.rd-popover-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-2);
+  font: 500 var(--t-sm) var(--font-sans);
+  cursor: pointer;
+}
+.rd-btn:hover:not(:disabled) { background: var(--bg-2); }
+.rd-btn:disabled { opacity: 0.45; cursor: default; }
+.rd-btn-pri { border-color: var(--selar-green-800, var(--ink)); background: var(--selar-green-800, var(--ink)); color: #fff; }
+.rd-btn-pri:hover:not(:disabled) { background: var(--selar-green-900, var(--ink)); }
+.rd-popover-actions .rd-btn:first-child { flex-basis: 100%; justify-content: center; }
+.rd-popover-state { font: var(--t-xs) var(--font-mono); text-transform: uppercase; color: var(--accent); }
+.rd-popover-state.rejected { color: var(--error); }
+
+/* ——— Reader layout ———
+ * Side panels (collapse/resize/overlay) are owned by lib/reader-layout.ts and
+ * the .reader-side rules in globals.css. The viewer only adapts inside. */
+@media (max-width: 800px) {
+  .rd-thumbs { flex-basis: 96px; }
+  .rd-thumb-img { width: 72px; min-height: 92px; }
+}

@@ -41,7 +41,15 @@ export interface ConnectionsPanelProps {
   focusLinkId?: string | null;
   /** Similarity-only passage matches, shown under "About this reading". */
   passageSection?: ReactNode;
+  /**
+   * Optional in-place jump for "open ↗" on a compare quote. Return true when
+   * handled (e.g. scrolled the open reader and flashed the passage); otherwise
+   * the link navigates normally.
+   */
+  onOpenWitness?: OpenWitness;
 }
+
+export type OpenWitness = (docId: string, locator: { page?: number; block_index?: number } | undefined, quote: string) => boolean;
 
 interface LastDecision {
   linkId: string;
@@ -69,7 +77,7 @@ export function isReviewable(preview: MentalLinkReviewPreview | null): preview i
   );
 }
 
-export function ConnectionsPanel({ docId, links, loading, mentalModel, reloadLinks, focusLinkId, passageSection }: ConnectionsPanelProps) {
+export function ConnectionsPanel({ docId, links, loading, mentalModel, reloadLinks, focusLinkId, passageSection, onOpenWitness }: ConnectionsPanelProps) {
   const [chosenTab, setTab] = useState<Tab | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [last, setLast] = useState<LastDecision | null>(null);
@@ -162,6 +170,7 @@ export function ConnectionsPanel({ docId, links, loading, mentalModel, reloadLin
                 key={`${docId}:${current.id}`}
                 docId={docId}
                 link={current}
+                onOpenWitness={onOpenWitness}
                 position={1}
                 total={queue.length}
                 onDecide={decide}
@@ -203,8 +212,9 @@ function Progress({ step }: { step: GuideStep }) {
   );
 }
 
-function GuidedReview({ docId, link, position, total, onDecide, onLater }: {
+function GuidedReview({ docId, link, position, total, onDecide, onLater, onOpenWitness }: {
   docId: string;
+  onOpenWitness?: OpenWitness;
   link: MentalModelLink;
   position: number;
   total: number;
@@ -332,8 +342,8 @@ function GuidedReview({ docId, link, position, total, onDecide, onLater }: {
             </div>
           )}
           <div aria-label="Source passages for comparison">
-            <Quote title={preview.source_document_title} quote={preview.source_quote!} where={locatorLabel(preview.source_locator)} href={readerWitnessURL(preview.source_document_id, preview.source_locator)} isThis={preview.source_document_id === docId} />
-            <Quote title={preview.target_document_title} quote={preview.target_quote!} where={locatorLabel(preview.target_locator)} href={readerWitnessURL(preview.target_document_id, preview.target_locator)} isThis={preview.target_document_id === docId} />
+            <Quote title={preview.source_document_title} quote={preview.source_quote!} where={locatorLabel(preview.source_locator)} href={readerWitnessURL(preview.source_document_id, preview.source_locator)} isThis={preview.source_document_id === docId} onOpen={onOpenWitness && (() => onOpenWitness(preview.source_document_id, preview.source_locator, preview.source_quote!))} />
+            <Quote title={preview.target_document_title} quote={preview.target_quote!} where={locatorLabel(preview.target_locator)} href={readerWitnessURL(preview.target_document_id, preview.target_locator)} isThis={preview.target_document_id === docId} onOpen={onOpenWitness && (() => onOpenWitness(preview.target_document_id, preview.target_locator, preview.target_quote!))} />
           </div>
           <div className="cx-decide">
           <div className="cx-lbl cx-decide-lbl">Is this a real link?</div>
@@ -375,13 +385,13 @@ function GuidedReview({ docId, link, position, total, onDecide, onLater }: {
   );
 }
 
-function Quote({ title, quote, where, href, isThis }: { title: string; quote: string; where: string; href: string; isThis: boolean }) {
+function Quote({ title, quote, where, href, isThis, onOpen }: { title: string; quote: string; where: string; href: string; isThis: boolean; onOpen?: () => boolean }) {
   return (
     <figure className="cx-quote">
       <figcaption>
         <span className="cx-qsrc">{isThis ? "This reading" : title}</span>
         {where && <span> · {where}</span>}
-        <span> · </span><a href={href}>open ↗</a>
+        <span> · </span><a href={href} onClick={(event) => { if (onOpen?.()) event.preventDefault(); }}>open ↗</a>
       </figcaption>
       <blockquote>“{quote}”</blockquote>
     </figure>
