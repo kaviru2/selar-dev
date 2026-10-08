@@ -23,6 +23,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/dbconfig"
+	"github.com/selar-dev/selar-api/internal/googleauth"
 	"github.com/selar-dev/selar-api/internal/handler"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/recaptcha"
@@ -100,6 +101,12 @@ func main() {
 	h.SetAdminChecker(h.RoleAdminChecker())
 	h.SetCaptcha(recaptcha.FromEnv(os.Getenv))
 	log.Printf("recaptcha on registration enabled: %t", h.CaptchaEnabled())
+	// Sign in with Google is enabled only when both GOOGLE_CLIENT_ID and
+	// GOOGLE_CLIENT_SECRET are set.
+	if google := googleauth.FromEnv(os.Getenv); google != nil {
+		h.SetGoogle(google)
+	}
+	log.Printf("google sign-in enabled: %t", h.GoogleEnabled())
 
 	// Router
 	r := chi.NewRouter()
@@ -120,6 +127,7 @@ func main() {
 	r.Head("/healthz", h.Health)
 	r.Post("/auth/register", h.Register)
 	r.Post("/auth/login", h.Login)
+	r.Post("/auth/google", h.GoogleSignIn)
 
 	// Protected API routes
 	r.Route("/api", func(r chi.Router) {

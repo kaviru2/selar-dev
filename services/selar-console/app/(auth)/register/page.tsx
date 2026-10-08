@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/Icon";
 import { AuthError, AuthField, AuthShell } from "@/components/auth/AuthShell";
 import { getRecaptchaToken, RecaptchaNotice, RecaptchaScript } from "@/components/auth/Recaptcha";
 import { CONSENT_WORDING } from "@/lib/consent";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -79,6 +80,7 @@ export default function RegisterPage() {
       }}
     >
       <AuthError message={error} />
+      <GoogleSignInButton />
       <form onSubmit={handleSubmit} className="auth-form">
         <AuthField
           id="email"

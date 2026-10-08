@@ -9,6 +9,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { AuthError, AuthField, AuthShell } from "@/components/auth/AuthShell";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
+import { googleErrorMessage } from "@/lib/google-oauth";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 
 function LoginForm() {
@@ -18,7 +20,7 @@ function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => googleErrorMessage(searchParams.get("google_error")));
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -60,6 +62,7 @@ function LoginForm() {
       }}
     >
       <AuthError message={error} />
+      <GoogleSignInButton from={from} />
       <form onSubmit={handleSubmit} className="auth-form" noValidate={false}>
         <AuthField
           id="email"
