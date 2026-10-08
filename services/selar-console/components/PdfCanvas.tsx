@@ -124,6 +124,24 @@ export default function PdfCanvas({
     return () => document.removeEventListener("mouseup", handleSelection);
   }, [pageNumber, zoom]);
 
+  // The suggestion card belongs to one page: close it when the page changes or on Escape.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset transient popovers on navigation
+    setSuggestionMenu(null);
+    setSelectionMenu(null);
+  }, [pageNumber, docId]);
+
+  useEffect(() => {
+    if (!suggestionMenu && !selectionMenu) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setSuggestionMenu(null);
+      setSelectionMenu(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [suggestionMenu, selectionMenu]);
+
   function createSelection(type: "highlight" | "note") {
     if (!selectionMenu || !onCreateAnnotation) return;
     if (type === "highlight") {

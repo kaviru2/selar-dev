@@ -80,4 +80,19 @@ describe("PdfCanvas passage-match popover", () => {
     await settle();
     expect(container.textContent).toMatch(/Could not save this response/);
   });
+
+  it("closes on Escape", async () => {
+    await openCard(match);
+    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("closes when the reader moves to another page", async () => {
+    await openCard(match);
+    await act(async () => root.render(
+      <PdfCanvas docId="doc-a" zoom={1} pageNumber={2} annotationsOn={false} suggestionsOn
+        suggestions={[match]} onPageLoad={() => {}} onRespondSuggestion={respond} onOpenSuggestionTarget={() => {}} />,
+    ));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
 });
