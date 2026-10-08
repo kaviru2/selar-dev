@@ -96,12 +96,13 @@ async function handleProxyRequest(
     // If it's a JSON response, we can safely read text, but for streaming/binaries
     // it's best to return the raw body as a standard stream.
     // However, Next.js requires returning the body directly.
-    const response = new NextResponse(res.body, {
-      status: res.status,
-      headers: {
-        "Content-Type": contentType,
-      },
-    });
+    const outHeaders: Record<string, string> = { "Content-Type": contentType };
+    // Downloads (e.g. the data export zip) need their filename and caching rules.
+    for (const name of ["Content-Disposition", "Cache-Control"]) {
+      const value = res.headers.get(name);
+      if (value) outHeaders[name] = value;
+    }
+    const response = new NextResponse(res.body, { status: res.status, headers: outHeaders });
     // The Go API rejected our JWT: drop the cookie so the proxy stops treating
     // the browser as signed in and /login is reachable again (no redirect loop).
     return res.status === 401 ? expireAuthCookie(response) : response;

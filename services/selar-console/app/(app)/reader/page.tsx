@@ -11,6 +11,8 @@ import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { PanelResizer } from "@/components/PanelResizer";
 import { isTypingTarget, useReaderLayout } from "@/lib/reader-layout";
 import { nextMatchLabel } from "@/lib/format";
+import { useSelar } from "@/lib/context";
+import { initialZoom, readerSettings, suggestionsOnOpen } from "@/lib/settings";
 import {
   clientFetch,
   type Annotation,
@@ -38,9 +40,12 @@ export default function ReaderPage() {
   const [loading, setLoading] = useState(Boolean(searchParams.get("docId")));
   const [suggestionError, setSuggestionError] = useState("");
   const [suggestionActionError, setSuggestionActionError] = useState("");
-  const [zoom, setZoom] = useState(1);
+  // Defaults from Settings (account preferences; see lib/settings.ts).
+  const { preferences } = useSelar();
+  const readerDefaults = readerSettings(preferences);
+  const [zoom, setZoom] = useState(() => initialZoom(readerDefaults.defaultZoom));
   const [annotationsOn, setAnnotationsOn] = useState(true);
-  const [suggestionsOn, setSuggestionsOn] = useState(true);
+  const [suggestionsOn, setSuggestionsOn] = useState(() => suggestionsOnOpen(preferences));
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(() => {
     const requestedPage = Number(searchParams.get("page") || "1");
@@ -296,6 +301,7 @@ export default function ReaderPage() {
             <PdfCanvas
               docId={docId}
               zoom={zoom}
+              highlightColor={readerDefaults.highlightColor}
               pageNumber={pageNumber}
               annotationsOn={annotationsOn}
               suggestionsOn={suggestionsOn}

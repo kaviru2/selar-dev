@@ -46,4 +46,13 @@ describe("Go API proxy", () => {
     expect(await response.json()).toEqual({ ok: true });
     expect(response.headers.get("Location")).toBeNull();
   });
+
+  it("keeps Content-Disposition so the data export downloads as a named zip", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("PK", {
+      status: 200, headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="selar-export-2026-10-08.zip"', "Cache-Control": "private, no-store" },
+    })));
+    const response = await GET(new Request("http://console.test/api/users/me/export"), { params: Promise.resolve({ go_api: ["users", "me", "export"] }) });
+    expect(response.headers.get("Content-Disposition")).toContain("selar-export-2026-10-08.zip");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
 });
