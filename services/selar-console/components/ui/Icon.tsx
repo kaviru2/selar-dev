@@ -1,5 +1,6 @@
 // Icon.tsx — SELAR shared SVG icon set.
-// 23 inline SVG icons rendered at configurable size. Stroke-based, 14px default.
+// Inline SVG icons rendered at configurable size. Stroke-based, 14px default.
+// Decorative (aria-hidden); pair with visible text or an aria-label.
 // Ported from design_handoff_selar/design_refs/icons.jsx.
 
 import type { CSSProperties } from "react";
@@ -36,7 +37,18 @@ export type IconName =
   | "zoom_in"
   | "zoom_out"
   | "eye"
-  | "trash";
+  | "trash"
+  | "info"
+  | "menu"
+  | "logout"
+  | "chat"
+  | "bulb"
+  | "scale"
+  | "shield"
+  | "users"
+  | "pen"
+  | "history"
+  | "external";
 
 interface IconProps {
   name: IconName;
@@ -182,10 +194,31 @@ export function Icon({ name, size = 14, style, className }: IconProps) {
         <path {...p} d="M7 6v6 M9 6v6" />
       </>
     ),
+    info: (
+      <>
+        <circle cx="8" cy="8" r="6" {...p} />
+        <path {...p} d="M8 7.5v3.5M8 5h.01" />
+      </>
+    ),
+    menu: <path {...p} d="M2.5 4h11M2.5 8h11M2.5 12h11" />,
+    logout: <path {...p} d="M6 2.5H3.5v11H6M10 5l3 3-3 3M13 8H6.5" />,
+    chat: <path {...p} d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />,
+    bulb: <path {...p} d="M6 12h4M6.5 14h3M8 2a4 4 0 00-2.4 7.2c.5.4.9 1 .9 1.8h3c0-.8.4-1.4.9-1.8A4 4 0 008 2z" />,
+    scale: <path {...p} d="M8 2v12M5 14h6M3 4.5h10M3 4.5L1.5 8.5a1.5 1.5 0 003 0zM13 4.5l-1.5 4a1.5 1.5 0 003 0z" />,
+    shield: <path {...p} d="M8 1.8l5 2v4c0 3.2-2.2 5.3-5 6.4-2.8-1.1-5-3.2-5-6.4v-4z M5.8 8l1.6 1.6L10.5 6.5" />,
+    users: (
+      <>
+        <circle cx="6" cy="5.5" r="2.2" {...p} />
+        <path {...p} d="M1.8 13.5c.4-2.4 2.1-3.7 4.2-3.7s3.8 1.3 4.2 3.7M10.5 3.6a2.2 2.2 0 010 4.1M12 9.9c1.2.5 2 1.7 2.2 3.6" />
+      </>
+    ),
+    pen: <path {...p} d="M10.5 2.5l3 3-8 8H2.5v-3z M9 4l3 3" />,
+    history: <path {...p} d="M2.5 8a5.5 5.5 0 101.6-3.9M2.5 2.5v2.5H5M8 5v3l2 1.5" />,
+    external: <path {...p} d="M9 2.5h4.5V7M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4" />,
   };
 
   return (
-    <svg viewBox="0 0 16 16" style={s} className={className}>
+    <svg viewBox="0 0 16 16" style={s} className={className} aria-hidden="true" focusable="false">
       {paths[name]}
     </svg>
   );

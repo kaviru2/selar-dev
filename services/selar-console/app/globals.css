@@ -4,13 +4,15 @@
  * styles live here. Themes switch via data-theme attribute on <html>. */
 
 @import "tailwindcss";
+@import "./tokens.css";
+@import "./ui.css";
 
 /* ——— Tailwind v4 Theme Tokens ——— */
 @theme inline {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-serif: "Source Serif 4", "Charter", "Iowan Old Style", Georgia, serif;
-  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular,
-    Menlo, monospace;
+  --font-sans: var(--selar-font-sans);
+  --font-display: var(--selar-font-display);
+  --font-serif: var(--selar-font-serif);
+  --font-mono: var(--selar-font-mono);
 
   --color-bg: var(--bg);
   --color-bg-2: var(--bg-2);
@@ -458,96 +460,7 @@
   .chat-message.user { padding-left: 5%; }
 }
 
-/* ——— CSS Custom Properties — Light (default) ——— */
-:root {
-  --bg: #faf9f7;
-  --bg-2: #f3f1ec;
-  --bg-3: #ebe8e1;
-  --ink: #1a1816;
-  --ink-2: #3a3633;
-  --ink-3: #6b655e;
-  --ink-4: #9a938a;
-  --rule: #e4e0d8;
-  --rule-2: #d4cfc4;
-  --accent: #c96442;
-  --accent-2: #7a8c5c;
-  --accent-3: #8a6a3d;
-  --error: #b5483f;
-
-  /* Annotation colours */
-  --wheat: rgba(223, 193, 121, 0.42);
-  --wheat-2: rgba(223, 193, 121, 0.72);
-  --coral: rgba(220, 140, 120, 0.4);
-  --sage: rgba(140, 165, 120, 0.38);
-  --yellow: rgba(240, 215, 110, 0.48);
-
-  /* Suggest highlight */
-  --highlight-suggest: rgba(201, 100, 66, 0.12);
-  --highlight-suggest-border: rgba(201, 100, 66, 0.55);
-
-  /* Radius */
-  --r-xs: 2px;
-  --r-sm: 3px;
-  --r-md: 5px;
-  --r-lg: 8px;
-
-  /* Type scale */
-  --t-xs: 10.5px;
-  --t-sm: 11.5px;
-  --t-md: 13px;
-  --t-lg: 15px;
-
-  /* Shadows */
-  --shadow-1: 0 1px 0 rgba(26, 24, 22, 0.04), 0 1px 2px rgba(26, 24, 22, 0.05);
-  --shadow-2: 0 1px 0 rgba(26, 24, 22, 0.04),
-    0 4px 16px rgba(26, 24, 22, 0.08);
-  --shadow-3: 0 1px 0 rgba(26, 24, 22, 0.04),
-    0 12px 40px rgba(26, 24, 22, 0.16);
-}
-
-/* ——— Theme: Warm ——— */
-[data-theme="warm"] {
-  --bg: #f6f2ea;
-  --bg-2: #ede7db;
-  --bg-3: #e2dbca;
-  --rule: #d9d0bd;
-}
-
-/* ——— Theme: Sage ——— */
-[data-theme="sage"] {
-  --bg: #f5f6f1;
-  --bg-2: #ebede3;
-  --bg-3: #dfe2d4;
-  --accent: #6b7f52;
-  --rule: #d6dac9;
-}
-
-/* ——— Theme: Dark ——— */
-[data-theme="dark"] {
-  --bg: #17161a;
-  --bg-2: #1e1d22;
-  --bg-3: #26252b;
-  --ink: #ece8e0;
-  --ink-2: #c9c4ba;
-  --ink-3: #8a857c;
-  --ink-4: #5a554e;
-  --rule: #2c2a30;
-  --rule-2: #3a373f;
-  --accent: #e07a56;
-  --accent-2: #8fa76a;
-  --accent-3: #b58a57;
-  --error: #e06f64;
-  --wheat: rgba(223, 193, 121, 0.22);
-  --wheat-2: rgba(223, 193, 121, 0.42);
-  --coral: rgba(220, 140, 120, 0.26);
-  --sage: rgba(140, 165, 120, 0.24);
-  --yellow: rgba(240, 215, 110, 0.28);
-  --highlight-suggest: rgba(224, 122, 86, 0.16);
-  --highlight-suggest-border: rgba(224, 122, 86, 0.7);
-  --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 1px 0 rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-3: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.6);
-}
+/* Design tokens (colours, type, radii, shadows, themes) live in app/tokens.css. */
 
 /* ——— Base ——— */
 html,
@@ -824,31 +737,33 @@ body {
   gap: 8px;
 }
 
-/* ——— Buttons ——— */
+/* ——— Buttons (legacy .btn, restyled on the shared tokens; prefer <Button>) ——— */
 .btn {
-  border: 1px solid var(--rule-2);
+  border: 1.5px solid var(--rule-2);
   background: var(--bg);
   color: var(--ink);
   font-family: inherit;
-  font-size: var(--t-md);
-  padding: 5px 11px;
-  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: var(--selar-radius-pill);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.1s;
+  transition: background var(--selar-dur) var(--selar-ease), border-color var(--selar-dur) var(--selar-ease);
 }
 .btn:hover {
-  background: var(--bg-2);
+  background: var(--bg-3);
 }
 .btn.primary {
-  background: var(--ink);
-  color: var(--bg);
-  border-color: var(--ink);
+  background: var(--selar-green-800);
+  color: #fff;
+  border-color: var(--selar-green-800);
 }
 .btn.primary:hover {
-  background: var(--ink-2);
+  background: var(--selar-green-900);
 }
 
 /* ——— Reader ——— */
