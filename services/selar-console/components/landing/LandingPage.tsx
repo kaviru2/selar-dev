@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ButtonLink } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Illustration, type IllustrationName } from "@/components/ui/Illustration";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Wordmark } from "@/components/ui/Wordmark";
 
 const STEPS: { n: string; title: string; body: string; illo: IllustrationName; tint: string }[] = [
@@ -103,6 +104,7 @@ export function LandingPage() {
           <a href="#team">Team</a>
         </nav>
         <div className="lp-nav-cta">
+          <ThemeToggle className="lp-nav-theme" />
           <ButtonLink href="/login" variant="ghost" size="sm">Sign in</ButtonLink>
           <ButtonLink href="/register" variant="primary" size="sm">Create account</ButtonLink>
         </div>

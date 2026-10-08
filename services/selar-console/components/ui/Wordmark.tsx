@@ -15,11 +15,11 @@ export function WordmarkMark({ size = 26 }: { size?: number }) {
   // Two pages joined by a thread: "this reading links to that one".
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <rect x="2" y="5" width="13" height="18" rx="3" fill="var(--selar-green-800)" />
-      <rect x="17" y="9" width="13" height="18" rx="3" fill="var(--selar-rust)" />
-      <path d="M9 14 C 13 20, 19 8, 23 18" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="9" cy="14" r="2.2" fill="#fff" />
-      <circle cx="23" cy="18" r="2.2" fill="#fff" />
+      <rect x="2" y="5" width="13" height="18" rx="3" fill="var(--illo-green)" />
+      <rect x="17" y="9" width="13" height="18" rx="3" fill="var(--illo-rust)" />
+      <path d="M9 14 C 13 20, 19 8, 23 18" fill="none" stroke="var(--illo-paper)" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="9" cy="14" r="2.2" fill="var(--illo-paper)" />
+      <circle cx="23" cy="18" r="2.2" fill="var(--illo-paper)" />
     </svg>
   );
 }

@@ -48,7 +48,10 @@ export type IconName =
   | "users"
   | "pen"
   | "history"
-  | "external";
+  | "external"
+  | "sun"
+  | "moon"
+  | "monitor";
 
 interface IconProps {
   name: IconName;
@@ -215,6 +218,19 @@ export function Icon({ name, size = 14, style, className }: IconProps) {
     pen: <path {...p} d="M10.5 2.5l3 3-8 8H2.5v-3z M9 4l3 3" />,
     history: <path {...p} d="M2.5 8a5.5 5.5 0 101.6-3.9M2.5 2.5v2.5H5M8 5v3l2 1.5" />,
     external: <path {...p} d="M9 2.5h4.5V7M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4" />,
+    sun: (
+      <g {...p}>
+        <circle cx="8" cy="8" r="2.75" />
+        <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" />
+      </g>
+    ),
+    moon: <path {...p} d="M13.2 9.6A5.5 5.5 0 016.4 2.8a5.5 5.5 0 106.8 6.8z" />,
+    monitor: (
+      <g {...p}>
+        <rect x="2" y="3" width="12" height="8" rx="1.5" />
+        <path d="M6 14h4M8 11v3" />
+      </g>
+    ),
   };
 
   return (

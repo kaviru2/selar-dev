@@ -64,3 +64,63 @@ describe("SELAR design tokens", () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
 });
+
+/** Reads a hex token from a given block (":root {" light or '[data-theme="dark"] {'). */
+function blockTokens(selector: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let idx = css.indexOf(selector);
+  while (idx !== -1) {
+    const body = css.slice(idx, css.indexOf("}", idx));
+    for (const m of body.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})\b/g)) out[m[1]] = m[2];
+    idx = css.indexOf(selector, idx + 1);
+  }
+  return out;
+}
+
+describe("semantic tokens meet WCAG AA in both themes", () => {
+  const brand = blockTokens(":root {");
+  const darkT = blockTokens('[data-theme="dark"] {');
+  // Light semantic tokens reference brand tokens; resolve the ones we test.
+  const light: Record<string, string> = {
+    bg: brand["selar-white"], "bg-2": brand["selar-paper"], "bg-3": brand["selar-light"], "bg-raised": brand["selar-white"],
+    ink: brand["selar-ink"], "ink-3": brand["selar-slate"], "ink-4": brand["selar-slate-500"],
+    accent: brand["selar-green-800"], "accent-2": brand["selar-green-600"], "on-accent": "#ffffff",
+    "panel-brand": brand["selar-green-800"], "panel-brand-ink": "#ffffff", "panel-brand-muted": "#dbe7df",
+    "accent-warm-ink": brand["selar-rust-700"], "accent-warm-tint": brand["selar-rust-tint"],
+    "tint-green": brand["selar-green-50"], "tint-green-2": brand["selar-green-100"],
+    "tint-sky": brand["selar-sky"], "text-sky": brand["selar-sky-600"],
+    "tint-amber": brand["selar-amber-tint"], "text-amber": brand["selar-amber-800"], "text-amber-strong": "#78350f",
+    error: brand["selar-danger"],
+  };
+  const pairs: Array<[string, string]> = [
+    ["ink", "bg"], ["ink", "bg-2"], ["ink", "bg-3"], ["ink", "bg-raised"],
+    ["ink-3", "bg"], ["ink-3", "bg-2"], ["ink-3", "bg-3"], ["ink-3", "bg-raised"],
+    ["ink-4", "bg"],
+    ["accent", "bg"], ["accent", "bg-3"], ["accent", "tint-green-2"], ["accent-2", "bg"], ["accent-2", "bg-3"],
+    ["on-accent", "accent"],
+    ["panel-brand-ink", "panel-brand"], ["panel-brand-muted", "panel-brand"],
+    ["accent-warm-ink", "accent-warm-tint"],
+    ["text-sky", "tint-sky"], ["text-amber", "tint-amber"], ["text-amber-strong", "tint-amber"],
+    ["ink", "tint-sky"], ["ink-3", "tint-sky"], ["ink-3", "tint-green"],
+    ["error", "bg"],
+  ];
+  it.each(pairs)("light: --%s on --%s", (fg, bg) => {
+    expect(contrast(light[fg], light[bg])).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(pairs)("dark: --%s on --%s", (fg, bg) => {
+    const f = darkT[fg] ?? light[fg];
+    const b = darkT[bg] ?? light[bg];
+    expect(contrast(f, b)).toBeGreaterThanOrEqual(4.5);
+  });
+  it("defines every tested token in the dark block", () => {
+    const missing = Array.from(new Set(pairs.flat())).filter((t) => !darkT[t] && !["panel-brand-ink", "panel-brand-muted"].includes(t));
+    expect(missing).toEqual([]);
+  });
+});
+
+describe("dark theme plumbing", () => {
+  it("declares color-scheme for native controls", () => {
+    expect(css).toMatch(/\[data-theme="dark"\] \{\s*color-scheme: dark;/);
+    expect(css).toMatch(/:root \{\s*color-scheme: light;/);
+  });
+});

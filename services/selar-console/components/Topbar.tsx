@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSelar } from "@/lib/context";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 const NAV_ITEMS = [
   { key: "library", label: "Library", href: "/library" },
@@ -64,6 +65,8 @@ export function Topbar() {
           <span className="kbd">Y</span>
           confirm
         </span>
+
+        <ThemeToggle />
 
         <button
           className="avatar"
