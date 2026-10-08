@@ -353,6 +353,15 @@ func (h *Handler) GetDocumentStats(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListSuggestions(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	docID := chi.URLParam(r, "id")
+	enabled, err := h.suggestionsEnabled(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list suggestions"})
+		return
+	}
+	if !enabled {
+		writeJSON(w, http.StatusOK, []model.LinkSuggestion{})
+		return
+	}
 	page := 0
 	if p := r.URL.Query().Get("page"); p != "" {
 		if v, err := strconv.Atoi(p); err == nil {
@@ -608,6 +617,15 @@ func (h *Handler) GetDocumentMentalModel(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) ListMentalModelLinks(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
+	enabled, err := h.suggestionsEnabled(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental-model links"})
+		return
+	}
+	if !enabled {
+		writeJSON(w, http.StatusOK, []model.MentalModelLink{})
+		return
+	}
 	links, err := h.store.ListMentalModelLinks(r.Context(), userID, r.URL.Query().Get("document_id"))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list mental-model links"})

@@ -37,6 +37,14 @@ export interface SettingsResponse {
 export const SUGGESTIONS_ON_OPEN = "suggestions.show_on_open";
 export const DELETE_ACCOUNT_CONFIRMATION = "delete my account";
 
+export function suggestionVisibility(settings: SettingsResponse, fallback: boolean): { enabled: boolean; locked: boolean } {
+  const value = settings.values[SUGGESTIONS_ON_OPEN];
+  return {
+    enabled: typeof value === "boolean" ? value : fallback,
+    locked: settings.locked.includes(SUGGESTIONS_ON_OPEN),
+  };
+}
+
 function validZoom(v: unknown): v is ZoomMode {
   return v === "fit-width" || v === "fit-page" || (typeof v === "number" && v >= 0.25 && v <= 4);
 }

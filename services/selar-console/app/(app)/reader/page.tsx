@@ -10,10 +10,11 @@ import { createReaderTelemetry, type ReaderTelemetry } from "@/lib/reader-teleme
 import { createDwellTracker, track, type DwellTracker } from "@/lib/analytics";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { PanelResizer } from "@/components/PanelResizer";
+import { SuggestionVisibilityToggle } from "@/components/SuggestionVisibilityToggle";
 import { isTypingTarget, useReaderLayout } from "@/lib/reader-layout";
 import { nextMatchLabel } from "@/lib/format";
 import { useSelar } from "@/lib/context";
-import { initialZoom, readerSettings, suggestionsOnOpen } from "@/lib/settings";
+import { initialZoom, loadSettings, readerSettings, suggestionVisibility, suggestionsOnOpen } from "@/lib/settings";
 import {
   clientFetch,
   type Annotation,
@@ -46,7 +47,9 @@ export default function ReaderPage() {
   const readerDefaults = readerSettings(preferences);
   const [zoom, setZoom] = useState(() => initialZoom(readerDefaults.defaultZoom));
   const [annotationsOn, setAnnotationsOn] = useState(true);
-  const [suggestionsOn, setSuggestionsOn] = useState(() => suggestionsOnOpen(preferences));
+  const fallbackSuggestionsOn = suggestionsOnOpen(preferences);
+  const [suggestionsOn, setSuggestionsOn] = useState(fallbackSuggestionsOn);
+  const [suggestionsLocked, setSuggestionsLocked] = useState(false);
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(() => {
     const requestedPage = Number(searchParams.get("page") || "1");
@@ -93,6 +96,21 @@ export default function ReaderPage() {
       cancelled = true;
     };
   }, [docId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        const visibility = suggestionVisibility(settings, fallbackSuggestionsOn);
+        setSuggestionsOn(visibility.enabled);
+        setSuggestionsLocked(visibility.locked);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackSuggestionsOn]);
 
   useEffect(() => {
     if (!docId || documentContent?.document.status !== "ready") return;
@@ -181,9 +199,9 @@ export default function ReaderPage() {
         .map((item) => item.src_page)
     )).sort((left, right) => left - right);
     if (!pages.length) return;
-    setSuggestionsOn(true);
+    if (!suggestionsLocked) setSuggestionsOn(true);
     setPageNumber(pages.find((page) => page > pageNumber) || pages[0]);
-  }, [pageNumber, suggestions]);
+  }, [pageNumber, suggestions, suggestionsLocked]);
 
   async function createAnnotation(
     type: string,
@@ -282,9 +300,12 @@ export default function ReaderPage() {
             <button className={annotationsOn ? "on" : ""} onClick={() => setAnnotationsOn((value) => !value)}>
               <Icon name="highlight" size={12} /> Marks
             </button>
-            <button className={suggestionsOn ? "on suggestion-toggle" : "suggestion-toggle"} onClick={() => setSuggestionsOn((value) => !value)}>
-              <Icon name="link" size={12} /> Suggestions {visibleSuggestions.length}
-            </button>
+            <SuggestionVisibilityToggle
+              enabled={suggestionsOn}
+              locked={suggestionsLocked}
+              count={visibleSuggestions.length}
+              onToggle={() => setSuggestionsOn((value) => !value)}
+            />
             <button
               aria-label="Go to next suggested passage"
               disabled={visibleSuggestions.length === 0}
@@ -384,7 +405,7 @@ export default function ReaderPage() {
                 status={suggestion.status}
                 onReject={() => respondToPassage(suggestion.id, "rejected")}
                 onReveal={() => {
-                  setSuggestionsOn(true);
+                  if (!suggestionsLocked) setSuggestionsOn(true);
                   setPageNumber(suggestion.src_page);
                 }}
               />
