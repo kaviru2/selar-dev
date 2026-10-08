@@ -248,6 +248,20 @@ func (s *Store) DeleteDocument(ctx context.Context, id, userID string) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	// Remove grounded mental-model links touching this document first. Left to
+	// the cascade, deleting the evidence chunks would SET NULL their chunk ids,
+	// and that UPDATE is (correctly) rejected by the grounding and
+	// reviewed-evidence triggers, so the whole delete would fail. Their review
+	// events cascade with them.
+	if _, err = tx.Exec(ctx,
+		`DELETE FROM mental_model_links l WHERE l.user_id = $2 AND (
+		   l.source_model_id IN (SELECT m.id FROM document_mental_models m WHERE m.document_id = $1)
+		   OR l.target_model_id IN (SELECT m.id FROM document_mental_models m WHERE m.document_id = $1)
+		   OR l.source_evidence_chunk_id IN (SELECT c.id FROM chunks c WHERE c.document_id = $1)
+		   OR l.target_evidence_chunk_id IN (SELECT c.id FROM chunks c WHERE c.document_id = $1))`,
+		id, userID); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, `DELETE FROM documents WHERE id = $1 AND user_id = $2`, id, userID); err != nil {
 		return err
 	}
