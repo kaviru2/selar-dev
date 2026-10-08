@@ -15,6 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
 	"github.com/selar-dev/selar-api/internal/settings"
@@ -31,6 +33,11 @@ type Handler struct {
 	storage storage.Store
 	worker  *workertrigger.Client
 	admins  AdminChecker
+
+	// adminEmails (ADMIN_EMAILS) are promoted to admin on login/registration.
+	adminEmails analytics.EmailSet
+	// analyticsOff disables all event recording (ANALYTICS_ENABLED=false).
+	analyticsOff bool
 }
 
 // New creates a new Handler with the given store. Upload storage defaults to
@@ -81,6 +88,31 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	// ResearchConsent is the optional analytics opt-in checkbox shown at
+	// registration. Omitted = not asked (the console asks after login).
+	ResearchConsent *bool `json:"research_consent,omitempty"`
+}
+
+// roleFor returns the role a user should be created with.
+func (h *Handler) roleFor(email string) string {
+	if h.adminEmails.Contains(email) {
+		return middleware.RoleAdmin
+	}
+	return middleware.RoleUser
+}
+
+// applyAdminBootstrap promotes a user listed in ADMIN_EMAILS. It never
+// demotes: removing an email from the list does not revoke an existing
+// admin (use `go run ./cmd/admin demote <email>`).
+func (h *Handler) applyAdminBootstrap(r *http.Request, email string, user *model.User) {
+	if user.Role == middleware.RoleAdmin || !h.adminEmails.Contains(email) {
+		return
+	}
+	if err := h.store.SetUserRole(r.Context(), user.ID, middleware.RoleAdmin); err != nil {
+		log.Printf("ADMIN_EMAILS promotion failed: %v", err)
+		return
+	}
+	user.Role = middleware.RoleAdmin
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +137,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	// Random cohort assignment via block randomization
 	cohort := model.CohortTreatmentHITL // TODO: implement proper randomization
 
-	user, err := h.store.CreateUser(r.Context(), req.Email, string(hash), cohort)
+	newUser := store.NewUser{Email: req.Email, PasswordHash: string(hash), Cohort: cohort, Role: h.roleFor(req.Email)}
+	if req.ResearchConsent != nil {
+		newUser.Consent = req.ResearchConsent
+		newUser.ConsentVersion = analytics.ConsentVersion
+	}
+	user, err := h.store.CreateUserWith(r.Context(), newUser)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "email already in use"})
 		return
@@ -116,6 +153,10 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	if h.auth != nil {
 		token, _ = h.auth.GenerateToken(user.ID)
 	}
+	if user.ConsentedAt != nil {
+		h.Track(r.Context(), user.ID, analytics.ConsentGranted, analytics.Props{"via": "register"})
+	}
+	h.Track(r.Context(), user.ID, analytics.SignedIn, analytics.Props{"method": "register"})
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"token": token,
@@ -158,6 +199,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate token"})
 		return
 	}
+	h.applyAdminBootstrap(r, req.Email, user)
+	h.Track(r.Context(), user.ID, analytics.SignedIn, analytics.Props{"method": "login"})
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token": token,
@@ -341,6 +384,8 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to respond"})
 		return
 	}
+	h.Track(r.Context(), userID, analytics.DecisionMade, analytics.Props{"kind": "passage_link",
+		"action": decisionAction(string(status)), "link_id": id, "response_ms": req.TimeToRespondMs})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -381,6 +426,7 @@ func (h *Handler) CreateAnnotation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create annotation"})
 		return
 	}
+	h.Track(r.Context(), userID, analytics.HighlightCreated, analytics.Props{"document_id": a.DocumentID, "page": a.Page, "type": string(a.Type)})
 	writeJSON(w, http.StatusCreated, a)
 }
 
@@ -570,6 +616,8 @@ func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save mental-model response"})
 		return
 	}
+	h.Track(r.Context(), userID, analytics.DecisionMade, analytics.Props{"kind": "mental_link",
+		"action": decisionAction(string(response.Action)), "link_id": chi.URLParam(r, "id")})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -607,6 +655,7 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create session"})
 		return
 	}
+	h.Track(r.Context(), userID, analytics.ReadingSessionStart, analytics.Props{"document_id": sess.DocumentID, "session_id": sess.ID})
 	writeJSON(w, http.StatusCreated, sess)
 }
 
@@ -621,10 +670,18 @@ func (h *Handler) EndSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if err := h.store.EndReadingSession(r.Context(), userID, id, body.PagesViewed, body.MaxScrollDepth); err != nil {
+	sess, err := h.store.EndReadingSession(r.Context(), userID, id, body.PagesViewed, body.MaxScrollDepth)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Unknown, foreign or already-ended session: idempotent no-op.
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to end session"})
 		return
 	}
+	h.Track(r.Context(), userID, analytics.ReadingSessionEnd, analytics.Props{"document_id": sess.DocumentID, "session_id": sess.ID,
+		"duration_ms": sess.EndedAt.Sub(sess.StartedAt).Milliseconds(), "pages_viewed": len(body.PagesViewed), "max_scroll_depth": body.MaxScrollDepth})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
 	"github.com/selar-dev/selar-api/internal/storage"
@@ -277,6 +278,7 @@ func (h *Handler) createPDFIngestion(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	h.notifyWorker(r, job.ID)
+	h.Track(r.Context(), userID, analytics.DocumentUploaded, analytics.Props{"document_id": doc.ID, "source_type": "pdf"})
 	writeJSON(w, http.StatusAccepted, map[string]any{"source": source, "document": doc, "run": run})
 }
 

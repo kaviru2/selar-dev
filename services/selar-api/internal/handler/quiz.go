@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/quiz"
 	"github.com/selar-dev/selar-api/internal/store"
@@ -154,6 +155,7 @@ func (h *Handler) StartQuizAttempt(w http.ResponseWriter, r *http.Request) {
 		quizError(w, err)
 		return
 	}
+	h.trackQuizAttempt(r.Context(), uid(r), view.AttemptID, analytics.QuizStarted)
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -189,9 +191,14 @@ func (h *Handler) AdvanceQuizAttempt(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) SubmitQuizAttempt(w http.ResponseWriter, r *http.Request) {
+	// Submission is idempotent; only the first submit is recorded as an event.
+	alreadySubmitted := h.quizAttemptSubmitted(r.Context(), uid(r), chi.URLParam(r, "id"))
 	if err := h.store.SubmitQuizAttempt(r.Context(), uid(r), chi.URLParam(r, "id"), time.Now()); err != nil {
 		quizError(w, err)
 		return
+	}
+	if !alreadySubmitted {
+		h.trackQuizAttempt(r.Context(), uid(r), chi.URLParam(r, "id"), analytics.QuizSubmitted)
 	}
 	h.GetQuizResult(w, r)
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
 	"github.com/selar-dev/selar-api/internal/workertrigger"
@@ -62,6 +63,8 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "conversation not found"})
 		return
 	}
+	// Length only: the question text is never copied into analytics.
+	h.Track(r.Context(), userID, analytics.ChatQuestionAsked, analytics.Props{"thread_id": threadID, "length": textLength(request.Content)})
 	history, err := h.store.ListChatMessages(r.Context(), userID, threadID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load conversation context"})

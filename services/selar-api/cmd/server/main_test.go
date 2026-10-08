@@ -53,3 +53,16 @@ func TestValidateProductionDatabaseRequiresTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAnalyticsEnabledDefaultsOnAndHonoursExplicitOff(t *testing.T) {
+	for _, raw := range []string{"", "true", "1", "yes"} {
+		if !analyticsEnabled(raw) {
+			t.Errorf("ANALYTICS_ENABLED=%q should enable recording", raw)
+		}
+	}
+	for _, raw := range []string{"false", "0", "off", " NO "} {
+		if analyticsEnabled(raw) {
+			t.Errorf("ANALYTICS_ENABLED=%q should disable recording", raw)
+		}
+	}
+}

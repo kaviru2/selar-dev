@@ -21,6 +21,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/cors"
+	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/dbconfig"
 	"github.com/selar-dev/selar-api/internal/handler"
 	"github.com/selar-dev/selar-api/internal/middleware"
@@ -89,15 +90,13 @@ func main() {
 	auth := middleware.NewAuth(jwtSecret)
 	auth.SetSessionVersionLookup(handler.SessionVersionLookup(st))
 	h.SetAuth(auth)
-	// Quiz admin routes. Interim allowlist until the shared users.role admin
-	// check lands; an empty ADMIN_EMAILS denies admin access to everyone.
-	h.SetAdminChecker(handler.NewEmailAllowlist(os.Getenv("ADMIN_EMAILS"), func(ctx context.Context, id string) (string, error) {
-		u, err := st.GetUserByID(ctx, id)
-		if err != nil {
-			return "", err
-		}
-		return u.Email, nil
-	}))
+	adminEmails := analytics.ParseEmailList(os.Getenv("ADMIN_EMAILS"))
+	h.SetAdminEmails(adminEmails)
+	h.SetAnalyticsEnabled(analyticsEnabled(os.Getenv("ANALYTICS_ENABLED")))
+	log.Printf("analytics enabled: %t; ADMIN_EMAILS entries: %d", h.AnalyticsEnabled(), len(adminEmails))
+	// Quiz admin routes share the users.role check (ADMIN_EMAILS entries are
+	// promoted on first use), so /api/admin/quizzes and /api/admin/* agree.
+	h.SetAdminChecker(h.RoleAdminChecker())
 
 	// Router
 	r := chi.NewRouter()
@@ -194,6 +193,15 @@ func main() {
 		// Reading Sessions
 		r.Post("/sessions/start", h.StartSession)
 		r.Post("/sessions/{id}/end", h.EndSession)
+
+		// First-party analytics: consent, batched console beacon, delete-my-data
+		h.MountUserAnalytics(r)
+
+		// Admin-only (role re-read from the database on every request)
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.RequireAdmin(h.RoleLookup()))
+			h.MountAdmin(r)
+		})
 	})
 
 	srv := &http.Server{
@@ -222,6 +230,16 @@ func main() {
 		log.Fatalf("server error: %v", err)
 	}
 	fmt.Println("server stopped")
+}
+
+// analyticsEnabled parses ANALYTICS_ENABLED. Recording is on unless it is
+// explicitly set to a false value; per-user events still require consent.
+func analyticsEnabled(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 func validateRuntimeConfig(appEnv, jwtSecret string) error {
