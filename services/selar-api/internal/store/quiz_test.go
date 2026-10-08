@@ -185,6 +185,17 @@ func TestQuizLearnerFlowEnforcesPolicyAndHidesKeys(t *testing.T) {
 	if res.Summary.Score == nil || *res.Summary.Score != 7 || res.Summary.PendingReview != 0 {
 		t.Fatalf("after grading: %+v", res.Summary)
 	}
+	// The admin view must stop flagging a graded answer as needing review,
+	// otherwise the grading UI keeps offering it.
+	graded, err := f.s.GetAttemptForAdmin(f.ctx, view.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range graded.Answers {
+		if a.NeedsReview {
+			t.Fatalf("answer %s still needs review after grading: %+v", a.QuestionID, a)
+		}
+	}
 	rows, err := f.s.QuizExportRows(f.ctx, draftID)
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("export rows: %d %v", len(rows), err)
