@@ -8,11 +8,20 @@ Tracking issue: #86.
 
 ## Deploy a quiz in under two minutes
 
-1. Download a template from **Admin → Quizzes → Import** (`/quiz-templates/quiz-template.yaml`, `.md` or `.json`).
-2. Edit the title, settings and questions.
-3. On **Import**, drop the file in (or paste it). The preview shows every question and any validation error with its line or question number.
-4. Click **Import as draft** (or **Import and publish**).
-5. Open the quiz, check the learner preview, and click **Publish**. Learners see it at `/quizzes` once it opens for them.
+1. Open **Admin → Quizzes** (`/admin/quizzes`; the **Admin** tab appears in the top bar for admins only).
+2. Download a template from the import panel (Markdown, YAML or JSON; also served at `/quiz-templates/quiz-template.{md,yaml,json}`) and edit the title, settings and questions.
+3. Drop the file on the panel, choose it, or paste it, then click **Check file**. You get a one-line summary (kind, number of questions, results policy, attempts, audience, time limit, no-going-back) or the parser's error with its line or question number.
+4. Click **Import and publish**, or **Import as draft** if you want to review it first. You land on the quiz's editor with a live learner preview.
+5. Learners in the audience see it at `/quizzes` as soon as its window opens.
+
+In the end-to-end UI test, the import-and-publish step took under half a second. Most of the two minutes goes on editing the file.
+
+**Other admin pages**
+
+- `/admin/quizzes/new` is the form editor. It has a live learner preview with no answer markers, reorder / duplicate / delete per question, and client-side validation that matches the API.
+- On a quiz page you can **Publish**, **Close** (which finalises open attempts), **Back to draft** (only before any attempt), **Duplicate**, **Export YAML** and **Delete** (only before any attempt). Questions lock once someone has started an attempt.
+- `/admin/quizzes/{id}/results` shows submitted, in-progress and mean-score figures and per-question stats (% correct, mean score, median time, blanks). It also has two CSV downloads: **per attempt** and **per question**.
+- `/admin/quiz-attempts/{id}` is **blind** manual grading. It shows the answer, rubric, accepted answers, time on question and number of edits; the learner's email and cohort are hidden. Scores accept half points.
 
 The same works from a terminal with an admin JWT:
 
