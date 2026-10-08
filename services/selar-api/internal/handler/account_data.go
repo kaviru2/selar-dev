@@ -33,6 +33,7 @@ This archive contains the data SELAR stores about your account, as JSON:
   reading_sessions.json    reading sessions (pages viewed, scroll depth)
   chat_threads.json        grounded chat conversations
   learning_events.json     the activity log used by the learner model
+  analytics_events.json    usage analytics, only if you opted in
 
 The uploaded PDF files themselves are not included; you already have them.
 Passwords are never exported.

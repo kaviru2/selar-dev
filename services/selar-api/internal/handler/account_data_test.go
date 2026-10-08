@@ -94,7 +94,7 @@ func TestIntegrationExportMyDataIsAZipOfOwnRowsOnly(t *testing.T) {
 		files[file.Name], _ = io.ReadAll(rc)
 		rc.Close()
 	}
-	for _, name := range []string{"README.txt", "account.json", "documents.json", "annotations.json", "link_decisions.json", "mental_model_links.json", "quiz_attempts.json", "reading_sessions.json"} {
+	for _, name := range []string{"README.txt", "account.json", "documents.json", "annotations.json", "link_decisions.json", "mental_model_links.json", "quiz_attempts.json", "reading_sessions.json", "analytics_events.json"} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("export is missing %s (has %v)", name, len(files))
 		}

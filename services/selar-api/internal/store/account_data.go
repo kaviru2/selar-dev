@@ -46,6 +46,8 @@ var exportQueries = []struct {
 		FROM chat_threads t WHERE t.user_id = $1 AND t.deleted_at IS NULL ORDER BY t.created_at`},
 	{"learning_events.json", `SELECT event_type, occurred_at, document_id, suggestion_id, mental_link_id, payload, source
 		FROM learning_events WHERE user_id = $1 ORDER BY occurred_at`},
+	{"analytics_events.json", `SELECT event, props, source, occurred_at
+		FROM analytics_events WHERE user_id = $1 ORDER BY occurred_at`},
 }
 
 // ExportUserData returns the user's account summary and one JSON document
@@ -54,7 +56,8 @@ func (s *Store) ExportUserData(ctx context.Context, userID string) (map[string]j
 	out := map[string]json.RawMessage{}
 	var account json.RawMessage
 	if err := s.pool.QueryRow(ctx, `SELECT json_build_object('id', id, 'email', email, 'display_name', display_name,
-		'cohort', cohort, 'preferences', preferences, 'created_at', created_at) FROM users WHERE id = $1`, userID).Scan(&account); err != nil {
+		'cohort', cohort, 'preferences', preferences, 'created_at', created_at,
+		'research_consented_at', consented_at, 'research_consent_version', consent_version) FROM users WHERE id = $1`, userID).Scan(&account); err != nil {
 		return nil, err
 	}
 	out["account.json"] = account
