@@ -275,14 +275,16 @@ selar-dev/
 
 ## Deployment
 
+### Serverless (Vercel + Modal + Neon + object storage)
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. It covers both Vercel projects (console and Go API), the Modal worker (secret, trigger endpoint, scheduled sweep), managed Postgres with pgvector (pooled vs direct URLs, the `cmd/migrate` step), object storage with direct browser uploads, every environment variable and a post-deploy smoke checklist.
+
 ### Production considerations
 
-- Set `JWT_SECRET` to a cryptographically random string (at minimum 32 characters).
-- Use a managed Postgres instance with the pgvector extension enabled (e.g., Supabase, Neon, or AWS RDS with pgvector).
-- Run the Go API behind a reverse proxy (nginx, Caddy) with TLS.
-- Build the Next.js console for production: `pnpm build && pnpm start`.
-- Run the Python worker as a long-lived process with a process manager (systemd, PM2, or container orchestration).
-- Set `CORS_ORIGIN` to your production domain.
+- Set `APP_ENV=production` and a random `JWT_SECRET` of at least 32 characters on the API.
+- Use managed Postgres with pgvector over TLS (`sslmode=require`) and apply migrations with `go run ./cmd/migrate` as a separate step; the API never migrates on startup.
+- Set `CORS_ORIGIN` to the exact console origin(s); wildcards are rejected.
+- Use `STORAGE_BACKEND=s3` whenever the API and worker do not share a disk.
 
 ### Docker production
 
