@@ -1,0 +1,47 @@
+name: Deploy scripts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/deploy/**"
+      - ".github/workflows/deploy-scripts.yml"
+      - ".github/workflows/deploy.yml.disabled"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/deploy/**"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint and test deploy scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/selar-api/go.mod
+          cache-dependency-path: services/selar-api/go.sum
+
+      - name: shellcheck
+        run: shellcheck --version && shellcheck -x -P SCRIPTDIR scripts/deploy/*.sh
+
+      - name: Offline unit tests (no network, no secrets)
+        env:
+          SELAR_SECRETS: /nonexistent
+        run: scripts/deploy/test-common.sh
+
+      - name: Disabled deploy template is valid YAML and stays manual-only
+        run: |
+          python3 - <<'PY'
+          import yaml
+          wf = yaml.safe_load(open(".github/workflows/deploy.yml.disabled"))
+          triggers = wf.get(True) or wf.get("on")
+          assert list(triggers) == ["workflow_dispatch"], triggers
+          print("deploy.yml.disabled: manual dispatch only")
+          PY
