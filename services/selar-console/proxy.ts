@@ -1,17 +1,21 @@
 // proxy.ts — Next.js 16 proxy (formerly middleware) for route protection.
-// Checks for the selar_token cookie on all (app) routes.
-// Redirects to /login if the cookie is missing.
+// - Signed-out visitors are sent to /login (with from= for deep links).
+// - Signed-in visitors (selar_token present) hitting /, /login or /register
+//   are sent into the app: to a validated same-origin from=, else /library.
+// The cookie is only checked for presence here. When the Go API rejects it,
+// the (app) layout and the /api proxy expire it (see /api/auth/session-expired)
+// so /login becomes reachable again and no redirect loop can form.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-
-const PUBLIC_PATHS = ["/login", "/register", "/api/auth"];
+import { AUTH_COOKIE_NAME } from "@/lib/auth-cookie";
+import { isAuthPagePath, safeRedirectPath } from "@/lib/safe-redirect";
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  // Auth API routes (login, register, logout, session-expired) are always reachable.
+  if (pathname === "/api/auth" || pathname.startsWith("/api/auth/")) {
     return NextResponse.next();
   }
 
@@ -24,9 +28,20 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for auth cookie
-  const token = request.cookies.get("selar_token");
-  if (!token?.value) {
+  const signedIn = Boolean(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+
+  if (pathname === "/" || isAuthPagePath(pathname)) {
+    if (signedIn) {
+      const from = pathname === "/" ? null : request.nextUrl.searchParams.get("from");
+      return NextResponse.redirect(new URL(safeRedirectPath(from), request.url));
+    }
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (!signedIn) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);

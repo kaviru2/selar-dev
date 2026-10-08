@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { getAuthToken } from "@/lib/auth";
+import { expireAuthCookie } from "@/lib/auth-cookie";
 
 const API_BASE = process.env.API_INTERNAL_URL || "http://localhost:8080";
 
@@ -95,12 +96,15 @@ async function handleProxyRequest(
     // If it's a JSON response, we can safely read text, but for streaming/binaries
     // it's best to return the raw body as a standard stream.
     // However, Next.js requires returning the body directly.
-    return new NextResponse(res.body, {
+    const response = new NextResponse(res.body, {
       status: res.status,
       headers: {
         "Content-Type": contentType,
       },
     });
+    // The Go API rejected our JWT: drop the cookie so the proxy stops treating
+    // the browser as signed in and /login is reachable again (no redirect loop).
+    return res.status === 401 ? expireAuthCookie(response) : response;
   } catch (error) {
     console.error("Proxy error:", error);
     return NextResponse.json({ error: "gateway error" }, { status: 502 });
