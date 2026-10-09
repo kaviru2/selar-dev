@@ -3,7 +3,7 @@ import { NAV_ITEMS, isActive, visibleNavItems, type NavItem } from "./nav";
 
 describe("app navigation", () => {
   it("lists the shipped sections in order with unique keys", () => {
-    expect(NAV_ITEMS.map((i) => i.key)).toEqual(["library", "reader", "chat", "graph", "quizzes", "settings", "admin"]);
+    expect(NAV_ITEMS.map((i) => i.key)).toEqual(["library", "reader", "review", "progress", "chat", "graph", "quizzes", "settings", "admin"]);
     expect(new Set(NAV_ITEMS.map((i) => i.key)).size).toBe(NAV_ITEMS.length);
   });
 

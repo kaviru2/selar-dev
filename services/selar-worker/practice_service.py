@@ -3,6 +3,26 @@ import json
 from practice import Unavailable, digest, generate_item, validated_feedback
 from practice_schedule import next_interval, streak
 
+async def progress(conn, owner):
+    rows = await conn.fetch('''SELECT phase,exposed,delayed_unassisted,feedback FROM practice_attempts a
+        WHERE a.user_id=$1 AND a.created_at<=now() AND a.item_id IN (SELECT p.id '''+LIVE+')',owner)
+    report={'status':'ready','warmup':0,'reading_check':0,'review':0,'exposed':0,
+            'delayed_unassisted':0,'delayed_scored':0,'unscored':0,'delayed_mean_score':None,
+            'estimated_recall':None,'estimate_note':'No calibrated recall estimate is available. Scheduling intervals are a heuristic, not efficacy evidence.'}
+    scores=[]
+    for row in rows:
+        report[row['phase']]+=1
+        report['exposed']+=int(row['exposed'])
+        report['delayed_unassisted']+=int(row['delayed_unassisted'])
+        feedback=json.loads(row['feedback'])['feedback']
+        if feedback['score'] is None: report['unscored']+=1
+        elif row['delayed_unassisted']: scores.append(feedback['score'])
+    report['delayed_scored']=len(scores)
+    if scores: report['delayed_mean_score']=sum(scores)/len(scores)
+    queue=await daily(conn,owner)
+    report['streak']=queue['streak'];report['due']=await conn.fetchval('SELECT count(*) '+LIVE+''' AND EXISTS(SELECT 1 FROM practice_schedule s WHERE s.item_id=p.id AND s.user_id=$1 AND s.due_at<=now())''',owner);report['timezone']='UTC'
+    return report
+
 async def daily(conn, owner):
     rows = await conn.fetch('SELECT p.id,p.document_id,p.payload ' + LIVE + ''' AND EXISTS(
         SELECT 1 FROM practice_schedule s WHERE s.item_id=p.id AND s.user_id=$1 AND s.due_at<=now())
