@@ -15,5 +15,11 @@ Receipts are retained outside the repository at `/Users/kavirum1a/.hermes/cache/
 - `TEST_DATABASE_URL=postgres://selar_e2e@127.0.0.1:55447/selar_e2e?sslmode=disable go test ./...` → passed (`m1-go.log`).
 - Worker regression receipt `m1-worker.log`; service/browser fixtures require dedicated E2E invocation, not counted as executed when skipped.
 
+## Milestone 2 — reading checkpoints
+Reader now gates source/connection display behind an optional warm-up, keeps the reading accessible via Continue reading, and offers an end-reading check. Practice drafts reset per document/phase; source quotes/reference answers appear only after submission. Immediate reading checks are marked exposed. Formal quiz components unchanged.
+- `pnpm test components/ReadingPractice.test.tsx` → RED missing component (`m2-red.log`).
+- `pnpm test` → passed (`m2-console.log`).
+- `pnpm build` → passed (`m2-build.log`).
+
 ## Remaining milestones
-2–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
+3–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.

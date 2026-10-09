@@ -1,5 +1,6 @@
 "use client";
 
+import { ReadingPractice } from "@/components/ReadingPractice";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -395,6 +396,7 @@ export default function ReaderPage() {
   const showViewer = Boolean(docId && isPdf && !loading && ingestionState !== "processing" && ingestionState !== "failed");
 
   return (
+    <ReadingPractice key={docId} documentId={ingestionState === "ready" ? docId : ""}>
     <div className={`reader${layout.libraryOpen ? " has-library" : ""}${layout.connectionsOpen ? " has-connections" : ""}`}>
       <div
         id="reader-library"
@@ -534,6 +536,7 @@ export default function ReaderPage() {
         />
       )}
     </div>
+    </ReadingPractice>
   );
 }
 
