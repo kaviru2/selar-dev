@@ -11,7 +11,7 @@
 
 ## Dependency and migration
 
-The annotation work incorporates the complete format dependency **8e89027776df63e2193b0ddb7b639de43fc5aa11** (PR #158, including #157) and main **884bb9698b9a8ffb00ab1876fe3315e7eef1e228**. Changes authored for this task are restricted to annotation API/store/model, PDF annotation controls/helpers, minimal reader callbacks and their tests.
+The annotation work incorporates the complete format dependency **8e89027776df63e2193b0ddb7b639de43fc5aa11** (PR #158, including #157) and current main **6fba9d0** (merged #158). The final main integration changed no files relative to the locally tested tree. Changes authored for this task are restricted to annotation API/store/model, PDF annotation controls/helpers, minimal reader callbacks and their tests.
 
 **024_annotation_text_anchors.sql** adds nullable `annotations.anchor`. Migration 023 belongs to the format dependency. Fresh database validation applied **001–024**, consecutively. Do not deploy 024 independently of 023. An early disposable test database had 024 before the format dependency arrived; the migration runner correctly refused its out-of-order history. Final suites and browser checks use a new database migrated in order, not a bypass of that guard.
 
@@ -35,5 +35,5 @@ Raw local console/build/migration/browser receipts are in `highlights-test-logs/
 - A raw `tsc --noEmit` check encountered existing test-only errors in the quiz and API fixtures; the production Next TypeScript build passed. No unrelated test fixture was changed.
 - Local Node 25 exposes an incompatible experimental global localStorage to this jsdom suite. Disabling Node's experimental webstorage made the full suite pass without modifying onboarding code or weakening assertions.
 - Existing browser regression needed two harness updates for current main: explicitly continue past optional recall and use the current “About this reading” disclosure rather than its removed tab role. No product navigation behavior was changed.
-- GitHub CI is reported blocked by account billing/spending-limit job-start failures. The PR's exact-head check receipt will be recorded separately; local pass does **not** imply remote CI pass. No billing/protection/workflow bypass was made.
+- Earlier GitHub job-start failures were reported as account billing/spending-limit failures; the parent subsequently confirmed execution was restored. Exact-head remote checks are recorded separately on the PR. Local pass alone does **not** imply remote CI pass. No billing/protection/workflow change was authored in this annotation work.
 - No independent reviewer was spawned (delegation explicitly prohibited nested agents). Maintainer review remains required.
