@@ -183,8 +183,22 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
         _request(client, "GET", f"{api}/api/documents/{latest}/content", foreign, expected=404)
         _request(client, "GET", f"{api}/api/documents/{latest}/mental-model", foreign, expected=404)
         links = _request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token)
-        assert len(links) == 1, links
-        link = links[0]
+        # Up to MAX_LINKS_PER_PAIR grounded candidates per pair, one per distinct concept.
+        concepts = [l["bridge_explanation"] for l in links]
+        assert 1 <= len(links) <= 5 and len(set(concepts)) == len(links), links
+        assert all(l["status"] == "candidate" and l["source_evidence_chunk_id"] for l in links)
+        link = next(l for l in links if "gradient descent optimization" in l["bridge_explanation"].lower())
+        # The rest of this scenario reviews one card; drop the other untouched candidates.
+        async def keep_only(link_id):
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            try:
+                await conn.execute("""DELETE FROM mental_model_links WHERE user_id=$1 AND id<>$2
+                                      AND status='candidate' AND review_revision=0""",
+                                   owner["user"]["id"], link_id)
+            finally:
+                await conn.close()
+        asyncio.run(keep_only(link["id"]))
+        assert len(_request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token)) == 1
         assert link["status"] == "candidate" and link["link_type"] == "concept_overlap"
         assert link["source_document_id"] == latest and link["target_document_id"] == prior
         async def stored_witnesses():
