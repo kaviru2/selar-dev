@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SELAR — Semantic Linking for Active Retention</title>
-  <meta name="description" content="AI-powered PDF reader that discovers cross-document semantic connections to strengthen long-term retention.">
+  <meta name="description" content="SELAR is a research prototype reader that suggests grounded connections between your readings and adds recall practice.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -206,6 +206,10 @@
       .arch-grid { grid-template-columns: 1fr; }
       .hero { padding: 8rem 1.5rem 4rem; }
     }
+      .figure { max-width: 1000px; margin: 2rem auto 0; }
+    .figure img { width: 100%; height: auto; border-radius: var(--r-lg); display: block; }
+    .figure figcaption { font-size: .8rem; color: var(--ink-3); margin-top: .5rem; text-align: center; }
+    .notice { max-width: 760px; margin: 1.5rem auto 0; padding: .9rem 1.1rem; border: 1px solid var(--rule-2); border-radius: var(--r-md); color: var(--ink-2); font-size: .9rem; }
   </style>
 </head>
 <body>
@@ -218,132 +222,96 @@
     <ul style="flex:1">
       <li><a href="#features">Features</a></li>
       <li><a href="#architecture">Architecture</a></li>
-      <li><a href="#quickstart">Quick Start</a></li>
-      <li><a href="https://github.com/Kavirubc/selar-dev/blob/main/CONTRIBUTING.md">Contributing</a></li>
+      <li><a href="#quickstart">Get started</a></li>
+      <li><a href="https://github.com/kaviru2/selar-dev/blob/main/CONTRIBUTING.md">Contributing</a></li>
     </ul>
-    <a href="https://github.com/Kavirubc/selar-dev" class="github-link">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-      GitHub
-    </a>
+    <a href="https://github.com/kaviru2/selar-dev" class="github-link">GitHub</a>
   </nav>
 
   <section class="hero">
     <h1>Semantic Linking for <span>Active Retention</span></h1>
-    <p>An AI-powered PDF reader that discovers cross-document connections. Every interaction is a retrieval-practice event grounded in cognitive science.</p>
+    <p>A reader for papers and notes that suggests grounded connections between your readings, then prompts you to recall, compare and explain them.</p>
     <div class="badges">
-      <img src="https://github.com/Kavirubc/selar-dev/actions/workflows/ci.yml/badge.svg" alt="CI">
-      <img src="https://codecov.io/gh/Kavirubc/selar-dev/graph/badge.svg" alt="Coverage">
-      <img src="https://img.shields.io/github/license/Kavirubc/selar-dev?color=blue" alt="License">
-      <img src="https://img.shields.io/github/v/release/Kavirubc/selar-dev?color=green" alt="Release">
+      <img src="https://github.com/kaviru2/selar-dev/actions/workflows/ci.yml/badge.svg" alt="CI status">
+      <img src="https://img.shields.io/github/license/kaviru2/selar-dev?color=blue" alt="License">
     </div>
     <div class="cta">
-      <a href="https://github.com/Kavirubc/selar-dev" class="btn btn-primary">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        View on GitHub
-      </a>
-      <a href="#quickstart" class="btn btn-outline">Get Started</a>
+      <a href="https://github.com/kaviru2/selar-dev" class="btn btn-primary">View on GitHub</a>
+      <a href="#quickstart" class="btn btn-outline">Get started</a>
     </div>
+    <p class="notice"><strong>Research prototype, not a proven learning intervention.</strong> SELAR is the instrument for a UCSC final-year research study. AI suggestions can be wrong, and no claims are made about memory, retention or grades.</p>
+    <figure class="figure">
+      <img src="assets/readme/hero.png" alt="SELAR wordmark with the Linny mascot holding two linked pages">
+    </figure>
   </section>
 
   <section id="features" style="border-top: none;">
-    <h2>Core Features</h2>
-    <p>SELAR turns passive PDF reading into active knowledge construction. Built for researchers, designed for retention.</p>
-    <div class="features">
-      <div class="card">
-        <div class="icon">&#x1f50d;</div>
-        <h3>Semantic Link Discovery</h3>
-        <p>Automatic vector embedding of document chunks via Gemini. Bi-directional cross-document link suggestions using cosine similarity with pgvector.</p>
-      </div>
-      <div class="card">
-        <div class="icon">&#x1f3af;</div>
-        <h3>Active Retrieval Practice</h3>
-        <p>Confirm, reject, or relabel every suggestion. Each interaction is a micro-test calibrated against spaced repetition principles.</p>
-      </div>
-      <div class="card">
-        <div class="icon">&#x1f578;</div>
-        <h3>Knowledge Graph</h3>
-        <p>Automatic concept extraction and force-directed visualization. Explore how your papers connect at the idea level, not just the citation level.</p>
-      </div>
-      <div class="card">
-        <div class="icon">&#x1f4c4;</div>
-        <h3>PDF Reader</h3>
-        <p>Continuous-scroll rendering with manual highlighting, annotations, and a floating popup menu for notes. Matches panel alongside your reading.</p>
-      </div>
-      <div class="card">
-        <div class="icon">&#x1f916;</div>
-        <h3>AI Relation Classification</h3>
-        <p>Every link is classified: prerequisite_of, extends, sub_concept_of, contradicts, or related_to. With human-readable summaries.</p>
-      </div>
+    <h2>The learning loop</h2>
+    <p>Each document becomes one flow: warm up, read and compare, check, then review later.</p>
+    <figure class="figure">
+      <img src="assets/readme/learning-loop.png" alt="Six steps: add readings, before-reading warm-up, read and compare linked passages, end-reading check, daily review and streak, progress">
+    </figure>
+    <div class="features" style="margin-top:2rem">
       <div class="card">
         <div class="icon">&#x1f4da;</div>
-        <h3>Document Library</h3>
-        <p>Upload, track processing status, view stats. Cascading cleanup on delete. Real-time progress indicators during ingestion.</p>
+        <h3>Library</h3>
+        <p>PDF, Markdown, TXT and DOCX snapshots, public web articles, pasted text, and optional Google Drive import.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f4ad;</div>
+        <h3>Before-reading warm-up</h3>
+        <p>Optional recall questions generated from your own document, each tied to a source passage.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f517;</div>
+        <h3>Reflection prompts</h3>
+        <p>Grounded concept links between readings. Compare the two passages side by side, or flag one tap: “This link is wrong”. No keep/reject step.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x2705;</div>
+        <h3>End-reading check</h3>
+        <p>A short check after reading, with AI support checking and feedback on free recall answers.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f4c5;</div>
+        <h3>Daily review</h3>
+        <p>A conservative spaced review schedule, daily session and UTC streak. Progress shows observed attempts, not mastery.</p>
+      </div>
+      <div class="card">
+        <div class="icon">&#x1f4ac;</div>
+        <h3>Chat and graph</h3>
+        <p>Library-grounded questions with citations to check, and a concept graph of how your readings connect.</p>
       </div>
     </div>
   </section>
 
   <section id="architecture">
-    <h2>Service Architecture</h2>
-    <p>Three loosely-coupled services in a monorepo, orchestrated with Docker Compose.</p>
-    <div class="arch-grid">
-      <div class="arch-item">
-        <div class="label">Frontend</div>
-        <h3>selar-console</h3>
-        <p>Next.js 16 / TypeScript<br>Port 3000</p>
-      </div>
-      <div class="arch-item">
-        <div class="label">API</div>
-        <h3>selar-api</h3>
-        <p>Go 1.22+ / Chi Router<br>Port 8080</p>
-      </div>
-      <div class="arch-item">
-        <div class="label">AI Worker</div>
-        <h3>selar-worker</h3>
-        <p>Python 3.11+ / FastAPI<br>Port 8000</p>
-      </div>
-    </div>
+    <h2>Architecture</h2>
+    <p>Next.js console → Go API → PostgreSQL/pgvector, with a Python worker calling Google Gemini for document processing, chat and practice.</p>
+    <figure class="figure">
+      <img src="assets/readme/architecture.png" alt="Architecture: Next.js console to Go API to PostgreSQL with pgvector; Go API to Python worker to Gemini">
+    </figure>
   </section>
 
   <section id="quickstart">
-    <h2>Quick Start</h2>
-    <p>Get SELAR running locally in under 5 minutes.</p>
-    <div class="quickstart">
-      <pre><span class="comment"># Clone and configure</span>
-<span class="cmd">git clone https://github.com/Kavirubc/selar-dev.git</span>
-<span class="cmd">cd selar-dev</span>
-<span class="cmd">cp .env.example .env.development</span>
-<span class="comment"># Edit .env.development and set GEMINI_API_KEY</span>
-
-<span class="comment"># Set up database</span>
-<span class="cmd">createdb selar</span>
-<span class="cmd">psql -d selar -c "CREATE EXTENSION IF NOT EXISTS vector;"</span>
-<span class="cmd">psql -d selar -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"</span>
-<span class="cmd">psql -d selar -f services/selar-api/internal/store/migrations/001_init.sql</span>
-<span class="cmd">psql -d selar -f services/selar-api/internal/store/migrations/002_add_summary.sql</span>
-
-<span class="comment"># Terminal 1 — Go API</span>
-<span class="cmd">cd services/selar-api && go run cmd/server/main.go</span>
-
-<span class="comment"># Terminal 2 — Python Worker</span>
-<span class="cmd">cd services/selar-worker && pip install -r requirements.txt</span>
-<span class="cmd">python3 -m uvicorn main:app --reload --port 8000</span>
-
-<span class="comment"># Terminal 3 — Next.js Console</span>
-<span class="cmd">cd services/selar-console && pnpm install && pnpm dev</span>
-
-<span class="comment"># Open http://localhost:3000</span></pre>
+    <h2>Get started</h2>
+    <p>The README and guides in the repository are the maintained documentation.</p>
+    <div class="features">
+      <div class="card"><h3><a href="https://github.com/kaviru2/selar-dev/blob/main/docs/user-guide.md">User guide</a></h3><p>Supported inputs, the reading workflow and troubleshooting.</p></div>
+      <div class="card"><h3><a href="https://github.com/kaviru2/selar-dev/blob/main/docs/local-quickstart.md">Local quickstart</a></h3><p>Run the database, API, worker and console on your machine, with a no-model-call smoke check.</p></div>
+      <div class="card"><h3><a href="https://github.com/kaviru2/selar-dev/blob/main/docs/DEPLOYMENT.md">Deployment</a></h3><p>Hosted infrastructure and production configuration for operators.</p></div>
     </div>
+    <p class="notice">Document processing, chat and practice use Gemini: content you upload may be sent to the model provider and can use quota or incur charges, even when SELAR runs locally.</p>
   </section>
 
   <footer>
     <div class="links">
-      <a href="https://github.com/Kavirubc/selar-dev">GitHub</a>
-      <a href="https://github.com/Kavirubc/selar-dev/blob/main/README.md">Docs</a>
-      <a href="https://github.com/Kavirubc/selar-dev/blob/main/CONTRIBUTING.md">Contributing</a>
-      <a href="https://github.com/Kavirubc/selar-dev/blob/main/LICENSE">License</a>
-      <a href="https://github.com/Kavirubc/selar-dev/discussions">Discussions</a>
+      <a href="https://github.com/kaviru2/selar-dev">GitHub</a>
+      <a href="https://github.com/kaviru2/selar-dev/blob/main/README.md">README</a>
+      <a href="https://github.com/kaviru2/selar-dev/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/kaviru2/selar-dev/blob/main/LICENSE">License</a>
     </div>
-    <p>Apache 2.0 License. Built by <a href="https://github.com/Kavirubc">Kavirubc</a>.</p>
+    <p>Apache 2.0 License. Kaviru Hapuarachchi, Geeradha Sulakshi and Ayathma Amanethmi, University of Colombo School of Computing.</p>
   </footer>
 
 </body>
