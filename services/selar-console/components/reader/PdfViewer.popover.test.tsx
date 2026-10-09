@@ -90,7 +90,7 @@ describe("PdfViewer passage-match popover", () => {
     await openCard();
     expect(button(/accept|confirm/i)).toBeUndefined();
     expect(container.textContent).toMatch(/similarity only/i);
-    expect(container.textContent).toMatch(/not a confirmed relation/i);
+    expect(container.textContent).toMatch(/not as an established relationship/i);
   });
 
   it("dismisses a similarity-only match with a rejected response", async () => {

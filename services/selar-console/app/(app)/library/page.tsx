@@ -75,7 +75,7 @@ export default async function LibraryPage() {
 
   const STATS = [
     { label: "Readings", value: stats.total_documents.toString(), icon: "book" as const, tone: "green" },
-    { label: "Links you kept", value: stats.confirmed_links.toString(), icon: "link" as const, tone: "warm" },
+    { label: "Historical saved links", value: stats.confirmed_links.toString(), icon: "link" as const, tone: "warm" },
     { label: "Reading time", value: formatReadingTime(stats.reading_time_min), icon: "clock" as const, tone: "sky" },
     { label: "Passages indexed", value: stats.total_chunks.toString(), icon: "doc" as const, tone: "amber" },
   ];

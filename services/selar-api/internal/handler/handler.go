@@ -395,6 +395,9 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.requireLearningLinks(w, r) {
+		return
+	}
 	if err := h.store.RespondToSuggestion(r.Context(), userID, id, status, req.Label, req.TimeToRespondMs); err != nil {
 		switch {
 		case errors.Is(err, store.ErrUnclassifiedNotConfirmable):
@@ -647,6 +650,9 @@ func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Reques
 	if response.Revision == nil || *response.Revision < 0 || uuid.Validate(chi.URLParam(r, "id")) != nil ||
 		(response.Action != model.MentalLinkConfirmed && response.Action != model.MentalLinkRejected && response.Action != model.MentalLinkRelabeled && response.Action != "retracted" && response.Action != "rolled_back") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "valid id, explicit revision and supported action required"})
+		return
+	}
+	if !h.requireLearningLinks(w, r) {
 		return
 	}
 	if err := h.store.RespondToMentalModelLink(r.Context(), userID, chi.URLParam(r, "id"), response); err != nil {

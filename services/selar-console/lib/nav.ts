@@ -23,6 +23,8 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { key: "library", label: "Library", href: "/library", icon: "book" },
   { key: "reader", label: "Reader", href: "/reader", icon: "doc" },
+  { key: "review", label: "Review", href: "/review", icon: "quiz" },
+  { key: "progress", label: "Progress", href: "/progress", icon: "graph" },
   { key: "chat", label: "Chat", href: "/chat", icon: "chat" },
   { key: "graph", label: "Graph", href: "/graph", icon: "graph" },
   { key: "quizzes", label: "Quizzes", href: "/quizzes", icon: "quiz" },
