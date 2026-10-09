@@ -156,6 +156,8 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.Verify)
 
+		// Private generated practice is separate from the fixed formal quiz system.
+		r.Post("/practice", h.Practice)
 		// Users
 		r.Get("/users/me", h.GetCurrentUser)
 		r.Patch("/users/me/preferences", h.UpdatePreferences)
@@ -210,6 +212,7 @@ func main() {
 		r.Get("/documents/{id}/mental-model", h.GetDocumentMentalModel)
 		r.Get("/mental-model-links", h.ListMentalModelLinks)
 		r.Get("/mental-model-links/{id}/preview", h.PreviewMentalModelLink)
+		r.Post("/mental-model-links/{id}/flag", h.FlagMentalModelLink)
 		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)
 		r.Get("/learner-state", h.ListLearnerConceptState)
 
