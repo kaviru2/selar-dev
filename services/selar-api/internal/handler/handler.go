@@ -449,8 +449,12 @@ func (h *Handler) CreateAnnotation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.UserID = userID
+	if !validNewAnnotation(a) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid annotation"})
+		return
+	}
 	if err := h.store.CreateAnnotation(r.Context(), &a); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create annotation"})
+		annotationError(w, err)
 		return
 	}
 	h.Track(r.Context(), userID, analytics.HighlightCreated, analytics.Props{"document_id": a.DocumentID, "page": a.Page, "type": string(a.Type)})
@@ -461,7 +465,7 @@ func (h *Handler) DeleteAnnotation(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	if err := h.store.DeleteAnnotation(r.Context(), id, userID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete annotation"})
+		annotationError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

@@ -404,6 +404,7 @@ export interface ChatGraphUpdate {
 // --- Annotation types ---
 
 export interface Annotation {
+  anchor?: import("./reader/annotation-anchor").TextAnchor | null;
   id: string;
   user_id: string;
   document_id: string;
