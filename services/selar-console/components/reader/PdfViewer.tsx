@@ -795,7 +795,7 @@ export default function PdfViewer(props: PdfViewerProps) {
                         </div>
                         <h3>{popoverSuggestion.tgt_doc} · page {popoverSuggestion.tgt_page}</h3>
                         <p>{popoverSuggestion.summary || popoverSuggestion.tgt_text.slice(0, 260)}</p>
-                        <p className="rd-popover-note">Similarity only: these passages use similar wording. This is not a confirmed relation, so it cannot be accepted into your graph.</p>
+                        <p className="rd-popover-note">Similarity only: these passages use similar wording. Compare them as reading material, not as an established relationship.</p>
                         {popoverError && <div className="rd-popover-error" role="alert">{popoverError}</div>}
                         <div className="rd-popover-actions">
                           <button type="button" className="rd-btn" disabled={!popoverSuggestion.tgt_document_id || popoverBusy} onClick={() => onOpenSuggestionTarget(popoverSuggestion)}>Open connected passage</button>

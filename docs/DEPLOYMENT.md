@@ -382,7 +382,7 @@ Use a fresh test account and synthetic or public-domain PDFs only. Do not use pa
 - [ ] Upload a second related PDF and wait for it to be ready. **Suggestion:** a suggested connection appears in the Connections panel.
 - [ ] **Explain:** write the connection in your own words and submit it.
 - [ ] **Compare:** open the side-by-side evidence and check the quoted passages and locators match both sources.
-- [ ] **Decide:** confirm one suggestion and reject another, then reload. The decisions persist and appear in the graph and history.
+- [ ] **Reflect:** compare the two exact passages in a learning prompt, then use “This link is wrong” and reload. The prompt stays hidden, the audit history is retained, and no recall success or new graph assertion is recorded.
 - [ ] Ask a grounded chat question. It returns an answer with citations (API → Modal `/chat` with the secret).
 - [ ] Delete a test document. It disappears, and its objects (`<doc>.pdf` or `users/.../uploads/...pdf`, plus `<doc>/assets/`) are removed from the bucket.
 - [ ] A second account cannot open the first account's `/api/documents/<id>/pdf` (404).

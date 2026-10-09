@@ -83,7 +83,7 @@ createdb -h 127.0.0.1 -p 56446 -U selar selar
 
 `trust` authentication is used **only for this disposable loopback-bound cluster on a trusted single-user development computer**. Other local users can connect without a password. Do not use this configuration on a shared computer or in production. The API itself listens on all interfaces; use a trusted development machine/firewall and do not expose its port publicly.
 
-The migration command creates the required extensions/schema and tracks migration checksums. At the tested baseline it applied 20 migrations. Re-running the migration command should report no pending changes. Do not re-run `initdb` or `createdb` on an existing cluster. For an ordinary restart, use only the `pg_ctl … start` command above.
+The migration command creates the required extensions/schema and tracks migration checksums. The merged learning-loop baseline contains 22 migrations, including `021_document_practice.sql` and `022_practice_schedule.sql`. The original smoke run below applied 20; after updating an existing checkout, stop its services, rerun migrations against your isolated database, rebuild the API and restart all services. Re-running the migration command should report no pending changes. Do not re-run `initdb` or `createdb` on an existing cluster. For an ordinary restart, use only the `pg_ctl … start` command above.
 
 ## 4. Install dependencies
 
@@ -136,7 +136,7 @@ curl --fail --output /dev/null http://127.0.0.1:13006/login
 
 Open `http://localhost:13006`, register a disposable test account, and confirm that **Library** loads with no readings. Use that same console hostname consistently when signing in. This tests the console-to-API-to-database path; a health response alone does not establish AI readiness.
 
-**To try real ingestion/chat:** set your own `GEMINI_API_KEY` in the local environment file, reload the environment and restart the worker. Review costs and data handling first, then add one small non-sensitive reading using the [user guide](user-guide.md). The worker's current model defaults are `gemini-embedding-2`, dimension `3072`, and `models/gemini-3-flash-preview`; access and quota must be verified for your provider account. Changing embedding dimensions/models is not a drop-in workaround for existing stored vectors. This guide has not validated a live model call.
+**To try real ingestion/chat/practice:** set your own `GEMINI_API_KEY` in the local environment file, reload the environment and restart the worker. Review costs and data handling first, then add one small non-sensitive reading using the [user guide](user-guide.md). The worker's current model defaults are `gemini-embedding-2`, dimension `3072`, and `models/gemini-3-flash-preview`; access and quota must be verified for your provider account. Changing embedding dimensions/models is not a drop-in workaround for existing stored vectors. This guide has not validated a live model call.
 
 ## Stop without deleting your data
 
@@ -164,7 +164,7 @@ The database and uploads remain under `.local/` for your next session. Do not us
 
 The repository has an [Apache-2.0 license](../LICENSE); it is still private. That is not a promise of free hosted access. Local software does not remove hardware, electricity or storage costs, and hosted infrastructure has its own billing/quotas.
 
-The current worker uses **Google Gemini** for model-backed processing. Self-hosted does not mean offline: content used for embeddings and generation can leave your machine for that provider. Review the provider account's current terms, billing, limits and data policy before supplying a key. No fixed price or sufficient free quota is promised here. There is no working Ollama/local-model setup verified by this guide.
+The current worker uses **Google Gemini** for model-backed processing, including practice generation, a separate support check and answer grading. Opening a reading can request generation before you answer. These calls may consume quota, and automated checking does not validate real-world accuracy. Self-hosted does not mean offline: content used for embeddings and generation can leave your machine for that provider. Review the provider account's current terms, billing, limits and data policy before supplying a key. No fixed price or sufficient free quota is promised here. There is no working Ollama/local-model setup verified by this guide.
 
 ## Verification record and alternatives
 

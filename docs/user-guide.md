@@ -13,7 +13,7 @@ SELAR is a research prototype for reading across sources and checking suggested 
 
 ## Supported inputs
 
-This table describes the baseline reviewed at commit `f80d5233fc9ca5e6737bc1b285ec95a68a518e8a`. New format and onboarding work must be merged and verified before it is treated as available.
+This guide describes merged application baseline `ce0ba3c542e3fa0ab1d804033407220d8cf57144`, not a deployed release. Expanded format and lightweight onboarding work remain separate; ask the operator which revision is running.
 
 | Input | How to add it | Boundary |
 |---|---|---|
@@ -27,20 +27,27 @@ An upload being accepted does not mean processing has finished. Wait for the rea
 
 ## A first reading session
 
-1. Open a ready reading in **Reader**.
-2. Read a passage before looking at suggested connections. Suggestions may be hidden or locked by the instance's study settings.
-3. When a connection is available, choose **Think about this link**. You can explain it in your own words or skip for now.
-4. Choose **Show me the passages** and compare both source excerpts and their locations. If either excerpt is unavailable, do not infer that the connection is valid.
-5. Choose **Yes, keep this link**, **Different relationship**, or **Not a real link**. Relabeling and rejecting ask for a note or reason. **Skip for now** is also valid.
-6. Revisit **Kept links** or **Graph** to inspect what you retained. A graph relationship is not proof of understanding or a measured retention score.
+1. Open a ready reading in **Reader**. The **Before reading** screen requests generated practice automatically; this can use cloud quota even if you skip answering.
+2. Optionally type what you remember and select **Check my recall**. Mark **I used the source or a hint** whenever applicable. Select **Continue reading** to skip or move on; unavailable practice does not block reading.
+3. In **Learning connections**, reflect on similarities or differences, then choose **Compare passages**. Use **Open passage** to inspect each location. Prompts require two current, exact located passages; source matching does not prove a relationship.
+4. Use **This link is wrong** to hide or retract an unsuitable prompt. There is no required keep/relabel/reject decision. Opening or flagging prompts does not count as recall success or create a graph assertion; historical graph records remain available.
+5. Select **End-reading check**, answer from recall, and inspect the AI feedback, reference answer, quote and locator. These immediate checks are recorded as source-exposed, not delayed retention. **Continue reading** returns to the source.
 
-The optional explanation/recall text in this comparison flow is described by the current UI as unsaved. That does **not** mean all activity is ephemeral: kept-link decisions, relationship notes, chat and other account records are separate stored data.
+The optional connection reflection is not graded, saved or sent anywhere. Practice answers, feedback and account activity are separate stored records. Generated practice is scoped to your account and checked in a separate model call for source support before use; answer grading is another AI step. These calls use the configured provider, not an independent human verifier. Feedback can be provisional/unscored and does not establish correctness or mastery.
+
+## Review and progress
+
+Open **Review** (`/review`) or **Daily review** after completing an end-reading check. Checks schedule practice for later; an empty queue can simply mean nothing is due. Recall before opening the source, mark hint/source use honestly, select **Check my recall**, then **Next question**. Visiting or skipping a question is not a successful recall attempt.
+
+The schedule is a conservative doubling-interval heuristic, not FSRS or a calibrated memory model. Exposed, unscored or lower-scoring attempts return to a one-day interval; qualifying review scores can extend intervals up to 60 days. Review streaks use **UTC calendar days**, which may differ from your local day.
+
+Open **Progress** (`/progress`) for warm-up, immediate-check and review activity, source-exposed and unscored counts, due items and review streaks. Delayed unassisted attempts are distinguished from immediate/exposed activity. These are observed practice records, not estimated memory strength, proven retention gains or a mastery score.
 
 ## Ask a question and check the answer
 
 Open **Chat**, ask about material already processed into your library, then open the cited passages. Check that the source really supports the answer, and use feedback controls when it does not. Missing evidence, incomplete extraction and model errors are all possible. Chat is not a substitute for reading the source.
 
-**Quizzes** contains assigned quizzes when an operator has made them available. It is not the pending self-directed practice feature. Account settings, data controls and optional integrations are under **Settings**; see the operator documentation for [quizzes](QUIZZES.md), [analytics](ANALYTICS.md) and [reminders](REMINDERS.md).
+**Quizzes** contains assigned quizzes when an operator has made them available. It remains separate from self-directed generated practice. Account settings, data controls and optional integrations are under **Settings**; see the operator documentation for [quizzes](QUIZZES.md), [analytics](ANALYTICS.md) and [reminders](REMINDERS.md).
 
 ## If something looks wrong
 
@@ -50,11 +57,12 @@ Open **Chat**, ask about material already processed into your library, then open
 | Import fails | Check the supported-input table, file limit and page accessibility. Read the displayed error; use retry when offered after the cause is fixed. |
 | No connections | Check that readings are ready and related. A blank result can be legitimate; suggestion visibility may also be restricted by the instance. |
 | Google or Drive controls are missing | They are optional and not enabled by the local smoke setup. Ask the instance operator rather than sharing credentials. |
-| An answer or connection is wrong | Inspect the cited passages and reject or report it. Do not treat generated wording or confidence as source evidence. |
+| Practice unavailable or provisional | Continue reading, or use **Retry practice** after ingestion/provider availability is fixed. Provisional/unscored feedback is not a failed study test. |
+| An answer or connection is wrong | Inspect the cited passages; use **This link is wrong** for a connection or chat feedback for an answer. Do not treat generated wording or confidence as source evidence. |
 | Your screen differs from this guide | Ask which revision is deployed. Pending work is not necessarily in the hosted instance. |
 
 When reporting a bug, include the action, error text and deployed revision if known. Do not attach secrets, sensitive readings or other users' information.
 
 ## Pending, not promised
 
-At this guide's baseline, PRs #141–#145 propose private document practice, reading checks, spaced review/daily sessions, reflection links and progress reporting. Format and onboarding extensions are also being developed separately. These are not instructions for features already shipped here; the guide should be updated after integration and runtime verification.
+Expanded file imports and lightweight onboarding are being developed separately and are not part of this guide's merged baseline. Use the supported-input table above rather than assuming those branches are deployed.

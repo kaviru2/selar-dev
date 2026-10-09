@@ -42,6 +42,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="SELAR AI Ingestion Worker", lifespan=lifespan)
+from practice_routes import router as practice_router
+app.include_router(practice_router)
 
 # Configure Gemini (new google.genai SDK)
 api_key = os.getenv("GEMINI_API_KEY")
@@ -106,7 +108,7 @@ def graph_command_response(started: float) -> Dict[str, Any]:
               "To correct the graph, propose a source-scoped assertion below: pick the cited "
               "passage of the paper that makes the claim, state what that paper asserts and "
               "whether it is about its own work or another work it reports on. It is added "
-              "only after you confirm the exact preview.")
+              "only when you save that source-scoped assertion.")
     return {
         "answer": answer,
         "model_version": "deterministic-graph-command-boundary-v1",
@@ -981,6 +983,13 @@ Rules:
                 "source_type": source_type,
             }))
 
+        # Practice failure must not fail an otherwise valid document ingestion.
+        from practice_service import generate as generate_practice
+        from practice_routes import model as practice_model
+        try:
+            await generate_practice(conn, user_id, doc_id, practice_model)
+        except Exception:
+            print(f"Practice unavailable for {doc_id}; learner can retry")
         await conn.close()
         print(f"Successfully processed {doc_id}")
 

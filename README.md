@@ -9,11 +9,11 @@ Read across papers and notes, compare suggested connections against their source
 
 ```mermaid
 flowchart LR
-    A[Add readings] --> B[Read and explore]
-    B --> C[Compare source passages]
-    C --> D[Keep or reject a connection]
-    B --> E[Ask a question]
-    E --> F[Check cited evidence]
+    A[Add readings] --> B[Optional recall warm-up]
+    B --> C[Read and compare passages]
+    C --> D[End-reading check]
+    D --> E[Daily review]
+    E --> F[Practice progress]
 ```
 *Workflow diagram, not a screenshot or a claim of measured learning gains.*
 
@@ -30,7 +30,8 @@ This canonical repository, `kaviru2/selar-dev`, is **private**. Cloning requires
 ## What is available
 
 - **Library:** local PDF uploads, public web articles, and pasted text/Markdown. Optional Google Drive import currently accepts PDFs only.
-- **Reader:** compare suggested links using exact source passages; keep, relabel, reject or skip a connection.
+- **Reader:** optional **Before reading** recall, reflection prompts with **Compare passages** and **This link is wrong**, and an **End-reading check**. No keep/reject decision is required.
+- **Review and Progress:** owner-scoped generated practice, separate AI support checking and answer feedback, a conservative review schedule, observed attempt counts and UTC review streaks. These are not validated measures of mastery.
 - **Chat and Graph:** ask library-grounded questions, inspect citations, and review concept relationships. A citation is something to check, not proof that an answer is correct.
 - **Quizzes and Settings:** operator-assigned quizzes and account controls; availability depends on the instance and account.
 
@@ -38,7 +39,7 @@ This canonical repository, `kaviru2/selar-dev`, is **private**. Cloning requires
 
 Native Google Docs export, DOCX, and `.md`/`.txt` **file uploads are not part of this documented baseline**. Pasting Markdown is not full Markdown-file support.
 
-The learning-loop changes in PRs #141–#145 (private practice, reading checks, spaced review, reflection links and progress) are pending integration, not features promised by this guide. Check merged code and the deployed version before relying on them.
+The learning loop is merged into `main` at `ce0ba3c542e3fa0ab1d804033407220d8cf57144`, not necessarily deployed to your instance. Expanded import and lightweight onboarding work remain separate. Opening or flagging reflection prompts creates neither graph assertions nor recall success; historical graph records remain available.
 
 ## Prerequisites
 
@@ -46,7 +47,7 @@ Hosted learners need only the supplied instance address and an account. Self-hos
 
 ## Costs and data
 
-Local registration and an empty library can run without a model key. Document AI processing and generated chat use Gemini in the current implementation: cloud requests can consume quota or incur charges, even when SELAR runs locally. There is no verified all-local AI provider path documented here, and no guarantee that a provider's free tier is sufficient.
+Local registration and an empty library can run without a model key. Document AI processing, generated chat and practice generation/checking/grading use Gemini in the current implementation: cloud requests can consume quota or incur charges, even when SELAR runs locally. There is no verified all-local AI provider path documented here, and no guarantee that a provider's free tier is sufficient.
 
 Your own computer, storage and any hosted database/server services have resource costs. Local hosting is not the same as offline processing: uploaded content may be sent to the configured model provider. See [setup boundaries and costs](docs/local-quickstart.md#costs-and-data-boundary) before adding material.
 
