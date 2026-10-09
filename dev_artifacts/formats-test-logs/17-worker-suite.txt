@@ -1,0 +1,33 @@
+............................F                                            [100%]
+=================================== FAILURES ===================================
+___________ test_modal_image_includes_every_local_module_main_needs ____________
+
+    def test_modal_image_includes_every_local_module_main_needs():
+        import modal_app
+    
+        needed = _local_imports("main", set()) | _local_imports("worker_trigger", set())
+>       assert needed <= set(modal_app.LOCAL_MODULES), sorted(needed - set(modal_app.LOCAL_MODULES))
+E       AssertionError: ['document_formats']
+E       assert {'candidate_c...vidence', ...} <= {'candidate_c...chedule', ...}
+E         
+E         Extra items in the left set:
+E         'document_formats'
+
+services/selar-worker/test_packaging.py:46: AssertionError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/selar-worker/test_packaging.py::test_modal_image_includes_every_local_module_main_needs
+1 failed, 28 passed, 5 warnings in 1.39s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

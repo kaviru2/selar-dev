@@ -85,6 +85,17 @@ afterEach(() => {
   delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
 });
 
+describe("PdfViewer annotation controls", () => {
+  it("opens the persisted highlights list without changing navigation", async () => {
+    await act(async () => root.render(viewer({annotationsOn:true, annotations:[{id:"mark",page:1,type:"highlight",color:"yellow",comment:"My note",bbox:[],document_id:"doc-a",user_id:"owner",chunk_id:null,created_at:"",updated_at:""}]})));
+    await settle();
+    const control = container.querySelector<HTMLButtonElement>('button[aria-label="My highlights"]');
+    expect(control).toBeTruthy();
+    await act(async () => control!.click());
+    expect(container.querySelector('section[aria-label="My highlights"]')?.textContent).toContain("My note");
+  });
+});
+
 describe("PdfViewer passage-match popover", () => {
   it("never offers to accept a similarity-only match and explains why", async () => {
     await openCard();

@@ -541,7 +541,7 @@ func (s *Store) RespondToSuggestion(ctx context.Context, userID, id string, acti
 // ============================================================
 
 func (s *Store) ListAnnotations(ctx context.Context, userID, docID string, page int) ([]model.Annotation, error) {
-	q := `SELECT id, user_id, document_id, chunk_id, page, bbox, color, type, comment, created_at, updated_at
+	q := `SELECT id, user_id, document_id, chunk_id, page, bbox, color, type, comment, created_at, updated_at, anchor
 	      FROM annotations WHERE document_id = $1 AND user_id = $2`
 	args := []any{docID, userID}
 	if page > 0 {
@@ -559,7 +559,7 @@ func (s *Store) ListAnnotations(ctx context.Context, userID, docID string, page 
 	var anns []model.Annotation
 	for rows.Next() {
 		var a model.Annotation
-		if err := rows.Scan(&a.ID, &a.UserID, &a.DocumentID, &a.ChunkID, &a.Page, &a.BBox, &a.Color, &a.Type, &a.Comment, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.UserID, &a.DocumentID, &a.ChunkID, &a.Page, &a.BBox, &a.Color, &a.Type, &a.Comment, &a.CreatedAt, &a.UpdatedAt, &a.Anchor); err != nil {
 			return nil, err
 		}
 		anns = append(anns, a)
@@ -574,6 +574,23 @@ func (s *Store) CreateAnnotation(ctx context.Context, a *model.Annotation) error
 	}
 	defer tx.Rollback(ctx)
 
+	// Lock the source while binding the anchor; ingestion cannot change it mid-write.
+	var sourceHash string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(content_hash,'') FROM documents WHERE id=$1 AND user_id=$2 FOR SHARE`, a.DocumentID, a.UserID).Scan(&sourceHash); err != nil {
+		return err
+	}
+	if a.Anchor != nil && (a.Anchor.SourceHash == "" || a.Anchor.SourceHash != sourceHash) {
+		return ErrAnnotationSourceChanged
+	}
+	if a.ChunkID != nil {
+		var valid bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM chunks WHERE id=$1 AND user_id=$2 AND document_id=$3)`, *a.ChunkID, a.UserID, a.DocumentID).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("annotation chunk does not belong to this document")
+		}
+	}
 	if a.ChunkID == nil {
 		var chunkID string
 		if err := tx.QueryRow(ctx,
@@ -586,11 +603,11 @@ func (s *Store) CreateAnnotation(ctx context.Context, a *model.Annotation) error
 	}
 
 	if err := tx.QueryRow(ctx,
-		`INSERT INTO annotations (user_id, document_id, chunk_id, page, bbox, color, type, comment)
-		 SELECT $1, d.id, $3, $4, $5, $6, $7, $8
+		`INSERT INTO annotations (user_id, document_id, chunk_id, page, bbox, color, type, comment, anchor)
+		 SELECT $1, d.id, $3, $4, $5, $6, $7, $8, $9
 		 FROM documents d WHERE d.id = $2 AND d.user_id = $1
 		 RETURNING id, created_at, updated_at`,
-		a.UserID, a.DocumentID, a.ChunkID, a.Page, a.BBox, a.Color, a.Type, a.Comment,
+		a.UserID, a.DocumentID, a.ChunkID, a.Page, a.BBox, a.Color, a.Type, a.Comment, a.Anchor,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return err
 	}
@@ -634,11 +651,6 @@ func (s *Store) CreateAnnotation(ctx context.Context, a *model.Annotation) error
 		}
 	}
 	return tx.Commit(ctx)
-}
-
-func (s *Store) DeleteAnnotation(ctx context.Context, id, userID string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM annotations WHERE id = $1 AND user_id = $2`, id, userID)
-	return err
 }
 
 // ============================================================

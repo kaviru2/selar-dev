@@ -169,7 +169,7 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
         assert len(article_chunks) == 1, chunks
         article_chunk = article_chunks[0]
         locator = json.loads(article_chunk["locator"])
-        assert locator == {"kind": "block", "block_index": 1,
+        assert locator == {"kind": "block", "block_index": 1, "line_start": 3, "line_end": 3,
                            "heading": "Fabricated orchard article", "word_start": 0,
                            "word_end": len(ARTICLE_TEXT.split())}
         assert any(chunk["content"] == "Invented orchard diagram" for chunk in chunks)

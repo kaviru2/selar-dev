@@ -63,6 +63,7 @@ type Annotation struct {
 	ChunkID    *string         `json:"chunk_id,omitempty"`
 	Page       int             `json:"page"`
 	BBox       json.RawMessage `json:"bbox"`
+	Anchor     *TextAnchor     `json:"anchor,omitempty"`
 	Color      AnnotationColor `json:"color"`
 	Type       AnnotationType  `json:"type"`
 	Comment    string          `json:"comment,omitempty"`

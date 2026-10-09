@@ -17,15 +17,16 @@ Library's **Start here** guide suggests a next step from your actual library: ad
 
 ## Supported inputs
 
-The input table describes application baseline `ce0ba3c542e3fa0ab1d804033407220d8cf57144`; this guide also documents the onboarding changes on this branch. This is not a deployed-release claim. Expanded format work remains separate; ask the operator which revision is running.
+The input table describes this repository revision, including expanded imports and onboarding. This is not a deployed-release claim; ask the operator which revision is running.
 
 | Input | How to add it | Boundary |
 |---|---|---|
-| PDF on your computer | **Upload PDF** | Up to 10 PDFs per batch, 50 MB per file. Start with one small, text-based PDF. Extraction quality varies. |
+| PDF on your computer | **Upload PDF & files** | Up to 10 files per batch, 50 MB per PDF. Start with one small, text-based PDF. Extraction quality varies. |
 | Public article or blog | **From the web** | Publicly fetchable pages only; this does not bypass logins, paywalls or site access controls. |
-| Notes or Markdown text | **Paste text** | Paste the content into the editor. Markdown support is partial; this is not a `.md`/`.txt` file-upload feature. |
-| PDF in Google Drive | Optional **Import from Google Drive** control | Requires operator configuration and your authorization. PDF only in this baseline; native Google Docs are not exported. |
-| DOCX, native Google Docs, `.md`/`.txt` files | Not supported as direct imports in this baseline | Export to PDF yourself, or paste permitted text. Do not just rename a file's extension. |
+| Notes or Markdown text | **Paste text** | Paste content into the editor; Markdown rendering is partial. |
+| `.md`, `.markdown`, `.txt` files | **Upload PDF & files** | Nonempty UTF-8, up to 10 MB per file. Markdown preserves supported headings, lists, code and tables; TXT renders literally. Raw HTML and remote Markdown images are not rendered. |
+| `.docx` files | **Upload PDF & files** | Up to 10 MB. Text, headings and simple tables only; pagination, drawings, headers and footers are not reproduced. Tracked changes, comments, footnotes/endnotes, macros and unsafe packages are rejected. Export a reviewed PDF when those features matter. `.doc`/`.docm` are unsupported. |
+| PDF or native Google Doc in Drive | Optional **Import from Google Drive** control | Requires operator configuration and selected-file authorization. Native Docs become PDF snapshots (10 MB export limit); Drive PDFs allow 50 MB. Not live sync: later Drive edits do not update a reading. Live OAuth/export is not part of the synthetic test evidence. |
 
 An upload being accepted does not mean processing has finished. Wait for the reading to become ready before expecting citations or connections. Processing uses the instance's worker and model quota. Two related readings are a useful starting point for cross-document links, but no link is guaranteed.
 
@@ -67,6 +68,6 @@ Open **Chat**, ask about material already processed into your library, then open
 
 When reporting a bug, include the action, error text and deployed revision if known. Do not attach secrets, sensitive readings or other users' information.
 
-## Pending, not promised
+## Snapshot boundaries
 
-Expanded file imports are being developed separately and are not part of the input baseline documented here. Use the supported-input table above rather than assuming those branches are deployed.
+File imports retain original byte hashes and import metadata; accepted uploads still need successful processing. Native Google Docs retain the exported PDF snapshot rather than an editable Word document. Complex layouts may lose evidence during extraction: inspect the original and imported reading before relying on a quote. Do not rename unsupported files to a supported extension.

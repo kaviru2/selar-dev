@@ -1,0 +1,178 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_cross_format_source_snapshot_lifecycle __________________
+
+tmp_path = PosixPath('/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.tmp/pytest-of-kavirum1a/pytest-15/test_cross_format_source_snaps0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cbb1100>
+
+    @pytest.mark.timeout(120)
+    def test_cross_format_source_snapshot_lifecycle(tmp_path, monkeypatch):
+        db = os.getenv('TEST_DATABASE_URL', '')
+        binary = os.getenv('TEST_API_BINARY', '')
+        if not db or not binary:
+            pytest.skip('requires isolated TEST_DATABASE_URL and built TEST_API_BINARY')
+        assert 'selar_e2e' in db and ':55439/' not in db
+        import main
+        import ingestion
+        from storage import LocalStorage
+        monkeypatch.setattr(main, 'DATABASE_URL', db)
+        objects = LocalStorage(str(tmp_path))
+        monkeypatch.setattr(main, 'get_storage', lambda: objects)
+        monkeypatch.setattr(ingestion, 'get_storage', lambda: objects)
+        monkeypatch.setattr(main, 'embed_text_documents', lambda contents, title='': [[1.0]+[0.0]*3071 for _ in contents])
+        class Models:
+            def generate_content(self, **kwargs):
+                return type('Result', (), {'text':json.dumps({'main_claim':'Synthetic evidence only.', 'key_concepts':[{'name':'fabricated evidence','description':'Synthetic test phrase','evidence_chunk_index':0}], 'assumptions':[], 'open_questions':[], 'domain':'synthetic', 'concept_edges':[]})})()
+        monkeypatch.setattr(main, 'client', type('Client', (), {'models':Models()})())
+        port = _port(); api = f'http://127.0.0.1:{port}'
+        process = subprocess.Popen([binary], cwd=tmp_path, env={**os.environ, 'DATABASE_URL':db,'PORT':str(port),'LOCAL_STORAGE_DIR':str(tmp_path),'ANALYTICS_ENABLED':'false','STORAGE_BACKEND':'local','JWT_SECRET':'synthetic-format-test-secret','APP_ENV':'development','WORKER_URL':'http://127.0.0.1:1'})
+        owners = []
+        async def drain(doc_id, digest):
+            job = await main.claim_ingestion_job()
+            assert job and str(job['document_id']) == doc_id
+            await main.run_claimed_ingestion_job(job)
+            conn = await asyncpg.connect(db)
+            try:
+                row = await conn.fetchrow('SELECT status,content_hash,metadata FROM documents WHERE id=$1',doc_id)
+                assert row['status'] == 'ready', dict(row)
+                assert row['content_hash'] == digest
+                assert await conn.fetchval('SELECT status FROM ingestion_jobs WHERE document_id=$1',doc_id) == 'completed'
+                chunks = await conn.fetch('SELECT id,content,locator FROM chunks WHERE document_id=$1 ORDER BY chunk_index',doc_id)
+                blocks = await conn.fetch('SELECT block_index,text FROM content_blocks WHERE document_id=$1',doc_id)
+                by_index = {b['block_index']:b['text'] for b in blocks}
+                for chunk in chunks:
+                    locator = json.loads(chunk['locator'])
+                    # Exact normalized whitespace witness; no invented lexical joins.
+                    assert chunk['content'] in ' '.join(by_index[locator['block_index']].split())
+                assert chunks
+                return str(chunks[0]['id'])
+            finally:
+                await conn.close()
+        try:
+            _ready(api+'/healthz',process)
+            with httpx.Client() as client:
+                for label in ['owner','foreign']:
+                    owners.append(_request(client,'POST',api+'/auth/register',expected=201,json={'email':f'{label}-{uuid.uuid4().hex}@example.invalid','password':PASSWORD}))
+                token, foreign = [o['token'] for o in owners]
+                line = 'co- operation remains distinct in fabricated evidence.'
+                fixtures = [('notes.md', ('# Heading\n\n'+line).encode()),('notes.txt',line.encode()),('notes.docx',docx_bytes('<w:p><w:r><w:t>'+line+'</w:t></w:r></w:p>')),('paper.pdf',fabricated_pdf(line))]
+                prior_data = b'Prior fabricated evidence remains an exact source witness.'
+                prior = _request(client,'POST',api+'/api/documents/upload',token,expected=202,files={'file':('prior.txt',prior_data)})['document']['id']
+                asyncio.run(drain(prior,hashlib.sha256(prior_data).hexdigest()))
+                async def contract(doc):
+                    from candidate_contract import persist_grounded_overlap
+                    conn = await asyncpg.connect(db)
+                    try:
+                        async def chunk(document):
+                            return dict(await conn.fetchrow('SELECT c.*,d.title,d.content_hash FROM chunks c JOIN documents d ON d.id=c.document_id WHERE c.document_id=$1 ORDER BY c.chunk_index LIMIT 1',document))
+                        source,target = await chunk(doc),await chunk(prior)
+                        source_model = await conn.fetchval('SELECT id FROM document_mental_models WHERE document_id=$1 ORDER BY created_at DESC LIMIT 1',doc)
+                        target_model = await conn.fetchval('SELECT id FROM document_mental_models WHERE document_id=$1 ORDER BY created_at DESC LIMIT 1',prior)
+                        assert await persist_grounded_overlap(conn,{'key_concepts':[{'name':'fabricated evidence'}]},source,target,source['user_id'],doc,prior,source_model,target_model,.9)
+                        link = await conn.fetchrow('SELECT ml.*,valid_grounded_mental_link(ml) AS valid FROM mental_model_links ml WHERE source_model_id=$1 AND target_model_id=$2',source_model,target_model)
+                        assert link['valid']
+                        witness = json.loads(link['source_evidence'])
+                        assert witness['source_snapshot_hash'] == source['content_hash']
+                        assert witness['locator'] == json.loads(source['locator'])
+                        assert witness['quote'] in source['content']
+                        with pytest.raises(asyncpg.PostgresError):
+                            async with conn.transaction():
+                                await conn.execute('UPDATE mental_model_links SET source_evidence=$2 WHERE id=$1',link['id'],json.dumps({**witness,'quote':'fabricated invented quote'}))
+                        await conn.execute("UPDATE documents SET content_hash='changed-snapshot' WHERE id=$1",doc)
+                        assert not await conn.fetchval('SELECT valid_grounded_mental_link(ml) FROM mental_model_links ml WHERE id=$1',link['id'])
+                        await conn.execute('UPDATE documents SET content_hash=$2 WHERE id=$1',doc,source['content_hash'])
+                    finally: await conn.close()
+                for name,data in fixtures:
+                    result = _request(client,'POST',api+'/api/documents/upload',token,expected=202,files={'file':(name,data)})
+                    doc = result['document']['id']
+                    async def seed_snapshot_metadata():
+                        conn = await asyncpg.connect(db)
+                        try:
+                            await conn.execute("UPDATE documents SET metadata=$2 WHERE id=$1",doc,json.dumps({'snapshot':True,'original_sha256':hashlib.sha256(data).hexdigest(),'provider_file_id':'synthetic-provider-id'}))
+                        finally: await conn.close()
+                    asyncio.run(seed_snapshot_metadata())
+                    old_chunk = asyncio.run(drain(doc,hashlib.sha256(data).hexdigest()))
+>                   asyncio.run(contract(doc))
+
+test_format_service_e2e.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_format_service_e2e.py:77: in contract
+    source_model = await conn.fetchval('SELECT id FROM document_mental_models WHERE document_id=$1 ORDER BY created_at DESC LIMIT 1',doc)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:741: in fetchval
+    data = await self._execute(query, args, 1, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:1904: in _execute
+    result, _ = await self.__execute(
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2003: in __execute
+    result, stmt = await self._do_execute(
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2046: in _do_execute
+    stmt = await self._get_statement(
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:466: in _get_statement
+    statement = await self._protocol.prepare(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   asyncpg.exceptions.UndefinedColumnError: column "created_at" does not exist
+
+asyncpg/protocol/protocol.pyx:161: UndefinedColumnError
+----------------------------- Captured stdout call -----------------------------
+Warning: GEMINI_API_KEY is not set.
+2026/10/09 12:46:37 "GET http://127.0.0.1:64094/healthz HTTP/1.1" from 127.0.0.1:64099 - 200 38B in 591.916µs
+2026/10/09 12:46:37 "POST http://127.0.0.1:64094/auth/register HTTP/1.1" from 127.0.0.1:64100 - 201 535B in 69.734459ms
+2026/10/09 12:46:37 "POST http://127.0.0.1:64094/auth/register HTTP/1.1" from 127.0.0.1:64100 - 201 537B in 66.495667ms
+2026/10/09 12:46:37 "POST http://127.0.0.1:64094/api/documents/upload HTTP/1.1" from 127.0.0.1:64100 - 202 1296B in 5.345291ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for aa91c09a-e3b7-408b-af24-05376249b7dd...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for aa91c09a-e3b7-408b-af24-05376249b7dd...
+Mental model -> Concepts: 6, unverified edges deferred
+Successfully processed aa91c09a-e3b7-408b-af24-05376249b7dd
+2026/10/09 12:46:37 "POST http://127.0.0.1:64094/api/documents/upload HTTP/1.1" from 127.0.0.1:64100 - 202 1304B in 1.796834ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for d80d1057-8a57-499f-a2d1-aebf5911a473...
+Link Generation results - New relationships: INSERT 0 1
+Generating structured mental model for d80d1057-8a57-499f-a2d1-aebf5911a473...
+Mental model -> Concepts: 4, unverified edges deferred
+Grounded mental-model candidate links: 1
+Successfully processed d80d1057-8a57-499f-a2d1-aebf5911a473
+server stopped
+----------------------------- Captured stderr call -----------------------------
+2026/10/09 12:46:36 connected to database
+2026/10/09 12:46:36 worker trigger enabled: false
+2026/10/09 12:46:36 upload storage backend: local
+2026/10/09 12:46:36 analytics enabled: false; ADMIN_EMAILS entries: 0
+2026/10/09 12:46:36 recaptcha on registration enabled: false
+2026/10/09 12:46:36 google sign-in enabled: false
+2026/10/09 12:46:36 calendar feed: off
+2026/10/09 12:46:36 email notices: off (allowlist empty); transport: dry-run
+2026/10/09 12:46:36 selar-api listening on :64094
+2026/10/09 12:46:37 shutting down server...
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_format_service_e2e.py::test_cross_format_source_snapshot_lifecycle
+1 failed, 5 warnings in 1.94s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

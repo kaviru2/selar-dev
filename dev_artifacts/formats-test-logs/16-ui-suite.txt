@@ -1,0 +1,44 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console
+
+ ✓ lib/google-drive.test.ts (4 tests) 7ms
+ ✓ lib/upload.test.ts (4 tests) 12ms
+ ❯ components/DriveImportFooter.test.tsx (4 tests | 1 failed) 106ms
+   × Drive sidebar footer > when configured > stays quiet when the user cancels and shows API errors 20ms
+     → expected 'Pick a PDF or Google Doc. Imported as…' to match /only the files you choose/
+ ✓ components/document-formats.test.tsx (4 tests) 39ms
+stderr | components/processing-disclosure.test.tsx > processing disclosure in real entry points > announces direct-upload server errors and resets the chooser for retry
+Error: Upload rejected
+    at errorFrom (/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console/lib/upload.ts:23:10)
+    at Module.uploadPDF (/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console/lib/upload.ts:37:31)
+    at handleUpload (/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console/components/UploadButton.tsx:22:7)
+
+ ✓ components/processing-disclosure.test.tsx (7 tests) 230ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  components/DriveImportFooter.test.tsx > Drive sidebar footer > when configured > stays quiet when the user cancels and shows API errors
+AssertionError: expected 'Pick a PDF or Google Doc. Imported as…' to match /only the files you choose/
+
+- Expected: 
+/only the files you choose/
+
++ Received: 
+"Pick a PDF or Google Doc. Imported as a snapshot, not synced; only selected files are shared."
+
+ ❯ components/DriveImportFooter.test.tsx:71:69
+     69|       await act(async () => root.render(<DriveImportFooter />));
+     70|       await click(container.querySelector("button")!);
+     71|       expect(container.querySelector("[role=status]")!.textContent).to…
+       |                                                                     ^
+     72| 
+     73|       importFromDrive.mockRejectedValueOnce(new Error("Only PDF files …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  1 failed | 22 passed (23)
+   Start at  12:33:15
+   Duration  1.85s (transform 513ms, setup 0ms, collect 1.03s, tests 394ms, environment 4.07s, prepare 344ms)
+

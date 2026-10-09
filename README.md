@@ -29,7 +29,7 @@ This canonical repository, `kaviru2/selar-dev`, is **private**. Cloning requires
 
 ## What is available
 
-- **Library:** local PDF uploads, public web articles, and pasted text/Markdown. Optional Google Drive import currently accepts PDFs only.
+- **Library:** local PDF, Markdown, TXT and DOCX snapshots, public web articles, and pasted text/Markdown. Optional Google Drive import accepts PDFs and exports native Google Docs to PDF snapshots.
 - **Reader:** optional **Before reading** recall, reflection prompts with **Compare passages** and **This link is wrong**, and an **End-reading check**. No keep/reject decision is required.
 - **Review and Progress:** owner-scoped generated practice, separate AI support checking and answer feedback, a conservative review schedule, observed attempt counts and UTC review streaks. These are not validated measures of mastery.
 - **Chat and Graph:** ask library-grounded questions, inspect citations, and review concept relationships. A citation is something to check, not proof that an answer is correct.
@@ -37,9 +37,9 @@ This canonical repository, `kaviru2/selar-dev`, is **private**. Cloning requires
 
 ### Current boundaries
 
-Native Google Docs export, DOCX, and `.md`/`.txt` **file uploads are not part of this documented baseline**. Pasting Markdown is not full Markdown-file support.
+PDF uploads allow 50 MB per file; Markdown/TXT/DOCX allow 10 MB. DOCX imports text and simple tables, not full Word layout; tracked changes, comments, footnotes and macros are rejected. Drive imports are fixed snapshots, not live sync. See the [supported-input table](docs/user-guide.md#supported-inputs) for details.
 
-The learning loop is merged into `main` at `ce0ba3c542e3fa0ab1d804033407220d8cf57144`, not necessarily deployed to your instance. Expanded import and lightweight onboarding work remain separate. Opening or flagging reflection prompts creates neither graph assertions nor recall success; historical graph records remain available.
+These docs describe this repository revision, including expanded imports and lightweight onboarding, not necessarily the revision deployed to your instance. Opening or flagging reflection prompts creates neither graph assertions nor recall success; historical graph records remain available.
 
 ## Prerequisites
 

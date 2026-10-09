@@ -76,6 +76,10 @@ func TestIntegrationDirectUploadQueuesStorageLocatorAndOwnerOnlyDelete(t *testin
 		JOIN ingestion_jobs j ON j.document_id = d.id WHERE d.user_id = $1`, owner).Scan(&docID, &jobID, &filePath, &status, &title); err != nil {
 		t.Fatal(err)
 	}
+	if fake.Has(key) {
+		t.Fatal("staging object must be removed after freezing snapshot")
+	}
+	key = docID + "/original.pdf"
 	if filePath != "s3://selar-test/"+key || status != "queued" || title != "Synthetic Reading.pdf" {
 		t.Fatalf("job file_path=%q status=%q title=%q", filePath, status, title)
 	}

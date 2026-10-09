@@ -200,6 +200,7 @@ func main() {
 		// Annotations (per document)
 		r.Get("/documents/{id}/annotations", h.ListAnnotations)
 		r.Post("/annotations", h.CreateAnnotation)
+		r.Patch("/annotations/{id}", h.UpdateAnnotation)
 		r.Delete("/annotations/{id}", h.DeleteAnnotation)
 
 		// Concepts & Graph

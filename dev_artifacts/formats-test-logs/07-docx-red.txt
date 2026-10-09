@@ -1,0 +1,64 @@
+F...                                                                     [100%]
+=================================== FAILURES ===================================
+_____________ test_docx_ordered_blocks_original_hash_and_locators ______________
+
+tmp_path = PosixPath('/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.tmp/pytest-of-kavirum1a/pytest-4/test_docx_ordered_blocks_origi0')
+
+    def test_docx_ordered_blocks_original_hash_and_locators(tmp_path):
+        data = docx_bytes('<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Topic</w:t></w:r></w:p><w:p><w:r><w:t>co- operation evidence.</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell evidence</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+        path = tmp_path/'original.docx'; path.write_bytes(data)
+>       source = asyncio.run(ingestion.extract_source(source_type='docx',doc_id='fixture',word_limit=100,merge_bboxes=None,file_path=str(path),title=path.name))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+services/selar-worker/test_file_formats.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+source_type = 'docx', doc_id = 'fixture', word_limit = 100, merge_bboxes = None
+file_path = '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.tmp/pytest-of-kavirum1a/pytest-4/test_docx_ordered_blocks_origi0/original.docx'
+source_url = '', raw_text = '', title = 'original.docx'
+
+    async def extract_source(
+        *, source_type: str, doc_id: str, word_limit: int, merge_bboxes,
+        file_path: str = "", source_url: str = "", raw_text: str = "", title: str = "",
+    ) -> NormalizedSource:
+        if source_type == "web":
+            return await extract_web(source_url, doc_id, word_limit)
+        if source_type == "text":
+            return extract_text(raw_text, title, word_limit)
+        if source_type in {"markdown", "txt"}:
+            return await asyncio.to_thread(_extract_stored_text, file_path, source_type, title, word_limit)
+        if source_type == "pdf":
+            if not file_path:
+                raise FileNotFoundError("PDF job has no stored file")
+            return await asyncio.to_thread(_extract_stored_pdf, file_path, doc_id, word_limit, merge_bboxes, title)
+>       raise ValueError(f"unsupported source type: {source_type}")
+E       ValueError: unsupported source type: docx
+
+services/selar-worker/ingestion.py:526: ValueError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/selar-worker/test_file_formats.py::test_docx_ordered_blocks_original_hash_and_locators
+1 failed, 3 passed, 5 warnings in 1.14s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
