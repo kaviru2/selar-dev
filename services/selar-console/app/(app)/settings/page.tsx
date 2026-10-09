@@ -100,7 +100,8 @@ export default function SettingsPage() {
   const [pwMsg, setPwMsg] = useState<Msg>(null);
 
   // Preferences
-  const [prefMsg, setPrefMsg] = useState<Msg>(null);
+  // Save feedback is shown in the section that was changed.
+  const [prefMsg, setPrefMsg] = useState<{ section: "reader" | "suggestions"; msg: Msg } | null>(null);
   const reader = readerSettings(preferences);
   const showOnOpen = suggestionsOnOpen(preferences);
 
@@ -124,18 +125,18 @@ export default function SettingsPage() {
       .catch(() => undefined);
   }, [applyPreferences]);
 
-  async function savePref(patch: Record<string, unknown>) {
+  async function savePref(section: "reader" | "suggestions", patch: Record<string, unknown>) {
     setPrefMsg(null);
     try {
       const s = await saveSettings(patch);
       setLocked(s.locked);
       applyPreferences(s.values);
-      setPrefMsg({ ok: true, text: "Saved" });
+      setPrefMsg({ section, msg: { ok: true, text: "Saved" } });
     } catch (e) {
-      setPrefMsg(fail(e));
+      setPrefMsg({ section, msg: fail(e) });
     }
   }
-  const saveReader = (patch: Partial<ReaderSettings>) => savePref({ reader: patch });
+  const saveReader = (patch: Partial<ReaderSettings>) => savePref("reader", { reader: patch });
 
   async function onProfile(e: FormEvent) {
     e.preventDefault();
@@ -287,16 +288,21 @@ export default function SettingsPage() {
           </Row>
           <Row k="Remember position" sub="Reopen documents where you left off (stored on this device)">
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input type="checkbox" style={check} checked={reader.rememberPosition} onChange={(e) => saveReader({ rememberPosition: e.target.checked })} />
+              <input type="checkbox" aria-label="Remember position" style={check} checked={reader.rememberPosition} onChange={(e) => saveReader({ rememberPosition: e.target.checked })} />
               {reader.rememberPosition ? "On" : "Off"}
             </label>
           </Row>
           <Row k="Page thumbnails" sub="Show the thumbnail strip by default">
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input type="checkbox" style={check} checked={reader.showThumbnails} onChange={(e) => saveReader({ showThumbnails: e.target.checked })} />
+              <input type="checkbox" aria-label="Page thumbnails" style={check} checked={reader.showThumbnails} onChange={(e) => saveReader({ showThumbnails: e.target.checked })} />
               {reader.showThumbnails ? "On" : "Off"}
             </label>
           </Row>
+          {prefMsg?.section === "reader" && (
+            <Row k="">
+              <Status msg={prefMsg.msg} />
+            </Row>
+          )}
         </Group>
 
         <Group title="Suggestions">
@@ -307,18 +313,20 @@ export default function SettingsPage() {
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input
                 type="checkbox"
+                aria-label="Show suggestions when a document opens"
                 style={check}
                 checked={showOnOpen}
                 disabled={suggestionsLocked}
-                onChange={(e) => savePref({ [SUGGESTIONS_ON_OPEN]: e.target.checked })}
+                title={suggestionsLocked ? "Set by your study group; it cannot be changed here." : undefined}
+                onChange={(e) => savePref("suggestions", { [SUGGESTIONS_ON_OPEN]: e.target.checked })}
               />
               {showOnOpen ? "On" : "Off"}
               {suggestionsLocked && <span aria-hidden>🔒</span>}
             </label>
           </Row>
-          {prefMsg && (
+          {prefMsg?.section === "suggestions" && (
             <Row k="">
-              <Status msg={prefMsg} />
+              <Status msg={prefMsg.msg} />
             </Row>
           )}
         </Group>
