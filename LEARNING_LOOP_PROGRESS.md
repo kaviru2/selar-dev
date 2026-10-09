@@ -33,5 +33,10 @@ Replaced reader keep/reject approval UI with locally drafted neutral reflection 
 - `TEST_DATABASE_URL=... go test ./...` → passed (`m4-go.log`).
 - Console full regression/build: `m4-ui.log`, `m4-build.log`.
 
+## Milestone 5 — truthful progress
+Added owner-private current-source progress aggregates and `/progress`, plus Review/Progress navigation. Delayed practice requires server-observed 24h since previous attempt and no reported assistance; warm-up, immediate checks, exposed and unscored attempts are separate. UI discloses self-report and AI-score limitations, no mastery/efficacy claim, no invented zero-retention score. Estimated recall explicitly unavailable (not calibrated); streak is participation only; formal results remain a separate link.
+- RED DB + UI/navigation: `m5-red.log`, `m5-ui-red.log`.
+- Full worker/Postgres, console test and build pass: `m5-worker.log`, `m5-ui.log`, `m5-build.log`.
+
 ## Remaining milestones
-5–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
+6 pending full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
