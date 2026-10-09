@@ -22,38 +22,33 @@ requirements; console jobs cache the pnpm store by its lockfile. pnpm is set up
 before setup-node resolves its cache. Every dependency installation still runs;
 no environment, `node_modules`, credentials or production data is cached.
 
-## Optional reviews: explicit capability opt-in
+## Dependency scanning and optional Claude review
 
-On 2026-10-09 repository secret names showed no `CLAUDE_CODE_OAUTH_TOKEN`, and
-PR run 37897375250 skipped its actual Claude action. Dependency run 37897375202
-reported SBOM HTTP 404; a separate authenticated SBOM lookup also returned 404.
-These previously green no-op jobs did not provide substantive reviews.
+The canonical repository is now public. Dependency Review runs by default on
+public-repository PRs, independently of `DEPENDENCY_REVIEW_ENABLED`. It calls
+the review action directly, retaining the high-severity failure threshold and
+GPL-3.0/AGPL-3.0 policy. API errors fail visibly: an SBOM probe is not allowed to
+turn an unavailable scan into a successful no-op. Private copies can explicitly
+opt in with `DEPENDENCY_REVIEW_ENABLED=true` after verifying capability.
 
-Their unchanged check names now report **skipped** without allocating runners
-when the following repository Actions variables are unset or not `true`:
+The earlier private-repository audit on 2026-10-09 observed SBOM HTTP 404 and
+no substantive scan in run 37897375202. After publication, a local authenticated
+SBOM lookup still returned 404 and a dependency comparison returned 403; those
+local-token results do not establish what the workflow token can access.
+Exact-head Dependency Review execution, not visibility alone, verifies scanning.
 
-| Variable | Enable only after |
-| --- | --- |
-| `CLAUDE_REVIEW_ENABLED=true` | Configuring the `CLAUDE_CODE_OAUTH_TOKEN` secret and verifying review works. |
-| `DEPENDENCY_REVIEW_ENABLED=true` | Verifying repository dependency graph/review capability; authenticated SBOM returns 200. |
-
-Set these through repository Settings → Secrets and variables → Actions →
-Variables when the capability becomes available. This PR does not edit any
-secrets, variables, plans, visibility or workflow enablement. Revisit the flags
-when credentials or dependency-review availability change; they do not
-automatically detect a newly added capability. A skipped review is not an
-independent review or vulnerability scan.
-
+Automatic Claude review remains optional: `CLAUDE_REVIEW_ENABLED=true` requires
+configuring `CLAUDE_CODE_OAUTH_TOKEN` and verifying review works. The earlier
+secret-name audit found no credential; run 37897375250 skipped its actual
+Claude action. With the flag unset, the check explicitly skips without a runner.
 PR issue comments mentioning `@claude` remain independent of the automatic
-Claude flag, with the existing secret-presence guard; absent credentials yield
-an explicit warning, not a review. Automatic fork reviews still do not access
-secrets. Enabled dependency review retains the runtime availability probe,
-high-severity failure threshold and GPL-3.0/AGPL-3.0 policy.
+flag and retain the secret-presence guard. Missing credentials yield a warning,
+not an independent review. Automatic fork reviews do not access secrets.
 
-Branch protection and ruleset inspection returned HTTP 403 due to this private
-repository's plan. No required-check setting was changed; all existing check
-names remain. If plan/protection changes later, verify optional skipped checks
-are acceptable and enable capabilities before relying on them as review gates.
+The earlier protection/ruleset HTTP 403 observations describe the historical
+private-repository audit, not the current public repository's protection state.
+No secrets, variables, plans, visibility, required checks or other repository
+settings are changed by this PR. A skipped review is never a vulnerability scan.
 
 ## Regression verification
 
@@ -70,7 +65,9 @@ check names and the merge-group trigger. They do not substitute for the real
 service tests, Postgres integration, coverage or browser E2E.
 
 Historical audit estimates sum per-job elapsed minutes rounded upward, not
-billing records. Optional no-op gates could avoid approximately 196 of 1,851
-minutes over an equivalent Oct 1–9 workload while capabilities remain absent.
+billing records. The earlier private-repository scenario estimated approximately
+196 of 1,851 minutes from suppressing both no-op reviews over an equivalent
+Oct 1–9 workload. That scenario is not a current savings claim: public dependency
+review now executes by default.
 Cache and cancellation benefits are workload-dependent and not yet measured;
 rounding and cache overhead can erase small duration gains.

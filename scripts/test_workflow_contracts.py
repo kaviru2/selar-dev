@@ -67,13 +67,34 @@ class WorkflowContracts(unittest.TestCase):
         self.assertTrue(any(step.get("id") == "review-config" for step in claude["steps"]))
         self.assertTrue(any(step.get("uses") == "anthropics/claude-code-action@v1" for step in claude["steps"]))
         dependency = load("dependency-review")["jobs"]["dependency-review"]
-        self.assertEqual(dependency.get("if"), "${{ vars.DEPENDENCY_REVIEW_ENABLED == 'true' }}")
+        self.assertEqual(dependency.get("if"), "${{ github.event.repository.private == false || vars.DEPENDENCY_REVIEW_ENABLED == 'true' }}")
+        self.assertNotIn("continue-on-error", dependency)
         self.assertEqual(dependency["name"], "Dependency Review")
         review = next(step for step in dependency["steps"] if step.get("uses") == "actions/dependency-review-action@v4")
         self.assertEqual(review["with"]["fail-on-severity"], "high")
         self.assertEqual(review["with"]["deny-licenses"], "GPL-3.0, AGPL-3.0")
-        self.assertEqual(review["if"], "steps.dependency-graph.outputs.enabled == 'true'")
+        self.assertNotIn("if", review)
+        self.assertNotIn("continue-on-error", review)
+        self.assertFalse(any(step.get("id") == "dependency-graph" for step in dependency["steps"]))
 
+
+    def test_latest_main_suites_and_manual_pages_are_preserved(self):
+        branches = ["main", "feat/learning-*", "test/learning-*", "feat/document-format-snapshots"]
+        for name in ("ci", "coverage", "synthetic-e2e"):
+            workflow = load(name)
+            triggers = workflow.get("on", workflow.get(True))
+            self.assertEqual(triggers["pull_request"]["branches"], branches)
+            self.assertEqual(triggers["push"]["branches"], ["main"])
+            self.assertNotIn("paths", triggers["push"])
+            self.assertNotIn("paths-ignore", triggers["push"])
+            self.assertNotIn("paths-ignore", triggers["pull_request"])
+        e2e = load("synthetic-e2e")["jobs"]["service-boundaries"]
+        commands = "\n".join(step.get("run", "") for step in e2e["steps"])
+        for suite in ("test_synthetic_service_e2e.py", "test_chat_service_e2e.py", "test_web_service_e2e.py", "test_learning_loop_e2e.py", "test_format_service_e2e.py"):
+            self.assertIn(suite, commands)
+        self.assertIn("go run ./cmd/migrate", commands)
+        pages = load("pages")
+        self.assertEqual(set(pages.get("on", pages.get(True))), {"workflow_dispatch"})
 
     def test_existing_check_names_and_merge_group_are_preserved(self):
         expected = {
