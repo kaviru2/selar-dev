@@ -533,7 +533,7 @@ export default function PdfViewer(props: PdfViewerProps) {
       if (event instanceof KeyboardEvent && !event.shiftKey) return;
       requestAnimationFrame(() => {
         const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+        if (!selection || selection.isCollapsed || !selection.rangeCount) { setSelectionMenu(null); return; }
         const range = selection.getRangeAt(0);
         const startPage = range.startContainer.parentElement?.closest<HTMLElement>(".rd-page");
         const endPage = range.endContainer.parentElement?.closest<HTMLElement>(".rd-page");

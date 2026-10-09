@@ -1,0 +1,16 @@
+PASS selection Copy preserves exact source text
+PASS note editor receives keyboard focus
+PASS note, selected color and exact anchor persist
+PASS Escape cancels without mutating saved note
+PASS failed edit stays open and leaves persisted note untouched
+PASS edit persists note and color without rewriting quote
+PASS highlight list survives reload
+PASS list copies stored exact quote
+PASS list jump scrolls to anchored passage
+PASS zoom reanchors marks to the same text
+PASS reflow retains source-bound highlight
+PASS delete asks for confirmation
+PASS cancel deletion keeps persisted highlight
+PASS confirmed deletion persists
+PASS deleted mark stays absent after reload
+PASS no browser runtime errors
