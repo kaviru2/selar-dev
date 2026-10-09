@@ -968,9 +968,9 @@ Rules:
                 other = {"model_id": prior["id"], "document_id": prior["document_id"],
                          "key_concepts": prior["key_concepts"]}
                 try:
-                    if await link_pair(conn, user_id, current_link_source, other, rows_cache,
-                                       float(prior["similarity"])):
-                        created_links += 1
+                    created_links += len(await link_pair(
+                        conn, user_id, current_link_source, other, rows_cache,
+                        float(prior["similarity"])))
                 except asyncpg.PostgresError as link_error:
                     # Fail closed: the trigger refused this pair (e.g. the other
                     # reading is mid re-ingestion). No candidate; reading stays ready.

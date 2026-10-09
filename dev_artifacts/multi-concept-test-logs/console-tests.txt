@@ -1,0 +1,122 @@
+$ vitest run
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-legacy-pr-integration/services/selar-console
+
+ ✓ lib/reader/navigation.test.ts (19 tests) 6ms
+ ✓ lib/theme.test.tsx (9 tests) 96ms
+ ✓ components/admin-quiz/admin-quiz.interaction.test.tsx (6 tests) 204ms
+stderr | components/processing-disclosure.test.tsx > processing disclosure in real entry points > announces direct-upload server errors and resets the chooser for retry
+Error: Upload rejected
+    at errorFrom (/Users/kavirum1a/.hermes/cache/scratch/selar-legacy-pr-integration/services/selar-console/lib/upload.ts:23:10)
+    at Module.uploadPDF (/Users/kavirum1a/.hermes/cache/scratch/selar-legacy-pr-integration/services/selar-console/lib/upload.ts:37:31)
+    at handleUpload (/Users/kavirum1a/.hermes/cache/scratch/selar-legacy-pr-integration/services/selar-console/components/UploadButton.tsx:22:7)
+
+ ✓ components/processing-disclosure.test.tsx (7 tests) 460ms
+ ✓ components/reader/PdfViewer.popover.test.tsx (7 tests) 699ms
+ ✓ app/(auth)/auth-pages.test.tsx (12 tests) 638ms
+ ✓ app/(app)/settings/page.test.tsx (9 tests) 689ms
+ ✓ lib/design-tokens.test.ts (69 tests) 12ms
+ ✓ components/quiz/TakeQuiz.interaction.test.tsx (5 tests) 623ms
+   ✓ TakeQuiz > debounces text autosave 335ms
+ ✓ components/library-onboarding.test.tsx (6 tests) 248ms
+ ✓ lib/analytics.test.ts (9 tests) 22ms
+ ✓ lib/quiz/quiz.test.ts (7 tests) 103ms
+ ✓ components/StartHereGuide.test.tsx (11 tests) 326ms
+ ✓ app/(app)/chat/graph-safety.test.tsx (3 tests) 196ms
+ ✓ components/GraphCorrectionProposal.test.tsx (2 tests) 128ms
+ ✓ lib/reader-layout.test.ts (13 tests) 12ms
+ ✓ lib/upload.test.ts (4 tests) 19ms
+ ✓ components/SuggestionVisibilityToggle.test.tsx (5 tests) 96ms
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > keeps analytics off and shows a one-time prompt for undecided users
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > keeps analytics off and shows a one-time prompt for undecided users
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > enables analytics after an explicit yes and records the choice
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > enables analytics after an explicit yes and records the choice
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > enables analytics after an explicit yes and records the choice
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > stays off after 'No thanks'
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > stays off after 'No thanks'
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > stays off after 'No thanks'
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > does not prompt users who already decided, and enables only consenting ones
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > does not prompt users who already decided, and enables only consenting ones
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > does not prompt users who already decided, and enables only consenting ones
+The current testing environment is not configured to support act(...)
+
+ ✓ components/AnalyticsProvider.test.tsx (4 tests) 152ms
+ ✓ lib/graph-links.test.ts (7 tests) 8ms
+ ✓ app/api/[...go_api]/route.test.ts (5 tests) 60ms
+ ✓ lib/reader/text-anchor.test.ts (10 tests) 16ms
+ ✓ components/DriveImportFooter.test.tsx (4 tests) 151ms
+ ✓ lib/settings.test.ts (15 tests) 21ms
+ ✓ components/CalendarSettings.test.tsx (3 tests) 187ms
+ ✓ lib/reader/position.test.ts (6 tests) 22ms
+ ✓ lib/api.test.ts (7 tests) 21ms
+ ✓ components/auth/Recaptcha.test.tsx (4 tests) 298ms
+ ✓ components/document-formats.test.tsx (6 tests) 104ms
+ ✓ app/api/auth/account-routes.test.ts (4 tests) 19ms
+ ✓ components/reader/AnnotationTools.test.tsx (3 tests) 249ms
+ ✓ lib/connection-guide.test.ts (5 tests) 24ms
+ ✓ components/ConnectionsPanel.interaction.test.tsx (3 tests) 148ms
+ ✓ components/landing/LandingPage.test.tsx (7 tests) 12ms
+ ✓ components/EmailNoticeSettings.test.tsx (2 tests) 142ms
+ ✓ components/ui/ui-kit.test.tsx (5 tests) 43ms
+ ✓ lib/reader/dwell.test.ts (4 tests) 5ms
+ ✓ lib/reader/annotation-dom.test.ts (3 tests) 53ms
+ ✓ lib/reader/rects.test.ts (5 tests) 16ms
+ ✓ lib/admin.test.ts (6 tests) 10ms
+ ✓ lib/google-drive.test.ts (4 tests) 15ms
+ ✓ lib/nav.test.ts (4 tests) 6ms
+ ✓ components/AssertionProvenance.test.tsx (2 tests) 90ms
+ ✓ lib/reader/annotation-anchor.test.ts (4 tests) 8ms
+ ✓ lib/safe-redirect.test.ts (20 tests) 4ms
+ ✓ lib/reader-highlights.test.ts (2 tests) 26ms
+ ✓ components/ReadingPractice.test.tsx (1 test) 139ms
+ ✓ lib/reader-telemetry.test.ts (3 tests) 6ms
+ ✓ lib/link-evidence.test.ts (2 tests) 5ms
+ ✓ components/Topbar.prototype.test.tsx (2 tests) 171ms
+ ✓ components/brand/brand.test.tsx (3 tests) 101ms
+ ✓ components/Topbar.admin.test.tsx (2 tests) 165ms
+ ✓ app/(app)/progress/page.test.tsx (1 test) 114ms
+ ✓ lib/format.test.ts (5 tests) 4ms
+ ✓ app/api/auth/google/google-routes.test.ts (10 tests) 53ms
+ ✓ proxy.test.ts (17 tests) 30ms
+ ✓ app/(app)/review/page.test.tsx (1 test) 104ms
+ ✓ app/api/auth/session-expired/route.test.ts (3 tests) 47ms
+ ✓ lib/auth.test.ts (4 tests) 11ms
+ ✓ lib/reviewed-links.test.ts (2 tests) 9ms
+ ✓ components/learning-copy.test.ts (1 test) 4ms
+ ✓ app/(app)/quiz/page.test.tsx (1 test) 11ms
+
+ Test Files  62 passed (62)
+      Tests  415 passed (415)
+   Start at  14:10:44
+   Duration  19.56s (transform 2.68s, setup 0ms, collect 9.81s, tests 7.46s, environment 79.95s, prepare 8.49s)
+

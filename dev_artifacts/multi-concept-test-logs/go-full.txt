@@ -1,0 +1,24 @@
+ok  	github.com/selar-dev/selar-api/cmd/admin	0.556s
+?   	github.com/selar-dev/selar-api/cmd/migrate	[no test files]
+?   	github.com/selar-dev/selar-api/cmd/replay	[no test files]
+ok  	github.com/selar-dev/selar-api/cmd/server	5.449s
+ok  	github.com/selar-dev/selar-api/internal/allowlist	2.583s
+ok  	github.com/selar-dev/selar-api/internal/analytics	0.991s
+ok  	github.com/selar-dev/selar-api/internal/calendar	1.534s
+ok  	github.com/selar-dev/selar-api/internal/dbconfig	2.046s
+ok  	github.com/selar-dev/selar-api/internal/googleauth	3.355s
+ok  	github.com/selar-dev/selar-api/internal/handler	4.445s
+ok  	github.com/selar-dev/selar-api/internal/linktoken	3.335s
+ok  	github.com/selar-dev/selar-api/internal/middleware	3.555s
+ok  	github.com/selar-dev/selar-api/internal/migrate	4.914s
+ok  	github.com/selar-dev/selar-api/internal/model	4.102s
+ok  	github.com/selar-dev/selar-api/internal/notify	4.093s
+ok  	github.com/selar-dev/selar-api/internal/offlinegraph	3.847s
+ok  	github.com/selar-dev/selar-api/internal/quiz	3.587s
+ok  	github.com/selar-dev/selar-api/internal/recaptcha	3.834s
+ok  	github.com/selar-dev/selar-api/internal/settings	3.533s
+ok  	github.com/selar-dev/selar-api/internal/storage	3.818s
+?   	github.com/selar-dev/selar-api/internal/storage/storagetest	[no test files]
+ok  	github.com/selar-dev/selar-api/internal/store	4.018s
+?   	github.com/selar-dev/selar-api/internal/store/migrations	[no test files]
+ok  	github.com/selar-dev/selar-api/internal/workertrigger	3.909s
