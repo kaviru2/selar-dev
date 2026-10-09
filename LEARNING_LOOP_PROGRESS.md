@@ -21,5 +21,11 @@ Reader now gates source/connection display behind an optional warm-up, keeps the
 - `pnpm test` → passed (`m2-console.log`).
 - `pnpm build` → passed (`m2-build.log`).
 
+## Milestone 3 — daily review
+Owner-scoped live-source due queue and one-at-a-time review page. Atomic attempt/schedule writes and concurrent idempotency-key regression. Conservative doubling-interval-v1 heuristic (not FSRS and not a recall model), bounded 1–60 days, resets for exposed/uncertain/low-score attempts. Explicit UTC date streak excludes future timestamps and deduplicates days. Production time is database time; tests age only fabricated rows.
+- RED scheduler, DB due queue, UI: `m3-red.log`, `m3-db-red.log`, `m3-ui-red.log`.
+- Full worker pytest with isolated Postgres → passed (`m3-worker.log`).
+- Full console tests/build → receipts `m3-console.log`, `m3-build.log`.
+
 ## Remaining milestones
-3–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
+4–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.

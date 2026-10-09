@@ -18,7 +18,7 @@ router = APIRouter()
 
 class PracticeRequest(BaseModel):
     user_id: uuid.UUID
-    action: Literal['generate', 'items', 'attempt']
+    action: Literal['generate', 'items', 'attempt', 'daily']
     document_id: uuid.UUID | None = None
     item_id: uuid.UUID | None = None
     request_key: uuid.UUID | None = None
@@ -45,6 +45,8 @@ async def practice_rpc(req: PracticeRequest):
     import main
     conn = await asyncpg.connect(main.DATABASE_URL)
     try:
+        if req.action == 'daily':
+            return await service.daily(conn, req.user_id)
         if req.action == 'generate' and req.document_id:
             return await service.generate(conn, req.user_id, req.document_id, model)
         if req.action == 'items' and req.document_id:

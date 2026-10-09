@@ -1,17 +1,33 @@
 """Database boundary for private, source-bound practice; no formal instruments."""
 import json
 from practice import Unavailable, digest, generate_item, validated_feedback
+from practice_schedule import next_interval, streak
+
+async def daily(conn, owner):
+    rows = await conn.fetch('SELECT p.id,p.document_id,p.payload ' + LIVE + ''' AND EXISTS(
+        SELECT 1 FROM practice_schedule s WHERE s.item_id=p.id AND s.user_id=$1 AND s.due_at<=now())
+        ORDER BY p.created_at,p.id LIMIT 20''', owner)
+    timestamps = await conn.fetch("SELECT created_at FROM practice_attempts WHERE user_id=$1 AND phase='review' AND created_at<=now()", owner)
+    now = await conn.fetchval('SELECT now()')
+    return {'status':'ready', 'items':[{'id':str(r['id']),'document_id':str(r['document_id']),
+        **{k:json.loads(r['payload'])[k] for k in ('question','label')}} for r in rows],
+        'streak':streak([r['created_at'] for r in timestamps],now), 'timezone':'UTC',
+        'policy':'doubling-interval-v1 (heuristic, not a recall estimate)'}
+
 
 async def attempt(conn, owner, request, model):
     fingerprint = digest(json.dumps(request, sort_keys=True))
     async with conn.transaction():
         await conn.execute('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', f'practice-attempt:{owner}:{request["request_key"]}')
         prior = await conn.fetchrow('SELECT request_hash,feedback FROM practice_attempts WHERE user_id=$1 AND request_key=$2', owner, request['request_key'])
-        if prior:
-            return json.loads(prior['feedback']) if prior['request_hash'] == fingerprint else {'status': 'conflict'}
         row = await conn.fetchrow('SELECT p.payload ' + LIVE + ' AND p.id=$2 FOR UPDATE OF p,d,c', owner, request['item_id'])
         if not row:
             return {'status': 'not_found'}
+        if prior:
+            return json.loads(prior['feedback']) if prior['request_hash'] == fingerprint else {'status': 'conflict'}
+        schedule = await conn.fetchrow('SELECT *,due_at<=now() AS due,last_attempt_at<=now()-interval \'1 day\' AS delayed FROM practice_schedule WHERE item_id=$1 AND user_id=$2 FOR UPDATE', request['item_id'],owner)
+        if request['phase']=='review' and (not schedule or not schedule['due']):
+            return {'status':'not_due'}
         payload = json.loads(row['payload'])
         try:
             raw = await model('grade', {'question': payload['question'], 'answer': payload['answer'],
@@ -21,9 +37,15 @@ async def attempt(conn, owner, request, model):
             feedback = validated_feedback({'feedback': 'AI feedback unavailable; this attempt is unscored.'})
         result = {'status': 'recorded', 'feedback': feedback, 'quote': payload['quote'],
                   'answer': payload['answer'], 'locator': payload['locator']}
-        await conn.execute('''INSERT INTO practice_attempts(user_id,item_id,request_key,request_hash,phase,response,exposed,feedback)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)''', owner, request['item_id'], request['request_key'], fingerprint,
-            request['phase'], request['response'], request.get('exposed', False), json.dumps(result))
+        exposed = request.get('exposed', False) or request['phase']=='reading_check'
+        delayed = bool(request['phase']=='review' and schedule and schedule['delayed'] and not exposed)
+        await conn.execute('''INSERT INTO practice_attempts(user_id,item_id,request_key,request_hash,phase,response,exposed,feedback,delayed_unassisted)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)''', owner, request['item_id'], request['request_key'], fingerprint,
+            request['phase'], request['response'], exposed, json.dumps(result),delayed)
+        interval = next_interval(schedule['interval_days'] if schedule else 1,feedback['score'],not delayed)
+        await conn.execute('''INSERT INTO practice_schedule(item_id,user_id,interval_days,due_at,last_attempt_at)
+            VALUES($1,$2,$3,now()+$3::integer*interval '1 day',now()) ON CONFLICT(item_id) DO UPDATE
+            SET interval_days=EXCLUDED.interval_days,due_at=EXCLUDED.due_at,last_attempt_at=EXCLUDED.last_attempt_at''',request['item_id'],owner,interval)
         return result
 
 
