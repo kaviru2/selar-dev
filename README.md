@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/readme/hero.png" width="100%" alt="SELAR banner: the selar wordmark, the line 'Semantic Linking for Active Retention', a Research prototype label, and Linny, a round green bird mascot, holding two linked pages.">
+</p>
+
 # SELAR
 ### Semantic Linking for Active Retention
 
@@ -7,15 +11,11 @@ Read across papers and notes, compare suggested connections against their source
 
 [User guide](docs/user-guide.md) · [Local quickstart](docs/local-quickstart.md) · [Deployment](docs/DEPLOYMENT.md) · [Contributing](CONTRIBUTING.md)
 
-```mermaid
-flowchart LR
-    A[Add readings] --> B[Optional recall warm-up]
-    B --> C[Read and compare passages]
-    C --> D[End-reading check]
-    D --> E[Daily review]
-    E --> F[Practice progress]
-```
-*Workflow diagram, not a screenshot or a claim of measured learning gains.*
+<p align="center">
+  <img src="docs/assets/readme/learning-loop.png" width="100%" alt="Learning loop in six numbered steps: 1 Add readings; 2 optional Before-reading warm-up; 3 Read and compare linked passages, with reflection prompts and Compare passages and This link is wrong controls; 4 End-reading check; 5 Daily review and UTC-day streak; 6 Progress, shown as observed practice records rather than a mastery score.">
+</p>
+
+*Illustration of the current workflow, drawn programmatically from the brand kit. It is not a screenshot or a claim of measured learning gains.*
 
 ## Start here
 
@@ -44,6 +44,12 @@ These docs describe this repository revision, including expanded imports and lig
 ## Prerequisites
 
 Hosted learners need only the supplied instance address and an account. Self-hosters need the tools listed in the [local quickstart](docs/local-quickstart.md#prerequisites). The stack is **Next.js console → Go API → PostgreSQL/pgvector**, with a **Python worker → Google Gemini** for model-backed processing.
+
+<p align="center">
+  <img src="docs/assets/readme/architecture.png" width="100%" alt="Architecture: the Next.js console calls the Go API over HTTP; the API uses PostgreSQL with pgvector over SQL and calls the Python worker over HTTP; the worker reads and writes PostgreSQL and calls Google Gemini, a cloud model provider.">
+</p>
+
+*Simplified illustration of the services, not a deployment diagram. See [ARCHITECTURE.md](ARCHITECTURE.md) for detail. Illustration sources: [`docs/assets/readme/`](docs/assets/readme/).*
 
 ## Costs and data
 
