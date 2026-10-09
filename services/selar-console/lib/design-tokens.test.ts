@@ -103,6 +103,9 @@ describe("semantic tokens meet WCAG AA in both themes", () => {
     ["text-sky", "tint-sky"], ["text-amber", "tint-amber"], ["text-amber-strong", "tint-amber"],
     ["ink", "tint-sky"], ["ink-3", "tint-sky"], ["ink-3", "tint-green"],
     ["error", "bg"],
+    // Graph node/relation badges, canvas labels and raised inspector panels.
+    ...["ink-4", "accent", "accent-2", "accent-warm-ink", "text-sky", "text-amber", "error"].flatMap((fg) =>
+      ["bg", "bg-raised"].map((bg): [string, string] => [fg, bg])),
   ];
   it.each(pairs)("light: --%s on --%s", (fg, bg) => {
     expect(contrast(light[fg], light[bg])).toBeGreaterThanOrEqual(4.5);
