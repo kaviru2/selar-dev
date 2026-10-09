@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from ingestion import extract_source
 from storage import asset_prefix, get_storage
 from candidate_generation import link_pair
+from assertion_chat import AssertionSelection, selected_assertion_answer
 
 # Load root .env.development
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env.development'))
@@ -88,6 +89,7 @@ class ChatRequest(BaseModel):
     thread_id: str
     question: str
     history: List[ChatHistoryItem] = Field(default_factory=list)
+    assertion_selection: Optional[AssertionSelection] = None
 
 
 def is_explicit_graph_command(question: str) -> bool:
@@ -1214,6 +1216,9 @@ async def grounded_chat(req: ChatRequest):
     question = req.question.strip()
     if not question or len(question) > 4000:
         raise HTTPException(status_code=400, detail="question must contain 1 to 4000 characters")
+    if req.assertion_selection is not None or question.startswith("Show saved assertion:"):
+        return await selected_assertion_answer(
+            asyncpg.connect, DATABASE_URL, req.user_id, question, req.assertion_selection, total_started)
     if is_explicit_graph_command(question):
         return graph_command_response(total_started)
     if not client:

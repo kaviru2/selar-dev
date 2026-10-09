@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { clientFetch, type ChatMessage, type ChatThread } from "@/lib/api";
 import { GraphCorrectionProposal } from "@/components/GraphCorrectionProposal";
+import { SavedAssertionPicker, type AssertionSelection } from "@/components/SavedAssertionPicker";
 
 // The worker answers explicit "update the graph" commands with this boundary
 // version instead of a library search (issue #9).
@@ -16,6 +17,7 @@ export default function ChatPage() {
   const [activeThread, setActiveThread] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [assertionSelection, setAssertionSelection] = useState<AssertionSelection>();
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [feedbackBusy, setFeedbackBusy] = useState("");
@@ -96,7 +98,7 @@ export default function ChatPage() {
       await clientFetch<ChatMessage>(`/api/chat/threads/${threadId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: question }),
+        body: JSON.stringify({ content: question, assertion_selection: assertionSelection }),
       });
       await Promise.all([loadMessages(threadId), loadThreads()]);
     } catch (sendError) {
@@ -319,6 +321,10 @@ export default function ChatPage() {
         </div>
 
         <div className="chat-composer-wrap">
+          <SavedAssertionPicker disabled={sending} onSelect={(selection, question) => {
+            setAssertionSelection(selection);
+            if (question !== undefined) setInput(question);
+          }} />
           {error && <div className="chat-error">{error}</div>}
           <form className="chat-composer" onSubmit={submit}>
             <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask about claims, concepts, assumptions, or connections…" rows={2} maxLength={4000} onKeyDown={(event) => {

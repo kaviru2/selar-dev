@@ -12,6 +12,7 @@ import asyncpg
 import httpx
 import pytest
 
+from assertion_chat_e2e import test_selected_assertion_contract_and_browser
 from test_synthetic_service_e2e import PASSWORD, _dismiss_optional_consent, _drain_job, _request, services
 
 PRIMARY = "# Original CedarAgent paper\nCedarAgent introduces an agent architecture for tools.\n"
