@@ -15,6 +15,9 @@ func (h *Handler) PreviewMentalModelLink(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+	if !h.requireLearningLinks(w, r) {
+		return
+	}
 	preview, err := h.store.PreviewMentalModelLink(r.Context(), middleware.GetUserID(r.Context()), id)
 	if errors.Is(err, store.ErrMentalModelLinkNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "grounded assertion not found"})

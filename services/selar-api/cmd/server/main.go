@@ -212,6 +212,7 @@ func main() {
 		r.Get("/documents/{id}/mental-model", h.GetDocumentMentalModel)
 		r.Get("/mental-model-links", h.ListMentalModelLinks)
 		r.Get("/mental-model-links/{id}/preview", h.PreviewMentalModelLink)
+		r.Post("/mental-model-links/{id}/flag", h.FlagMentalModelLink)
 		r.Post("/mental-model-links/{id}/respond", h.RespondToMentalModelLink)
 		r.Get("/learner-state", h.ListLearnerConceptState)
 

@@ -60,9 +60,9 @@ export default function OnboardingPage() {
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
             Evidence-backed candidates
           </div>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: "4px 0" }}>Review connections yourself</div>
+          <div style={{ fontSize: 18, fontWeight: 600, margin: "4px 0" }}>Reflect on connections</div>
           <div style={{ fontSize: "var(--t-md)", color: "var(--ink-3)", lineHeight: 1.45 }}>
-            SELAR surfaces possible connections across your material. Treat suggestions as candidates: inspect their evidence and confirm, reject, or relabel them yourself.
+            SELAR surfaces connections as learning prompts. Recall similarities and differences, compare exact source passages, and use “This link is wrong” to hide an unsuitable prompt. Shared wording is not proof of a relationship.
           </div>
         </div>
       </div>
