@@ -65,3 +65,32 @@ def test_attempt_is_private_atomic_idempotent_and_unavailable_unscored():
             await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])', [owner, other])
             await conn.close()
     asyncio.run(run())
+
+
+def test_due_queue_and_duplicate_review_atomicity():
+    async def run():
+        p=importlib.import_module('practice_service')
+        conn=await asyncpg.connect(DB)
+        owner,other,doc,chunk=await fixture(conn)
+        try:
+            item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
+            req={'item_id':item,'request_key':str(uuid.uuid4()),'response':'Descent','phase':'reading_check','exposed':True}
+            await p.attempt(conn,owner,req,model)
+            assert (await p.daily(conn,owner))['items']==[]
+            # Test-only persisted fixture aging, no production clock override.
+            await conn.execute("UPDATE practice_schedule SET due_at=now()-interval '1 second' WHERE user_id=$1",owner)
+            assert len((await p.daily(conn,owner))['items'])==1
+            assert (await p.daily(conn,other))['items']==[]
+            req={**req,'request_key':str(uuid.uuid4()),'phase':'review','exposed':False}
+            async def submit():
+                c=await asyncpg.connect(DB)
+                try:return await p.attempt(c,owner,req,model)
+                finally:await c.close()
+            a,b=await asyncio.gather(submit(),submit())
+            assert a==b and a['status']=='recorded'
+            assert (await p.daily(conn,owner))['items']==[]
+            assert (await p.daily(conn,owner))['streak']==1
+            assert await conn.fetchval("SELECT count(*) FROM practice_attempts WHERE user_id=$1 AND phase='review'",owner)==1
+        finally:
+            await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+    asyncio.run(run())

@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { quizApi } from '@/lib/quiz/client';
 
 export interface PracticeItem { id:string; document_id?:string; question:string; label:string }
-interface Result { status:string; message?:string; items?:PracticeItem[]; feedback?:{score:number|null; provisional:boolean; feedback:string}; quote?:string; answer?:string; locator?:unknown }
+interface Result { status:string; streak?:number; message?:string; items?:PracticeItem[]; feedback?:{score:number|null; provisional:boolean; feedback:string}; quote?:string; answer?:string; locator?:unknown }
 export const practiceRPC = (data:Record<string,unknown>) => quizApi<Result>('/api/practice',{method:'POST',body:JSON.stringify(data)});
 
 export function PracticeCard({item,phase,onDone}:{item:PracticeItem;phase:'warmup'|'reading_check'|'review';onDone?:()=>void}) {
