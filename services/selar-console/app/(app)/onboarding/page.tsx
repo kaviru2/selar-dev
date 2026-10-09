@@ -1,71 +1,23 @@
-// page.tsx — Prototype onboarding for initial SELAR testers.
-
 import Link from "next/link";
-import { Icon } from "@/components/ui/Icon";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
-import { WordmarkMark } from "@/components/ui/Wordmark";
+import { PageHeader } from "@/components/ui/Card";
 
-const STEPS = [
-  { no: "01", lbl: "Create your account", sub: "Your library is associated with your account.", done: true },
-  { no: "02", lbl: "Add a document or text", sub: "Start with material you are allowed to use for testing.", done: false },
-  { no: "03", lbl: "Read and inspect connections", sub: "Review candidate links before treating them as useful.", done: false },
-  { no: "04", lbl: "Share feedback", sub: "Report unclear, incorrect, or useful results to the research team.", done: false },
-];
-
+/** Optional help, not a registration step or a fabricated completion checklist. */
 export default function OnboardingPage() {
-  return (
-    <div className="onboard">
-      <div className="left">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28, fontSize: 15, fontWeight: 600 }}>
-          <WordmarkMark size={24} />
-          SELAR
-          <span style={{ fontWeight: 400, color: "var(--ink-4)", fontSize: 12, marginLeft: 4 }}>· getting started</span>
-        </div>
-
-        <h1>Welcome to SELAR.</h1>
-        <div className="lede">
-          Add reading material, explore evidence-backed connections, and help us identify what is useful or misleading before any formal study begins.
-        </div>
-
-        <ProcessingDisclosure />
-        <div className="steps">
-          {STEPS.map((s) => (
-            <div key={s.no} className={`step${s.done ? " done" : ""}`}>
-              <span className="no">{s.done ? "✓" : s.no}</span>
-              <div>
-                <div className="lbl">{s.lbl}</div>
-                <div className="sub">{s.sub}</div>
-              </div>
-              <span>
-                {s.no === "02" && (
-                  <Link href="/library" className="btn primary">
-                    Open library <Icon name="arrow_right" size={12} />
-                  </Link>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ marginTop: 22, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-4)" }}>
-          Prototype testing · do not upload sensitive or confidential material
-        </div>
-      </div>
-
-      <div className="right">
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.1em", color: "var(--ink-4)", textTransform: "uppercase" }}>
-          What SELAR does
-        </div>
-        <div style={{ background: "var(--bg)", border: "1px solid var(--rule)", borderRadius: "var(--r-md)", padding: 18, width: 340 }}>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
-            Evidence-backed candidates
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: "4px 0" }}>Review connections yourself</div>
-          <div style={{ fontSize: "var(--t-md)", color: "var(--ink-3)", lineHeight: 1.45 }}>
-            SELAR surfaces possible connections across your material. Treat suggestions as candidates: inspect their evidence and confirm, reject, or relabel them yourself.
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="app-page"><div className="app-page-inner">
+    <PageHeader eyebrow="Optional help" title="Start with one reading"
+      description="No setup wizard. Your library shows the next step for the material you add."
+      actions={<Link href="/library#start-here" className="ui-btn ui-btn--primary">Open library guide</Link>} />
+    <section className="ui-card" style={{ padding: 24, display: "grid", gap: 16 }} aria-label="Getting started">
+      <h2>Add material you are allowed to use</h2>
+      <p>In Library, choose Add content for the supported file formats, a web page, or pasted text. Google Drive import is alongside it when configured; choose one PDF at a time.</p>
+      <ProcessingDisclosure />
+      <h2>Wait for Ready, then open the reading</h2>
+      <p>Queued and processing readings update in Library. You can leave and return later. If processing fails, use Retry or add another reading. Ready means processing finished, not that you have learned the material.</p>
+      <h2>Read at your own pace</h2>
+      <p>With more readings, SELAR may suggest connections. Check the source passages before relying on them. You do not need a connection to start reading.</p>
+      <p><Link href="/settings">Reading preferences</Link> are optional. You can dismiss the library guide and reopen it from Start here whenever you need help.</p>
+      <p>Do not upload sensitive or confidential material.</p>
+    </section>
+  </div></div>;
 }
