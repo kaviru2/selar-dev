@@ -1,0 +1,1 @@
+ok  	github.com/selar-dev/selar-api/internal/handler	0.636s

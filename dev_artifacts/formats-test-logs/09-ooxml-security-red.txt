@@ -1,0 +1,180 @@
+...FFFFFFFF.                                                             [100%]
+=================================== FAILURES ===================================
+_ test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>-extra0] _
+
+body = '<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', extra = {}
+
+    @pytest.mark.parametrize('body,extra', [
+        ('<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', {}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/comments.xml': '<comments/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/footnotes.xml': '<footnotes/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/vbaProject.bin': 'macro'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'../escape': 'bad'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/bomb': 'A' * 1000000}),
+    ])
+    def test_docx_rejects_unsafe_or_unrepresented_evidence(body, extra):
+        from document_formats import docx_blocks
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:67: Failed
+_ test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra1] _
+
+body = '<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>'
+extra = {'word/comments.xml': '<comments/>'}
+
+    @pytest.mark.parametrize('body,extra', [
+        ('<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', {}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/comments.xml': '<comments/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/footnotes.xml': '<footnotes/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/vbaProject.bin': 'macro'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'../escape': 'bad'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/bomb': 'A' * 1000000}),
+    ])
+    def test_docx_rejects_unsafe_or_unrepresented_evidence(body, extra):
+        from document_formats import docx_blocks
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:67: Failed
+_ test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra2] _
+
+body = '<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>'
+extra = {'word/footnotes.xml': '<footnotes/>'}
+
+    @pytest.mark.parametrize('body,extra', [
+        ('<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', {}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/comments.xml': '<comments/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/footnotes.xml': '<footnotes/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/vbaProject.bin': 'macro'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'../escape': 'bad'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/bomb': 'A' * 1000000}),
+    ])
+    def test_docx_rejects_unsafe_or_unrepresented_evidence(body, extra):
+        from document_formats import docx_blocks
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:67: Failed
+_ test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra3] _
+
+body = '<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>'
+extra = {'word/vbaProject.bin': 'macro'}
+
+    @pytest.mark.parametrize('body,extra', [
+        ('<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', {}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/comments.xml': '<comments/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/footnotes.xml': '<footnotes/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/vbaProject.bin': 'macro'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'../escape': 'bad'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/bomb': 'A' * 1000000}),
+    ])
+    def test_docx_rejects_unsafe_or_unrepresented_evidence(body, extra):
+        from document_formats import docx_blocks
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:67: Failed
+_ test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra4] _
+
+body = '<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', extra = {'../escape': 'bad'}
+
+    @pytest.mark.parametrize('body,extra', [
+        ('<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', {}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/comments.xml': '<comments/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/footnotes.xml': '<footnotes/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/vbaProject.bin': 'macro'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'../escape': 'bad'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/bomb': 'A' * 1000000}),
+    ])
+    def test_docx_rejects_unsafe_or_unrepresented_evidence(body, extra):
+        from document_formats import docx_blocks
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:67: Failed
+_ test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra5] _
+
+body = '<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>'
+extra = {'word/bomb': 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'}
+
+    @pytest.mark.parametrize('body,extra', [
+        ('<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>', {}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/comments.xml': '<comments/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/footnotes.xml': '<footnotes/>'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/vbaProject.bin': 'macro'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'../escape': 'bad'}),
+        ('<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>', {'word/bomb': 'A' * 1000000}),
+    ])
+    def test_docx_rejects_unsafe_or_unrepresented_evidence(body, extra):
+        from document_formats import docx_blocks
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:67: Failed
+___________ test_docx_requires_ooxml_structure[[Content_Types].xml] ____________
+
+missing = '[Content_Types].xml'
+
+    @pytest.mark.parametrize('missing', ['[Content_Types].xml', '_rels/.rels'])
+    def test_docx_requires_ooxml_structure(missing):
+        from document_formats import docx_blocks
+        original = zipfile.ZipFile(io.BytesIO(docx_bytes()))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as archive:
+            for name in original.namelist():
+                if name != missing:
+                    archive.writestr(name, original.read(name))
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:80: Failed
+_______________ test_docx_requires_ooxml_structure[_rels/.rels] ________________
+
+missing = '_rels/.rels'
+
+    @pytest.mark.parametrize('missing', ['[Content_Types].xml', '_rels/.rels'])
+    def test_docx_requires_ooxml_structure(missing):
+        from document_formats import docx_blocks
+        original = zipfile.ZipFile(io.BytesIO(docx_bytes()))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as archive:
+            for name in original.namelist():
+                if name != missing:
+                    archive.writestr(name, original.read(name))
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+services/selar-worker/test_file_formats.py:80: Failed
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/selar-worker/test_file_formats.py::test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:ins><w:r><w:t>changed</w:t></w:r></w:ins></w:p>-extra0]
+FAILED services/selar-worker/test_file_formats.py::test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra1]
+FAILED services/selar-worker/test_file_formats.py::test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra2]
+FAILED services/selar-worker/test_file_formats.py::test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra3]
+FAILED services/selar-worker/test_file_formats.py::test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra4]
+FAILED services/selar-worker/test_file_formats.py::test_docx_rejects_unsafe_or_unrepresented_evidence[<w:p><w:r><w:t>Evidence</w:t></w:r></w:p>-extra5]
+FAILED services/selar-worker/test_file_formats.py::test_docx_requires_ooxml_structure[[Content_Types].xml]
+FAILED services/selar-worker/test_file_formats.py::test_docx_requires_ooxml_structure[_rels/.rels]
+8 failed, 4 passed, 5 warnings in 0.42s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

@@ -1,0 +1,5 @@
+--- FAIL: TestTextFileUploadPlan (0.00s)
+    file_formats_test.go:163: notes.md: 200 {"max_bytes":52428800,"mode":"multipart"}
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	1.002s
+FAIL

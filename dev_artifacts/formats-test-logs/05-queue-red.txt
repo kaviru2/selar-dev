@@ -1,0 +1,5 @@
+--- FAIL: TestIntegrationTextFilesQueueOriginal (0.03s)
+    file_formats_test.go:43: notes.md: 400 {"error":"only PDF allowed"}
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	0.696s
+FAIL

@@ -1,0 +1,45 @@
+............s....sss......................sssss............s............ [ 46%]
+................................s.............F...sssssss..........s.s.. [ 93%]
+.......sss                                                               [100%]
+=================================== FAILURES ===================================
+_______________ test_cli_reads_predictions_without_writing_gold ________________
+
+tmp_path = PosixPath('/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.tmp/pytest-of-kavirum1a/pytest-12/test_cli_reads_predictions_wit0')
+
+    def test_cli_reads_predictions_without_writing_gold(tmp_path):
+        path, digest = frozen(tmp_path, fixture())
+        predictions = tmp_path / "predictions.json"
+        predictions.write_text(json.dumps([{"pair_id": "L1", "label": "abstain"},
+                                           {"pair_id": "L2", "label": "none"}]))
+        before = path.read_bytes()
+        result = subprocess.run([sys.executable, "-m", "offline_evidence", "--gold", str(path),
+                                 "--sha256", digest, "--predictions", str(predictions),
+                                 "--split", "development"], capture_output=True, text=True)
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: /Users/kavirum1a/.hermes/cache/scratch/selar-formats/.venv/bin/python: No module named offline_evidence
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.venv/bin/python', '-m', 'offline_evidenc...'', stderr='/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.venv/bin/python: No module named offline_evidence\n').returncode
+
+services/selar-worker/test_offline_evidence.py:164: AssertionError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/kavirum1a/.hermes/cache/scratch/selar-formats/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/selar-worker/test_offline_evidence.py::test_cli_reads_predictions_without_writing_gold
+1 failed, 130 passed, 23 skipped, 6 warnings in 2.25s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

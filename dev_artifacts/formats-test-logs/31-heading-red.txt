@@ -1,0 +1,29 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console
+
+ ❯ components/document-formats.test.tsx (6 tests | 1 failed) 36ms
+   × preserves heading level and ordered-list markers 20ms
+     → expected undefined to be 'Third level' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  components/document-formats.test.tsx > preserves heading level and ordered-list markers
+AssertionError: expected undefined to be 'Third level' // Object.is equality
+
+- Expected: 
+"Third level"
+
++ Received: 
+undefined
+
+ ❯ components/document-formats.test.tsx:19:53
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  12:44:03
+   Duration  1.18s (transform 40ms, setup 0ms, collect 165ms, tests 36ms, environment 546ms, prepare 54ms)
+
