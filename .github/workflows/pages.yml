@@ -1,9 +1,8 @@
 name: Deploy Docs
 
+# The README is the supported documentation entry point. This optional site
+# stays manual-only; Pages must already be provisioned before dispatching it.
 on:
-  push:
-    branches: [main]
-    paths: [docs/**]
   workflow_dispatch:
 
 permissions:
