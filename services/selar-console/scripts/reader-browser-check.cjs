@@ -32,8 +32,15 @@ function check(name, ok, detail) {
 
   const indicator = async () => (await page.locator(".page-indicator").first().textContent()).trim();
   const sc = page.locator(".rd-scroll");
+  // The optional recall gate may precede the reader on a fresh session.
+  async function enterReading() {
+    const skip = page.getByRole("button", { name: "Continue reading", exact: true });
+    await Promise.race([skip.waitFor({ timeout: 60000 }), page.locator('.rd-page .textLayer').first().waitFor({ timeout: 60000 })]);
+    if (await skip.isVisible()) await skip.click();
+  }
 
   await page.goto(`${BASE}/reader?docId=${doc}&page=1`);
+  await enterReading();
   await page.locator(".rd-page .textLayer").first().waitFor({ timeout: 60000 });
   await page.waitForTimeout(1200);
   await page.screenshot({ path: `${OUT}/01-initial.png` });
@@ -134,6 +141,7 @@ function check(name, ok, detail) {
 
   // Selection menu: text selectable, menu appears, highlight persists.
   await page.goto(`${BASE}/reader?docId=${doc}&page=2`);
+  await enterReading();
   await page.locator('.rd-page[data-page="2"] .textLayer span').first().waitFor({ timeout: 30000 });
   await page.waitForTimeout(800);
   check("deep link ?page=2 opens page 2", (await indicator()).startsWith("2 /"), await indicator());
@@ -161,6 +169,7 @@ function check(name, ok, detail) {
   await page.getByRole("textbox", { name: /Page number/ }).press("Enter");
   await page.waitForTimeout(1200);
   await page.goto(`${BASE}/reader?docId=${doc}`);
+  await enterReading();
   await page.locator(".rd-page .textLayer").first().waitFor({ timeout: 30000 });
   await page.waitForTimeout(1000);
   check("last position remembered per document", (await indicator()).startsWith("7 /"), await indicator());
@@ -186,7 +195,7 @@ function check(name, ok, detail) {
   } else check("evidence marks rendered", false);
 
   // Sidebar "Show on page" scrolls in place (no app reload) and flashes.
-  await page.getByRole("tab", { name: "About this reading" }).click();
+  await page.getByText("About this reading", { exact: true }).click();
   const details = page.locator("details.cx-passages > summary");
   if (await details.count()) {
     await details.click();
