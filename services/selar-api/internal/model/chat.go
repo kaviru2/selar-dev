@@ -69,5 +69,14 @@ type ChatAnswer struct {
 
 // ChatMessageRequest creates a new user episode.
 type ChatMessageRequest struct {
-	Content string `json:"content"`
+	Content            string                  `json:"content"`
+	AssertionSelection *ChatAssertionSelection `json:"assertion_selection,omitempty"`
+}
+
+// ChatAssertionSelection opts into read-only, exact saved-claim display.
+// It never marks the selected document as an authoritative original source.
+type ChatAssertionSelection struct {
+	AssertingDocumentID string `json:"asserting_document_id"`
+	AssertionID         string `json:"assertion_id"`
+	Revision            int64  `json:"revision"`
 }

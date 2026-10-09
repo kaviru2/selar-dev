@@ -144,11 +144,11 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	var threadID, role string
+	var threadID, role, modelVersion string
 	err = tx.QueryRow(ctx, `
-		SELECT m.thread_id, m.role FROM chat_messages m
+		SELECT m.thread_id, m.role, COALESCE(m.model_version, '') FROM chat_messages m
 		JOIN chat_threads t ON t.id = m.thread_id
-		WHERE m.id = $1 AND m.user_id = $2 AND t.deleted_at IS NULL`, messageID, userID).Scan(&threadID, &role)
+		WHERE m.id = $1 AND m.user_id = $2 AND t.deleted_at IS NULL`, messageID, userID).Scan(&threadID, &role, &modelVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +227,9 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 		return nil, err
 	}
 
-	if feedbackPermitsGraphReduction(request.Action) && !negative {
+	// Saved-assertion display and its ratings are read-only with respect to
+	// graph and learner projections, even when its witnesses name concepts.
+	if feedbackPermitsGraphReduction(request.Action) && !negative && modelVersion != "deterministic-saved-assertion-v1" {
 		var query string
 		err = tx.QueryRow(ctx, `
 			SELECT query FROM retrieval_traces
@@ -270,7 +272,7 @@ func (s *Store) RecordChatFeedback(ctx context.Context, userID, messageID string
 			return nil, err
 		}
 	}
-	if request.Action == "unhelpful" || request.Action == "correction" {
+	if (request.Action == "unhelpful" || request.Action == "correction") && modelVersion != "deterministic-saved-assertion-v1" {
 		if err = retractChatAnswerEvidence(ctx, tx, userID, messageID, feedback.ID, request.Action); err != nil {
 			return nil, err
 		}

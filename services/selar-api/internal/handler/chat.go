@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/selar-dev/selar-api/internal/analytics"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
@@ -52,6 +53,12 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	if selection := request.AssertionSelection; selection != nil {
+		if uuid.Validate(selection.AssertingDocumentID) != nil || uuid.Validate(selection.AssertionID) != nil || selection.Revision < 1 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid assertion selection"})
+			return
+		}
+	}
 	request.Content = strings.TrimSpace(request.Content)
 	if request.Content == "" || len(request.Content) > 4000 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message must contain 1 to 4000 characters"})
@@ -81,7 +88,7 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 		history = history[len(history)-8:]
 	}
 
-	answer, err := requestChatAnswer(h.worker, userID, threadID, request.Content, history)
+	answer, err := requestChatAnswer(h.worker, userID, threadID, request.Content, history, request.AssertionSelection)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -95,13 +102,14 @@ func (h *Handler) CreateChatMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, assistantMessage)
 }
 
-func requestChatAnswer(worker *workertrigger.Client, userID, threadID, question string, history []model.ChatMessage) (*model.ChatAnswer, error) {
+func requestChatAnswer(worker *workertrigger.Client, userID, threadID, question string, history []model.ChatMessage, selection *model.ChatAssertionSelection) (*model.ChatAnswer, error) {
 	workerURL := os.Getenv("WORKER_URL")
 	if workerURL == "" {
 		workerURL = "http://localhost:8000"
 	}
 	payload, err := json.Marshal(map[string]any{
 		"user_id": userID, "thread_id": threadID, "question": question, "history": history,
+		"assertion_selection": selection,
 	})
 	if err != nil {
 		return nil, err
