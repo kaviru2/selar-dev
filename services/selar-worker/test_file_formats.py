@@ -81,6 +81,26 @@ def test_docx_requires_ooxml_structure(missing):
         docx_blocks(output.getvalue())
 
 
+def test_docx_rejects_excessive_xml_depth():
+    from document_formats import docx_blocks
+    body = '<w:p>' + '<w:r>' * 129 + '<w:t>Evidence</w:t>' + '</w:r>' * 129 + '</w:p>'
+    with pytest.raises(ValueError, match='XML.*limit'):
+        docx_blocks(docx_bytes(body))
+
+
+def test_docx_rejects_excessive_xml_nodes():
+    from document_formats import fromstring
+    with pytest.raises(ValueError, match='XML.*limit'):
+        fromstring(b'<root>' + b'<n/>' * 100001 + b'</root>')
+
+
+def test_markdown_line_slices_follow_commonmark_newlines():
+    source = 'first\vstill first\n\n| A | B |\n| --- | --- |\n| one | two |\n'
+    blocks = markdown_blocks(source)
+    assert blocks[-1]['text'] == '| A | B |\n| --- | --- |\n| one | two |\n'
+    assert blocks[-1]['locator']['line_start'] == 3
+
+
 def test_markdown_ordered_list_marker_and_heading_level():
     blocks = markdown_blocks('### Third\n\n7. ordered witness\n8. next witness')
     assert blocks[0]['metadata']['level'] == 3

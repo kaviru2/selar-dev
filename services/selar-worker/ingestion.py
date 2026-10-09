@@ -190,7 +190,8 @@ def markdown_blocks(markdown: str) -> list[dict[str, Any]]:
     from markdown_it import MarkdownIt
 
     tokens = MarkdownIt("commonmark", {"html": False}).enable("table").parse(markdown)
-    lines = markdown.splitlines(keepends=True)
+    # CommonMark recognizes CR/LF, not Python splitlines' Unicode/VT breaks.
+    lines = re.findall(r'[^\r\n]*(?:\r\n|\r|\n|$)', markdown)
     blocks: list[dict[str, Any]] = []
     stack: list[str] = []
     table_end = -1

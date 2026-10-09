@@ -1,7 +1,7 @@
 name: Synthetic service E2E
 on:
   pull_request:
-    branches: [main, 'feat/learning-*', 'test/learning-*']
+    branches: [main, 'feat/learning-*', 'test/learning-*', 'feat/document-format-snapshots']
   push:
     branches: [main]
   workflow_dispatch:

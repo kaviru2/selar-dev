@@ -1,0 +1,31 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console
+
+ ❯ components/library-onboarding.test.tsx (6 tests | 1 failed) 112ms
+   × puts all existing import entry points together and hides empty statistics/source management 43ms
+     → expected 'Add a readingChoose a file, web page,…' to contain 'Markdown, TXT or DOCX'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  components/library-onboarding.test.tsx > puts all existing import entry points together and hides empty statistics/source management
+AssertionError: expected 'Add a readingChoose a file, web page,…' to contain 'Markdown, TXT or DOCX'
+
+Expected: "Markdown, TXT or DOCX"
+Received: "Add a readingChoose a file, web page, or pasted text with Add content, or pick a PDF from Google Drive.Add contentImport from Google DrivePick a PDF or Google Doc. Imported as a snapshot, not synced; only the files you choose are shared."
+
+ ❯ components/library-onboarding.test.tsx:31:32
+     29|   expect(imports).not.toBeNull();
+     30|   expect(imports?.textContent).toContain("Add content");
+     31|   expect(imports?.textContent).toContain("Markdown, TXT or DOCX");
+       |                                ^
+     32|   expect(imports?.textContent).toContain("native Google Doc");
+     33|   expect(imports?.textContent).toContain("Import from Google Drive");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  13:11:47
+   Duration  1.70s (transform 147ms, setup 0ms, collect 246ms, tests 112ms, environment 775ms, prepare 88ms)
+

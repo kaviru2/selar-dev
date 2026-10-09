@@ -1,0 +1,28 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________________ test_docx_rejects_excessive_xml_nodes _____________________
+
+    def test_docx_rejects_excessive_xml_nodes():
+        from document_formats import fromstring
+>       with pytest.raises(ValueError, match='XML.*limit'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+test_file_formats.py:93: Failed
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_file_formats.py::test_docx_rejects_excessive_xml_nodes - Failed: ...
+1 failed, 14 deselected, 5 warnings in 0.46s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

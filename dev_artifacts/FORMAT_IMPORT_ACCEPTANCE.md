@@ -58,3 +58,27 @@ The stacked test PR adds this gate to the existing synthetic service workflow wh
 `formats-test-logs/` contains genuine successive RED/GREEN outputs, intermediate fixture/config failures and final verification. On this macOS host, `umask 022`, scratch `TMPDIR`, and `LC_ALL=C` for PostgreSQL startup were necessary. Worker tests must run from `services/selar-worker` for subprocess module imports. No secrets or real documents are test fixtures.
 
 The independent reviewer step was not run because nested agents were prohibited. A procedural-skill update was attempted but the tool failed with a temporary-directory permission error; it did not change shared agent configuration.
+
+## Independent release review and onboarding integration
+
+A separate reviewer integrated main `8545b8ee46cdb71fb6694780ad372ed798099d0e` into the **top** `test/cross-format-provenance` branch. PR #157 remains pinned at `ddf36c67734ca4306d578e8615274388a0667b94`; no PR was merged or closed.
+
+Concrete findings fixed on PR #158:
+
+- The previously failed `document_formats.py` safety patch was **not present**: the worker used eager `fromstring` without depth/node caps. It now uses incremental defused XML parsing, rejects DTDs and stops above depth 128 or 100,000 nodes per retained XML part, before constructing the entire oversized tree. Existing ZIP byte/ratio/count limits remain enforced. RED/GREEN evidence: 49–52.
+- Python `splitlines` treated vertical-tab/Unicode separators as extra Markdown lines, unlike CommonMark, causing a subsequent table to lose its final source row. Source slices now use CR/LF boundaries while preserving original line endings. RED/GREEN evidence: 53–54.
+- Newly merged Library import copy and learner docs still said PDF-only/unsupported. Library copy, README and user guide now state supported snapshots and limitations without claiming deployment or live Drive verification. RED copy test: 56; full GREEN: 58.
+- PR #158 previously had only the review check because CI/coverage/E2E excluded its stacked base branch. Their branch filters now include `feat/document-format-snapshots`; existing learning-loop scenarios remain in the E2E job.
+
+Audit findings without new blockers: DOCX entries are read through byte limits and CRC validation, never extracted; external relationships are not traversed or fetched. Standard content type and internal office-document relationship are required. Macros, tracked changes, comments and footnotes/endnotes remain rejected; visual/layout omissions are disclosed. UTF-8 upload checks, immutable server-only completion copies, byte-hash validation before model/derived writes, owner-scoped reads/deletion, selected-file Drive authorization, token-free snapshot metadata and Markdown URL/HTML/image restrictions were reviewed with the existing regression fixtures. Synthetic Drive HTTP fixtures are not live OAuth evidence. Arbitrary Word layout fidelity and pixel-identical Markdown are not promised.
+
+Local integrated verification (owned disposable PostgreSQL/pgvector **55459**, database `selar_e2e_review`; shared 55439 untouched):
+
+- 60: all Go tests with isolated DB passed; `go vet ./...` and real API build passed.
+- 58: **399 console tests passed**, 59 files. Node 25 required `NODE_OPTIONS=--no-experimental-webstorage`; remote CI retains Node 22.
+- 61: console production build and production TypeScript passed.
+- 63: **177 worker tests passed, zero skipped**, including the actual API/worker/PG/Next/Chromium service scenarios, formats and learning loop. Model responses are synthetic; no live provider credentials or requests were used.
+- Setup failures remain faithfully recorded: 48 used an interpreter missing defusedxml; 55 hit Node 25 localStorage behavior; 57/59 used a nonexistent role in the inherited disposable DB; 62 hit the E2E database-name safety assertion. Corrected runs are separate, not rewritten logs.
+
+Remote exact-head certification belongs in the read-back PR #158 review comment after checks finish; this document does not claim unexecuted checks passed. Parent must merge the complete integrated stack and verify final tree equivalence, not ship immutable PR #157 alone without these top-branch fixes.
+
