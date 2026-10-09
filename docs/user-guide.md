@@ -11,9 +11,13 @@ SELAR is a research prototype for reading across sources and checking suggested 
 3. Read the processing and analytics disclosures. Use non-sensitive test readings, not confidential, personal or participant data. Local hosting alone does not keep model processing on your computer.
 4. Go to **Library → Add content**.
 
+### Optional Start here guide
+
+Library's **Start here** guide suggests a next step from your actual library: add a first reading, wait for processing, retry a failed import, or open a ready reading. It is not a required setup checklist and does not mark learning complete. Dismiss it when you do not need it and reopen it with **Start here**. The optional `/onboarding` help page explains the same flow, including recall practice and learning connections.
+
 ## Supported inputs
 
-This guide describes merged application baseline `ce0ba3c542e3fa0ab1d804033407220d8cf57144`, not a deployed release. Expanded format and lightweight onboarding work remain separate; ask the operator which revision is running.
+The input table describes application baseline `ce0ba3c542e3fa0ab1d804033407220d8cf57144`; this guide also documents the onboarding changes on this branch. This is not a deployed-release claim. Expanded format work remains separate; ask the operator which revision is running.
 
 | Input | How to add it | Boundary |
 |---|---|---|
@@ -65,4 +69,4 @@ When reporting a bug, include the action, error text and deployed revision if kn
 
 ## Pending, not promised
 
-Expanded file imports and lightweight onboarding are being developed separately and are not part of this guide's merged baseline. Use the supported-input table above rather than assuming those branches are deployed.
+Expanded file imports are being developed separately and are not part of the input baseline documented here. Use the supported-input table above rather than assuming those branches are deployed.
