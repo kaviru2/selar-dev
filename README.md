@@ -1,307 +1,63 @@
-# SELAR — Semantic Linking for Active Retention
+# SELAR
+### Semantic Linking for Active Retention
 
-[![CI](https://github.com/Kavirubc/selar-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/Kavirubc/selar-dev/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/Kavirubc/selar-dev/graph/badge.svg)](https://codecov.io/gh/Kavirubc/selar-dev)
-[![License](https://img.shields.io/github/license/Kavirubc/selar-dev?color=blue)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/Kavirubc/selar-dev?color=green)](https://github.com/Kavirubc/selar-dev/releases)
-[![Last Commit](https://img.shields.io/github/last-commit/Kavirubc/selar-dev)](https://github.com/Kavirubc/selar-dev/commits/main)
-[![Issues](https://img.shields.io/github/issues/Kavirubc/selar-dev)](https://github.com/Kavirubc/selar-dev/issues)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Kavirubc/selar-dev)](https://goreportcard.com/report/github.com/Kavirubc/selar-dev)
-[![Dependency Review](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/Kavirubc/selar-dev/actions/workflows/dependency-review.yml)
+Read across papers and notes, compare suggested connections against their source passages, and ask questions with citations to your library.
 
-SELAR is a web-based PDF reader that discovers semantic connections across your document library using AI-powered vector embeddings. As you read, the system surfaces candidate links between passages in different papers. Its grounded research chat combines vector, lexical, graph, learner, evidence-confidence, and recency signals and cites the source passages behind each answer. A deterministic reducer reinforces cited concepts and adds auditable candidate relationships; repeated independent evidence promotes them without allowing an LLM to write to the graph. Corrections supersede conversational evidence, human decisions govern promotion and rejection, chat-only edges decay, and retained events can replay the current graph and learner projections.
+**Research prototype — not a proven learning intervention.** AI suggestions can be wrong; features may change or break. Use non-sensitive material you have permission to upload.
 
-Built for academic research. Designed for students and researchers who read across multiple papers and want to strengthen long-term comprehension.
+[User guide](docs/user-guide.md) · [Local quickstart](docs/local-quickstart.md) · [Deployment](docs/DEPLOYMENT.md) · [Contributing](CONTRIBUTING.md)
 
----
-
-## Table of Contents
-
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Local Development Setup](#local-development-setup)
-- [Docker Setup](#docker-setup)
-- [Environment Variables](#environment-variables)
-- [Project Structure](#project-structure)
-- [Usage](#usage)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## Architecture
-
-SELAR is a monorepo containing three services:
-
-| Service | Stack | Port | Description |
-|---------|-------|------|-------------|
-| `selar-api` | Go 1.22+, Chi router | 8080 | REST API, JWT auth, document CRUD, concept graph |
-| `selar-console` | Next.js 16, TypeScript | 3000 | Frontend: PDF reader, grounded chat, matches panel, knowledge graph |
-| `selar-worker` | Python 3.11+, FastAPI | 8000 | AI ingestion and deterministic hybrid chat retrieval |
-
-**Database:** PostgreSQL 16 with the [pgvector](https://github.com/pgvector/pgvector) extension for 3072-dimensional embedding storage and approximate nearest-neighbor search.
-
-**AI Provider:** Google Gemini API (`gemini-embedding-2` for shared text/image embeddings, `gemini-3-flash-preview` for text generation).
-
+```mermaid
+flowchart LR
+    A[Add readings] --> B[Read and explore]
+    B --> C[Compare source passages]
+    C --> D[Keep or reject a connection]
+    B --> E[Ask a question]
+    E --> F[Check cited evidence]
 ```
-User --> selar-console (Next.js :3000)
-              |
-              v
-         selar-api (Go :8080) <---> PostgreSQL + pgvector (:5432)
-              |
-              v
-        selar-worker (Python :8000) <---> Gemini API
-```
+*Workflow diagram, not a screenshot or a claim of measured learning gains.*
 
----
+## Start here
+
+| You want to… | Start with… |
+|---|---|
+| Use a hosted instance | Open the address supplied by its operator, create an account or sign in, then follow the [first-reading walkthrough](docs/user-guide.md). No developer tools needed. |
+| Run SELAR on your computer | Follow the [local quickstart](docs/local-quickstart.md): isolated database, API, worker and console, with a no-model-call smoke check. |
+| Operate a hosted deployment | Read the existing [deployment guide](docs/DEPLOYMENT.md); local development settings are not production settings. |
+
+This canonical repository, `kaviru2/selar-dev`, is **private**. Cloning requires repository access; this README does not promise public sign-up or a publicly available hosted service.
+
+## What is available
+
+- **Library:** local PDF uploads, public web articles, and pasted text/Markdown. Optional Google Drive import currently accepts PDFs only.
+- **Reader:** compare suggested links using exact source passages; keep, relabel, reject or skip a connection.
+- **Chat and Graph:** ask library-grounded questions, inspect citations, and review concept relationships. A citation is something to check, not proof that an answer is correct.
+- **Quizzes and Settings:** operator-assigned quizzes and account controls; availability depends on the instance and account.
+
+### Current boundaries
+
+Native Google Docs export, DOCX, and `.md`/`.txt` **file uploads are not part of this documented baseline**. Pasting Markdown is not full Markdown-file support.
+
+The learning-loop changes in PRs #141–#145 (private practice, reading checks, spaced review, reflection links and progress) are pending integration, not features promised by this guide. Check merged code and the deployed version before relying on them.
 
 ## Prerequisites
 
-### All platforms
+Hosted learners need only the supplied instance address and an account. Self-hosters need the tools listed in the [local quickstart](docs/local-quickstart.md#prerequisites). The stack is **Next.js console → Go API → PostgreSQL/pgvector**, with a **Python worker → Google Gemini** for model-backed processing.
 
-- [Git](https://git-scm.com/)
-- A [Google AI Studio](https://aistudio.google.com/) API key (free tier is sufficient)
+## Costs and data
 
-### macOS
+Local registration and an empty library can run without a model key. Document AI processing and generated chat use Gemini in the current implementation: cloud requests can consume quota or incur charges, even when SELAR runs locally. There is no verified all-local AI provider path documented here, and no guarantee that a provider's free tier is sufficient.
 
-```bash
-# Install Homebrew if not present
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+Your own computer, storage and any hosted database/server services have resource costs. Local hosting is not the same as offline processing: uploaded content may be sent to the configured model provider. See [setup boundaries and costs](docs/local-quickstart.md#costs-and-data-boundary) before adding material.
 
-# Required
-brew install go node postgresql@16
+## Repository documentation
 
-# Install pnpm
-npm install -g pnpm
-
-# Install Python 3.11+
-brew install python@3.11
-
-# Start Postgres
-brew services start postgresql@16
-```
-
-### Windows
-
-1. Install [Go](https://go.dev/dl/) (1.22 or later).
-2. Install [Node.js](https://nodejs.org/) (20 or later) and run `npm install -g pnpm`.
-3. Install [Python](https://www.python.org/downloads/) (3.11 or later). Ensure "Add to PATH" is checked.
-4. Install [PostgreSQL 16](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads) with the pgvector extension, or use Docker (see below).
-5. Install [Git for Windows](https://gitforwindows.org/).
-
-### Linux (Debian/Ubuntu)
-
-```bash
-sudo apt update && sudo apt install -y git golang-go nodejs npm python3 python3-pip python3-venv postgresql postgresql-contrib
-npm install -g pnpm
-
-# Install pgvector extension
-sudo apt install -y postgresql-16-pgvector
-```
-
----
-
-## Local Development Setup
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/Kavirubc/selar-dev.git
-cd selar-dev
-cp .env.example .env.development
-```
-
-Edit `.env.development` and set your `GEMINI_API_KEY`. All other defaults work for local development.
-
-### 2. Set up the database
-
-Create the database and install the pgvector extension:
-
-```bash
-# macOS / Linux
-createdb selar
-# Applies every migration in order and records checksums in schema_migrations.
-# Safe to re-run; databases created by the old psql steps are adopted.
-(cd services/selar-api && DATABASE_URL="postgres://localhost:5432/selar?sslmode=disable" go run ./cmd/migrate)
-```
-
-On Windows, use `psql` from the PostgreSQL installation directory, or pgAdmin.
-
-If your local Postgres uses different credentials, update `DATABASE_URL` in `.env.development` accordingly.
-
-To verify deterministic replay for one user without changing projections:
-
-```bash
-make replay USER_ID=<uuid>
-```
-
-To rebuild the graph and learner projections from retained events and evidence:
-
-```bash
-make replay USER_ID=<uuid> APPLY=1
-```
-
-### 3. Start the services
-
-Open three terminal windows and run one command in each:
-
-**Terminal 1 — API (Go)**
-```bash
-cd services/selar-api
-go run cmd/server/main.go
-```
-
-**Terminal 2 — Worker (Python)**
-```bash
-cd services/selar-worker
-pip install -r requirements.txt
-python3 -m uvicorn main:app --reload --port 8000
-```
-
-**Terminal 3 — Console (Next.js)**
-```bash
-cd services/selar-console
-pnpm install
-pnpm dev
-```
-
-The application will be available at [http://localhost:3000](http://localhost:3000).
-
----
-
-## Docker Setup
-
-If you prefer Docker over local installation:
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-This starts Postgres (with pgvector and initialization migrations), the Python worker, the Go API, and the Next.js console. A one-shot `selar-migrate` service applies pending migrations (checksum-tracked) before the API starts; `make migrate` runs it on demand.
-
-### Adding and managing research sources
-
-The Library **Add content** flow accepts a public article/blog URL, pasted text or Markdown, and PDFs. SELAR stores the origin separately from each immutable ingestion snapshot and records extractor/model provenance in an ingestion run. Web sources can be refreshed or archived from **Managed sources**; refreshing creates a new snapshot rather than silently rewriting prior research material.
-
-PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API validates the PDF signature, caps each request, and spills multipart data above 8 MB to temporary disk. Accepted PDF, web, and text work is stored in a PostgreSQL-backed queue before the API responds. Workers claim jobs with expiring leases, renew active leases, retry transient failures up to three times, and recover abandoned work after a restart. The worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`) to keep several large PDFs from multiplying peak memory use. Queue polling is disabled for ad-hoc local worker processes unless `INGESTION_QUEUE_ENABLED=true`; Docker Compose enables it on the worker service so a stray local `uvicorn` process cannot consume jobs without access to the shared upload volume.
-
-Grounded chat can add a missing concept candidate when a bounded phrase from the question appears directly in cited library evidence. The reducer does not mine generated answers or feedback comments for facts. Candidates preserve message/chunk provenance, create at most three candidate relationships per turn, and can be confirmed or rejected in the Graph workspace.
-
-The Managed sources panel can copy a small **Save to SELAR** bookmarklet. The bookmarklet only opens the authenticated SELAR add screen with the current URL—no API key or page contents are stored in the bookmark. Public pages are fetched server-side with redirect, size, content-type, robots, and private-network protections. It does not bypass authentication or paywalls.
-
-Because issue #5 establishes a new development schema and a new embedding space, reset a pre-issue-5 Docker database once:
-
-```bash
-make db-reset
-```
-
-The research hypotheses, evaluation conditions, provenance requirements, and scholarly references are maintained in [`dev_artifacts/ISSUE_5_RESEARCH_PROTOCOL.md`](dev_artifacts/ISSUE_5_RESEARCH_PROTOCOL.md).
-
-See the [Makefile](Makefile) for convenience targets:
-
-| Command | Description |
-|---------|-------------|
-| `make dev` | Start all Docker services |
-| `make down` | Stop all services |
-| `make logs` | Follow service logs |
-| `make db-reset` | Drop and recreate the database |
-| `make clean` | Remove containers, volumes, and build artifacts |
-
----
-
-## Environment Variables
-
-Copy `.env.example` to `.env.development` (local) or `.env` (Docker) and configure:
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `GEMINI_API_KEY` | Yes | — | Google AI Studio API key |
-| `GEMINI_MULTIMODAL_EMBEDDING_MODEL` | No | `gemini-embedding-2` | Shared text/image embedding model identifier |
-| `INGESTION_QUEUE_ENABLED` | No | `false` | Enables durable queue polling; Docker Compose sets this to `true` for its shared-volume worker |
-| `INGESTION_CONCURRENCY` | No | `1` | Maximum documents processed simultaneously by each worker process; `1` is safest for large PDFs |
-| `GEMINI_EMBEDDING_DIMENSION` | No | `3072` | Shared pgvector embedding dimension |
-| `GEMINI_TEXT_MODEL` | No | `models/gemini-3-flash-preview` | Text generation model identifier |
-| `DATABASE_URL` | No | `postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable` | Postgres connection string |
-| `JWT_SECRET` | No | `dev-secret-change-in-production` | Secret for JWT token signing |
-| `PORT` | No | `8080` | Go API listen port |
-| `POSTGRES_USER` | No | `selar` | Postgres username |
-| `POSTGRES_PASSWORD` | No | `selar_dev` | Postgres password |
-| `POSTGRES_DB` | No | `selar` | Postgres database name |
-
----
-
-## Project Structure
-
-```
-selar-dev/
-├── services/
-│   ├── selar-api/               # Go REST API
-│   │   ├── cmd/server/          # Entry point
-│   │   └── internal/
-│   │       ├── handler/         # HTTP handlers
-│   │       ├── middleware/      # JWT auth middleware
-│   │       ├── model/           # Domain types
-│   │       └── store/           # Postgres queries + migrations
-│   ├── selar-console/           # Next.js frontend
-│   │   ├── app/                 # App Router pages
-│   │   │   ├── (app)/           # Authenticated views (reader, library, graph, etc.)
-│   │   │   └── (auth)/          # Login / register
-│   │   ├── components/          # React components
-│   │   └── lib/                 # API client, auth, context
-│   └── selar-worker/            # Python AI ingestion worker
-│       └── main.py              # FastAPI app with ingestion pipeline
-├── design_handoff_selar/        # Design reference files (prototypes)
-├── docker-compose.yml           # Docker orchestration
-├── Makefile                     # Development convenience targets
-├── .env.example                 # Environment variable template
-└── .env.development             # Local environment (git-ignored)
-```
-
----
-
-## Usage
-
-1. Open [http://localhost:3000](http://localhost:3000) and register an account.
-2. Navigate to **Library** and upload one or more PDF documents.
-3. Wait for the status to change from "processing" to "ready" (the worker handles chunking, embedding, and link generation).
-4. Open a document in the **Reader**. The right-side Matches panel shows AI-discovered semantic links to other documents.
-5. **Confirm** or **Reject** each match. Every interaction is a retrieval-practice event.
-6. Visit the **Graph** tab to explore your knowledge graph — concepts extracted from your papers with force-directed visualization.
-
----
-
-## Deployment
-
-### Serverless (Vercel + Modal + Neon + object storage)
-
-See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. It covers both Vercel projects (console and Go API), the Modal worker (secret, trigger endpoint, scheduled sweep), managed Postgres with pgvector (pooled vs direct URLs, the `cmd/migrate` step), object storage with direct browser uploads, every environment variable and a post-deploy smoke checklist.
-
-### Production considerations
-
-- Set `APP_ENV=production` and a random `JWT_SECRET` of at least 32 characters on the API.
-- Use managed Postgres with pgvector over TLS (`sslmode=require`) and apply migrations with `go run ./cmd/migrate` as a separate step; the API never migrates on startup.
-- Set `CORS_ORIGIN` to the exact console origin(s); wildcards are rejected.
-- Use `STORAGE_BACKEND=s3` whenever the API and worker do not share a disk.
-
-### Docker production
-
-```bash
-docker compose -f docker-compose.yml up --build -d
-```
-
-Ensure all environment variables are set via `.env` or your orchestration platform's secret management.
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting issues, feature requests, and pull requests.
-
----
+- [User guide](docs/user-guide.md) — supported inputs, reading workflow and troubleshooting.
+- [Local quickstart](docs/local-quickstart.md) — tested native setup and explicit verification limits.
+- [Deployment](docs/DEPLOYMENT.md) — hosted infrastructure and production configuration.
+- [Quizzes](docs/QUIZZES.md), [analytics](docs/ANALYTICS.md), [reminders](docs/REMINDERS.md) — feature and operator details.
+- [Research protocol](dev_artifacts/ISSUE_5_RESEARCH_PROTOCOL.md) — hypotheses and evaluation design, not results.
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for the full text.
+The repository contains the [Apache License 2.0](LICENSE). Repository access and hosted-service access are separate from that license; neither is changed by these docs.
