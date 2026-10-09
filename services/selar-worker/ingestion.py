@@ -62,7 +62,6 @@ def package_version(name: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    text = re.sub(r"(?<=\w)-\s+(?=\w)", "", text)
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
@@ -187,38 +186,46 @@ async def robots_allows(url: str) -> bool:
 
 
 def markdown_blocks(markdown: str) -> list[dict[str, Any]]:
+    """CommonMark blocks with source line ranges; never infer lexical joins."""
+    from markdown_it import MarkdownIt
+
+    tokens = MarkdownIt("commonmark", {"html": False}).enable("table").parse(markdown)
+    lines = markdown.splitlines(keepends=True)
     blocks: list[dict[str, Any]] = []
-    paragraph: list[str] = []
-
-    def flush() -> None:
-        if paragraph:
-            text = clean_text(" ".join(paragraph))
-            if text:
-                blocks.append({"kind": "paragraph", "text": text})
-            paragraph.clear()
-
-    for raw_line in markdown.splitlines():
-        line = raw_line.strip()
-        if not line:
-            flush()
+    stack: list[str] = []
+    table_end = -1
+    for index, token in enumerate(tokens):
+        if token.type == "table_open" and token.map:
+            start, end = token.map
+            table_end = end
+            kind, text = "table", "".join(lines[start:end])
+        elif token.map and token.map[0] < table_end:
             continue
-        heading = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if heading:
-            flush()
-            blocks.append({"kind": "heading", "text": clean_text(heading.group(2)), "level": len(heading.group(1))})
-        elif line.startswith(("- ", "* ", "+ ")) or re.match(r"^\d+[.)]\s+", line):
-            flush()
-            blocks.append({"kind": "list", "text": clean_text(re.sub(r"^(?:[-*+]\s+|\d+[.)]\s+)", "", line))})
-        elif line.startswith(">"):
-            flush()
-            blocks.append({"kind": "quote", "text": clean_text(line.lstrip("> "))})
+        elif token.type in {"fence", "code_block"}:
+            kind, text = "code", token.content
+        elif token.type == "inline":
+            previous = tokens[index - 1]
+            kind = "heading" if previous.type == "heading_open" else "list" if "list_item_open" in stack else "quote" if "blockquote_open" in stack else "paragraph"
+            text = token.content
         else:
-            paragraph.append(line)
-    flush()
-    for index, block in enumerate(blocks):
-        block["block_index"] = index
-        block["locator"] = {"kind": "block", "block_index": index}
-        block.setdefault("metadata", {})
+            if token.nesting == 1:
+                stack.append(token.type)
+            elif token.nesting == -1 and stack:
+                stack.pop()
+            continue
+        start, end = token.map or (0, 1)
+        block_index = len(blocks)
+        metadata = {}
+        if kind == "list":
+            marker = re.match(r"\s*(\d+[.)]|[-+*])\s+", lines[start])
+            if marker:
+                metadata["marker"] = marker.group(1)
+        if kind == "heading":
+            metadata["level"] = int(tokens[index - 1].tag[1:])
+        blocks.append({"kind": kind, "text": text, "block_index": block_index,
+                       "locator": {"kind": "block", "block_index": block_index,
+                                   "line_start": start + 1, "line_end": end},
+                       "metadata": metadata})
     return blocks
 
 
@@ -378,7 +385,7 @@ def extract_text(raw_text: str, title: str, word_limit: int) -> NormalizedSource
         mime_type="text/markdown",
         blocks=blocks,
         extractor="selar-markdown",
-        extractor_version="1",
+        extractor_version="2",
     )
     normalized.chunks = chunks_from_blocks(blocks, word_limit)
     return normalized
@@ -484,6 +491,37 @@ def _extract_stored_pdf(locator: str, doc_id: str, word_limit: int, merge_bboxes
         return extract_pdf(path, doc_id, word_limit, merge_bboxes, title or os.path.basename(locator))
 
 
+def _extract_stored_text(locator: str, source_type: str, title: str, word_limit: int) -> NormalizedSource:
+    with get_storage().local_copy(locator) as path:
+        with open(path, "rb") as stream:
+            data = stream.read(MAX_SOURCE_BYTES + 1)
+    if len(data) > MAX_SOURCE_BYTES:
+        raise ValueError("source exceeds the configured size limit")
+    if source_type == "docx":
+        from document_formats import docx_blocks
+        blocks = docx_blocks(data)
+        return NormalizedSource(title=title, content_hash=hashlib.sha256(data).hexdigest(),
+            metadata={"original_filename": title, "snapshot": True,
+                      "limitations": "Text and tables only; pagination, drawings, headers and footers are not reproduced. Tracked changes, comments and footnotes are rejected."},
+            blocks=blocks, chunks=chunks_from_blocks(blocks, word_limit),
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            extractor="selar-ooxml", extractor_version="1")
+    text = data.decode("utf-8-sig")
+    if "\x00" in text or not text.strip():
+        raise ValueError("file must contain nonempty UTF-8 text")
+    if source_type == "markdown":
+        result = extract_text(text, title, word_limit)
+    else:
+        blocks = [{"kind": "paragraph", "text": text, "block_index": 0,
+                   "locator": {"kind": "block", "block_index": 0, "line_start": 1,
+                               "line_end": len(text.splitlines())}, "metadata": {"literal": True}}]
+        result = NormalizedSource(title=title, blocks=blocks, chunks=chunks_from_blocks(blocks, word_limit),
+                                  mime_type="text/plain", extractor="selar-utf8", extractor_version="1")
+    result.content_hash = hashlib.sha256(data).hexdigest()
+    result.metadata = {"original_filename": title, "snapshot": True}
+    return result
+
+
 async def extract_source(
     *, source_type: str, doc_id: str, word_limit: int, merge_bboxes,
     file_path: str = "", source_url: str = "", raw_text: str = "", title: str = "",
@@ -492,6 +530,8 @@ async def extract_source(
         return await extract_web(source_url, doc_id, word_limit)
     if source_type == "text":
         return extract_text(raw_text, title, word_limit)
+    if source_type in {"markdown", "txt", "docx"}:
+        return await asyncio.to_thread(_extract_stored_text, file_path, source_type, title, word_limit)
     if source_type == "pdf":
         if not file_path:
             raise FileNotFoundError("PDF job has no stored file")

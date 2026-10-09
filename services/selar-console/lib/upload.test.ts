@@ -67,7 +67,7 @@ describe("uploadPDF", () => {
   it("rejects non-PDF files before contacting the API", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    await expect(uploadPDF(new File(["x"], "notes.txt", { type: "text/plain" }))).rejects.toThrow(/only PDF/i);
+    await expect(uploadPDF(new File(["x"], "notes.doc", { type: "application/msword" }))).rejects.toThrow(/only PDF/i);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
