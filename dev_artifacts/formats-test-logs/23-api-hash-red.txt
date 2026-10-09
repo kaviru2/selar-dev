@@ -1,0 +1,5 @@
+--- FAIL: TestIntegrationTextFilesQueueOriginal (0.02s)
+    file_formats_test.go:64: missing original snapshot hash: can't scan into dest[0]: cannot scan NULL into *string 
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	1.050s
+FAIL

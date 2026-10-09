@@ -1,0 +1,30 @@
+............................................sss......................... [ 41%]
+...............ss....................................................... [ 82%]
+...............s.s............                                           [100%]
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+../../.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/kavirum1a/.hermes/cache/scratch/selar-formats/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] test_chat_service_e2e.py:21: dedicated pgvector/API/Next/Chromium job runs this service E2E
+SKIPPED [1] test_chat_service_e2e.py:53: dedicated pgvector/API/Next/Chromium job runs this service E2E
+SKIPPED [1] test_chat_service_e2e.py:190: dedicated pgvector/API/Next/Chromium job runs this service E2E
+SKIPPED [1] test_learning_loop_e2e.py:23: dedicated pgvector/API/Next/Chromium job runs this service E2E
+SKIPPED [1] test_learning_loop_e2e.py:140: dedicated pgvector/API/Next/Chromium job runs this service E2E
+SKIPPED [1] test_synthetic_service_e2e.py:142: dedicated pgvector/API/Next/Chromium job runs this service E2E
+SKIPPED [1] test_web_service_e2e.py:93: dedicated pgvector/API/Next/Chromium job runs this service E2E
+167 passed, 7 skipped, 6 warnings in 5.40s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

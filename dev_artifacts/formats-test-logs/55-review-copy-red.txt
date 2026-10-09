@@ -1,0 +1,69 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console
+
+(node:22335) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ components/library-onboarding.test.tsx (6 tests | 6 failed) 5ms
+   × puts all existing import entry points together and hides empty statistics/source management 3ms
+     → window.localStorage.clear is not a function
+     → Cannot read properties of undefined (reading 'unmount')
+   × does not pretend a library fetch failure is a new user 0ms
+     → window.localStorage.clear is not a function
+     → Cannot read properties of undefined (reading 'unmount')
+   × keeps uploaded readings queued and unopenable rather than labeling them failed 0ms
+     → window.localStorage.clear is not a function
+     → Cannot read properties of undefined (reading 'unmount')
+   × completes the guide when the learner opens a ready reading from the table too 0ms
+     → window.localStorage.clear is not a function
+     → Cannot read properties of undefined (reading 'unmount')
+   × retains neutral existing-library statistics and keeps source management optional 0ms
+     → window.localStorage.clear is not a function
+     → Cannot read properties of undefined (reading 'unmount')
+   × help leads back to the live guide without a fake completion checklist 0ms
+     → window.localStorage.clear is not a function
+     → Cannot read properties of undefined (reading 'unmount')
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  components/library-onboarding.test.tsx > puts all existing import entry points together and hides empty statistics/source management
+ FAIL  components/library-onboarding.test.tsx > does not pretend a library fetch failure is a new user
+ FAIL  components/library-onboarding.test.tsx > keeps uploaded readings queued and unopenable rather than labeling them failed
+ FAIL  components/library-onboarding.test.tsx > completes the guide when the learner opens a ready reading from the table too
+ FAIL  components/library-onboarding.test.tsx > retains neutral existing-library statistics and keeps source management optional
+ FAIL  components/library-onboarding.test.tsx > help leads back to the live guide without a fake completion checklist
+TypeError: window.localStorage.clear is not a function
+ ❯ components/library-onboarding.test.tsx:19:23
+     17| let host: HTMLDivElement; let root: Root;
+     18| beforeEach(() => {
+     19|   window.localStorage.clear(); vi.clearAllMocks();
+       |                       ^
+     20|   mocks.documents.mockResolvedValue([]);
+     21|   mocks.stats.mockResolvedValue({ total_documents: 0, total_chunks: 0,…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  components/library-onboarding.test.tsx > puts all existing import entry points together and hides empty statistics/source management
+ FAIL  components/library-onboarding.test.tsx > does not pretend a library fetch failure is a new user
+ FAIL  components/library-onboarding.test.tsx > keeps uploaded readings queued and unopenable rather than labeling them failed
+ FAIL  components/library-onboarding.test.tsx > completes the guide when the learner opens a ready reading from the table too
+ FAIL  components/library-onboarding.test.tsx > retains neutral existing-library statistics and keeps source management optional
+ FAIL  components/library-onboarding.test.tsx > help leads back to the live guide without a fake completion checklist
+TypeError: Cannot read properties of undefined (reading 'unmount')
+ ❯ components/library-onboarding.test.tsx:24:34
+     22|   host = document.createElement("div"); document.body.append(host); ro…
+     23| });
+     24| afterEach(() => { act(() => root.unmount()); host.remove(); vi.restore…
+       |                                  ^
+     25| const render = async () => { const page = await LibraryPage(); await a…
+     26| it("puts all existing import entry points together and hides empty sta…
+ ❯ Proxy.process.env.NODE_ENV.exports.act node_modules/.pnpm/react@19.2.4/node_modules/react/cjs/react.development.js:814:22
+ ❯ components/library-onboarding.test.tsx:24:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ Test Files  1 failed (1)
+      Tests  6 failed (6)
+   Start at  13:11:36
+   Duration  1.37s (transform 134ms, setup 0ms, collect 233ms, tests 5ms, environment 654ms, prepare 54ms)
+

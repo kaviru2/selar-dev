@@ -1,0 +1,31 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_markdown_fenced_code_and_table_preserve_source_structure _________
+
+    def test_markdown_fenced_code_and_table_preserve_source_structure():
+        text = '# Evidence\n\nco- operation stays distinct.\n\n```python\nx = "a  b"\n```\n\n| A | B |\n| --- | --- |\n| one | two |\n'
+        source = extract_text(text, 'Notes', 100)
+>       assert [b['kind'] for b in source.blocks] == ['heading', 'paragraph', 'code', 'table']
+E       AssertionError: assert ['heading', '..., 'paragraph'] == ['heading', '...ode', 'table']
+E         
+E         At index 2 diff: 'paragraph' != 'code'
+E         Use -v to get more diff
+
+services/selar-worker/test_file_formats.py:9: AssertionError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/selar-worker/test_file_formats.py::test_markdown_fenced_code_and_table_preserve_source_structure
+1 failed, 5 warnings in 15.04s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

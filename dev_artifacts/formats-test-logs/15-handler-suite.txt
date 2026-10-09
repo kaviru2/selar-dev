@@ -1,0 +1,18 @@
+2026/10/09 12:33:13 drive import: metadata: drive metadata status 401
+2026/10/09 12:33:13 drive import: metadata: drive metadata status 404
+2026/10/09 12:33:13 drive import: metadata: drive metadata status 500
+--- FAIL: TestDriveImportRejectsBeforeTouchingStore (0.00s)
+    --- FAIL: TestDriveImportRejectsBeforeTouchingStore/not_a_PDF (0.00s)
+        drive_import_test.go:93: status 404, want 400: {"error":"SELAR can't see that Drive file. Please pick it again."}
+2026/10/09 12:33:13 google sign-in: invalid Google ID token
+aud
+2026/10/09 12:33:13 notification run: mode=dry-run (nothing is sent) transport=dry-run recipients=1 outcomes=map[dry_run:1]
+2026/10/09 12:33:13 notification run: mode=dry-run (nothing is sent) transport=dry-run recipients=1 outcomes=map[duplicate:1]
+2026/10/09 12:33:13 notification run: mode=dry-run (nothing is sent) transport=dry-run recipients=1 outcomes=map[duplicate:1]
+2026/10/09 12:33:13 recaptcha refused register: recaptcha: token missing
+2026/10/09 12:33:13 recaptcha refused register: recaptcha: token rejected
+2026/10/09 12:33:13 WARNING recaptcha unavailable, allowing register without verification: recaptcha: verification service unavailable
+dial tcp: timeout
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	2.304s
+FAIL

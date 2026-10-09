@@ -1,0 +1,262 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_cross_format_source_snapshot_lifecycle __________________
+
+tmp_path = PosixPath('/Users/kavirum1a/.hermes/cache/scratch/selar-formats/.tmp/pytest-of-kavirum1a/pytest-11/test_cross_format_source_snaps0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b769a00>
+
+    @pytest.mark.timeout(120)
+    def test_cross_format_source_snapshot_lifecycle(tmp_path, monkeypatch):
+        db = os.getenv('TEST_DATABASE_URL', '')
+        binary = os.getenv('TEST_API_BINARY', '')
+        if not db or not binary:
+            pytest.skip('requires isolated TEST_DATABASE_URL and built TEST_API_BINARY')
+        assert 'selar_e2e' in db and ':55439/' not in db
+        import main
+        import ingestion
+        from storage import LocalStorage
+        monkeypatch.setattr(main, 'DATABASE_URL', db)
+        objects = LocalStorage(str(tmp_path))
+        monkeypatch.setattr(main, 'get_storage', lambda: objects)
+        monkeypatch.setattr(ingestion, 'get_storage', lambda: objects)
+        monkeypatch.setattr(main, 'embed_text_documents', lambda contents, title='': [[1.0]+[0.0]*3071 for _ in contents])
+        class Models:
+            def generate_content(self, **kwargs):
+                return type('Result', (), {'text':json.dumps({'main_claim':'Synthetic evidence only.', 'key_concepts':[], 'assumptions':[], 'open_questions':[], 'domain':'synthetic', 'concept_edges':[]})})()
+        monkeypatch.setattr(main, 'client', type('Client', (), {'models':Models()})())
+        port = _port(); api = f'http://127.0.0.1:{port}'
+        process = subprocess.Popen([binary], cwd=tmp_path, env={**os.environ, 'DATABASE_URL':db,'PORT':str(port),'LOCAL_STORAGE_DIR':str(tmp_path),'ANALYTICS_ENABLED':'false','STORAGE_BACKEND':'local','JWT_SECRET':'synthetic-format-test-secret','APP_ENV':'development','WORKER_URL':'http://127.0.0.1:1'})
+        owners = []
+        async def drain(doc_id, digest):
+            job = await main.claim_ingestion_job()
+            assert job and str(job['document_id']) == doc_id
+            await main.run_claimed_ingestion_job(job)
+            conn = await asyncpg.connect(db)
+            try:
+                row = await conn.fetchrow('SELECT status,content_hash,metadata FROM documents WHERE id=$1',doc_id)
+                assert row['status'] == 'ready', dict(row)
+                assert row['content_hash'] == digest
+                assert await conn.fetchval('SELECT status FROM ingestion_jobs WHERE document_id=$1',doc_id) == 'completed'
+                chunks = await conn.fetch('SELECT id,content,locator FROM chunks WHERE document_id=$1 ORDER BY chunk_index',doc_id)
+                blocks = await conn.fetch('SELECT block_index,text FROM content_blocks WHERE document_id=$1',doc_id)
+                by_index = {b['block_index']:b['text'] for b in blocks}
+                for chunk in chunks:
+                    locator = json.loads(chunk['locator'])
+                    # Exact normalized whitespace witness; no invented lexical joins.
+                    assert chunk['content'] in ' '.join(by_index[locator['block_index']].split())
+                assert chunks
+                return str(chunks[0]['id'])
+            finally:
+                await conn.close()
+        try:
+            _ready(api+'/healthz',process)
+            with httpx.Client() as client:
+                for label in ['owner','foreign']:
+                    owners.append(_request(client,'POST',api+'/auth/register',expected=201,json={'email':f'{label}-{uuid.uuid4().hex}@example.invalid','password':PASSWORD}))
+                token, foreign = [o['token'] for o in owners]
+                line = 'co- operation remains distinct in fabricated evidence.'
+                fixtures = [('notes.md', ('# Heading\n\n'+line).encode()),('notes.txt',line.encode()),('notes.docx',docx_bytes()),('paper.pdf',fabricated_pdf(line))]
+                for name,data in fixtures:
+                    result = _request(client,'POST',api+'/api/documents/upload',token,expected=202,files={'file':(name,data)})
+                    doc = result['document']['id']
+                    async def seed_snapshot_metadata():
+                        conn = await asyncpg.connect(db)
+                        try:
+                            await conn.execute("UPDATE documents SET metadata=$2 WHERE id=$1",doc,json.dumps({'snapshot':True,'original_sha256':hashlib.sha256(data).hexdigest(),'provider_file_id':'synthetic-provider-id'}))
+                        finally: await conn.close()
+                    asyncio.run(seed_snapshot_metadata())
+                    old_chunk = asyncio.run(drain(doc,hashlib.sha256(data).hexdigest()))
+                    content = _request(client,'GET',api+f'/api/documents/{doc}/content',token)
+                    assert content['document']['metadata']['provider_file_id'] == 'synthetic-provider-id'
+                    assert content['document']['content_hash'] == hashlib.sha256(data).hexdigest()
+                    _request(client,'GET',api+f'/api/documents/{doc}/content',foreign,expected=404)
+                    _request(client,'DELETE',api+f'/api/documents/{doc}',foreign,expected=404)
+                    async def reingest():
+                        conn = await asyncpg.connect(db)
+                        try:
+                            job = await conn.fetchrow('SELECT * FROM ingestion_jobs WHERE document_id=$1',doc)
+                        finally: await conn.close()
+                        await main.process_document_task(doc, file_path=job['file_path'],source_id=str(job['source_id']),run_id=str(job['run_id']),source_type=job['source_type'],title=job['title'])
+                        conn = await asyncpg.connect(db)
+                        try:
+                            assert not await conn.fetchval('SELECT EXISTS(SELECT 1 FROM chunks WHERE id=$1)',old_chunk)
+                            assert await conn.fetchval('SELECT content_hash FROM documents WHERE id=$1',doc) == hashlib.sha256(data).hexdigest()
+                        finally: await conn.close()
+                    asyncio.run(reingest())
+                    _request(client,'DELETE',api+f'/api/documents/{doc}',token)
+                    async def absent():
+                        conn = await asyncpg.connect(db)
+                        try:
+                            assert not await conn.fetchval('SELECT EXISTS(SELECT 1 FROM chunks WHERE id=$1)',old_chunk)
+                            assert not await conn.fetchval('SELECT EXISTS(SELECT 1 FROM ingestion_jobs WHERE document_id=$1)',doc)
+                        finally: await conn.close()
+                    asyncio.run(absent())
+                result = _request(client,'POST',api+'/api/documents/upload',token,expected=202,files={'file':('tampered.txt',b'Original immutable witness.')})
+                tampered_doc = result['document']['id']
+                async def tampered():
+                    conn = await asyncpg.connect(db)
+                    try:
+                        job = await conn.fetchrow('SELECT * FROM ingestion_jobs WHERE document_id=$1',tampered_doc)
+                        Path(job['file_path']).write_bytes(b'Changed witness must never replace the original.')
+                        await conn.execute('UPDATE documents SET metadata=$2 WHERE id=$1',tampered_doc,json.dumps({'original_sha256':hashlib.sha256(b'Original immutable witness.').hexdigest()}))
+                        await conn.execute('UPDATE ingestion_jobs SET max_attempts=1 WHERE document_id=$1',tampered_doc)
+                    finally: await conn.close()
+                    job = await main.claim_ingestion_job()
+                    await main.run_claimed_ingestion_job(job)
+                    conn = await asyncpg.connect(db)
+                    try:
+                        assert await conn.fetchval('SELECT status FROM ingestion_jobs WHERE document_id=$1',tampered_doc) == 'failed'
+                        assert not await conn.fetchval('SELECT EXISTS(SELECT 1 FROM chunks WHERE document_id=$1)',tampered_doc)
+                    finally: await conn.close()
+>               asyncio.run(tampered())
+
+services/selar-worker/test_format_service_e2e.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def tampered():
+        conn = await asyncpg.connect(db)
+        try:
+            job = await conn.fetchrow('SELECT * FROM ingestion_jobs WHERE document_id=$1',tampered_doc)
+            Path(job['file_path']).write_bytes(b'Changed witness must never replace the original.')
+            await conn.execute('UPDATE documents SET metadata=$2 WHERE id=$1',tampered_doc,json.dumps({'original_sha256':hashlib.sha256(b'Original immutable witness.').hexdigest()}))
+            await conn.execute('UPDATE ingestion_jobs SET max_attempts=1 WHERE document_id=$1',tampered_doc)
+        finally: await conn.close()
+        job = await main.claim_ingestion_job()
+        await main.run_claimed_ingestion_job(job)
+        conn = await asyncpg.connect(db)
+        try:
+>           assert await conn.fetchval('SELECT status FROM ingestion_jobs WHERE document_id=$1',tampered_doc) == 'failed'
+E           AssertionError: assert 'completed' == 'failed'
+E             
+E             - failed
+E             + completed
+
+services/selar-worker/test_format_service_e2e.py:116: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Warning: GEMINI_API_KEY is not set.
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/healthz HTTP/1.1" from 127.0.0.1:62434 - 200 38B in 651.791µs
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/auth/register HTTP/1.1" from 127.0.0.1:62435 - 201 534B in 70.757166ms
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/auth/register HTTP/1.1" from 127.0.0.1:62435 - 201 537B in 66.513708ms
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/api/documents/upload HTTP/1.1" from 127.0.0.1:62435 - 202 953B in 4.404666ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 525ef112-c2a4-4d5b-9935-64b216d09439...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 525ef112-c2a4-4d5b-9935-64b216d09439...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 525ef112-c2a4-4d5b-9935-64b216d09439
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/525ef112-c2a4-4d5b-9935-64b216d09439/content HTTP/1.1" from 127.0.0.1:62435 - 200 1269B in 1.998833ms
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/525ef112-c2a4-4d5b-9935-64b216d09439/content HTTP/1.1" from 127.0.0.1:62435 - 404 39B in 330.833µs
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/525ef112-c2a4-4d5b-9935-64b216d09439 HTTP/1.1" from 127.0.0.1:62435 - 404 31B in 298.541µs
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 525ef112-c2a4-4d5b-9935-64b216d09439...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 525ef112-c2a4-4d5b-9935-64b216d09439...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 525ef112-c2a4-4d5b-9935-64b216d09439
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/525ef112-c2a4-4d5b-9935-64b216d09439 HTTP/1.1" from 127.0.0.1:62435 - 200 21B in 6.455125ms
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/api/documents/upload HTTP/1.1" from 127.0.0.1:62435 - 202 943B in 2.027292ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 305c8d88-f3c6-4d06-832f-ec05382b910a...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 305c8d88-f3c6-4d06-832f-ec05382b910a...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 305c8d88-f3c6-4d06-832f-ec05382b910a
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/305c8d88-f3c6-4d06-832f-ec05382b910a/content HTTP/1.1" from 127.0.0.1:62435 - 200 1034B in 814.625µs
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/305c8d88-f3c6-4d06-832f-ec05382b910a/content HTTP/1.1" from 127.0.0.1:62435 - 404 39B in 302.292µs
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/305c8d88-f3c6-4d06-832f-ec05382b910a HTTP/1.1" from 127.0.0.1:62435 - 404 31B in 237.083µs
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 305c8d88-f3c6-4d06-832f-ec05382b910a...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 305c8d88-f3c6-4d06-832f-ec05382b910a...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 305c8d88-f3c6-4d06-832f-ec05382b910a
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/305c8d88-f3c6-4d06-832f-ec05382b910a HTTP/1.1" from 127.0.0.1:62435 - 200 21B in 2.299792ms
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/api/documents/upload HTTP/1.1" from 127.0.0.1:62435 - 202 1010B in 1.738458ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041...
+Mental model -> Concepts: 1, unverified edges deferred
+Successfully processed 9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041/content HTTP/1.1" from 127.0.0.1:62435 - 200 1235B in 708.166µs
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041/content HTTP/1.1" from 127.0.0.1:62435 - 404 39B in 173.666µs
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041 HTTP/1.1" from 127.0.0.1:62435 - 404 31B in 151.375µs
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041...
+Mental model -> Concepts: 1, unverified edges deferred
+Successfully processed 9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/9ca19bdf-b1f2-4684-abb1-7dc5d8ea5041 HTTP/1.1" from 127.0.0.1:62435 - 200 21B in 2.139625ms
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/api/documents/upload HTTP/1.1" from 127.0.0.1:62435 - 202 948B in 1.585917ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 7ea8552a-3148-447b-8199-f2f490f70e76...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 7ea8552a-3148-447b-8199-f2f490f70e76...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 7ea8552a-3148-447b-8199-f2f490f70e76
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/7ea8552a-3148-447b-8199-f2f490f70e76/content HTTP/1.1" from 127.0.0.1:62435 - 200 1094B in 584.375µs
+2026/10/09 12:36:51 "GET http://127.0.0.1:62429/api/documents/7ea8552a-3148-447b-8199-f2f490f70e76/content HTTP/1.1" from 127.0.0.1:62435 - 404 39B in 156.167µs
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/7ea8552a-3148-447b-8199-f2f490f70e76 HTTP/1.1" from 127.0.0.1:62435 - 404 31B in 141.583µs
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 7ea8552a-3148-447b-8199-f2f490f70e76...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 7ea8552a-3148-447b-8199-f2f490f70e76...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 7ea8552a-3148-447b-8199-f2f490f70e76
+2026/10/09 12:36:51 "DELETE http://127.0.0.1:62429/api/documents/7ea8552a-3148-447b-8199-f2f490f70e76 HTTP/1.1" from 127.0.0.1:62435 - 200 21B in 1.838709ms
+2026/10/09 12:36:51 "POST http://127.0.0.1:62429/api/documents/upload HTTP/1.1" from 127.0.0.1:62435 - 202 953B in 1.417916ms
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 2b95f0af-e3e4-4c10-8bc7-ba55df654ce3...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 2b95f0af-e3e4-4c10-8bc7-ba55df654ce3...
+Mental model -> Concepts: 5, unverified edges deferred
+Successfully processed 2b95f0af-e3e4-4c10-8bc7-ba55df654ce3
+server stopped
+----------------------------- Captured stderr call -----------------------------
+2026/10/09 12:36:50 connected to database
+2026/10/09 12:36:50 worker trigger enabled: false
+2026/10/09 12:36:50 upload storage backend: local
+2026/10/09 12:36:50 analytics enabled: false; ADMIN_EMAILS entries: 0
+2026/10/09 12:36:50 recaptcha on registration enabled: false
+2026/10/09 12:36:50 google sign-in enabled: false
+2026/10/09 12:36:50 calendar feed: off
+2026/10/09 12:36:50 email notices: off (allowlist empty); transport: dry-run
+2026/10/09 12:36:50 selar-api listening on :62429
+2026/10/09 12:36:51 shutting down server...
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED services/selar-worker/test_format_service_e2e.py::test_cross_format_source_snapshot_lifecycle
+1 failed, 5 warnings in 2.19s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
