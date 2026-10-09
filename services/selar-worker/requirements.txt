@@ -11,3 +11,5 @@ python-dotenv
 asyncpg
 pydantic
 boto3
+markdown-it-py>=3,<5
+defusedxml>=0.7,<1

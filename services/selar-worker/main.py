@@ -590,6 +590,17 @@ async def process_document_task(
             raw_text=raw_text,
             title=title,
         )
+        if source_type in {"pdf", "markdown", "txt", "docx"}:
+            conn = await asyncpg.connect(DATABASE_URL)
+            metadata_json = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
+            await conn.close()
+            conn = None
+            if metadata_json is None:
+                raise ValueError("source snapshot was deleted")
+            metadata = json.loads(metadata_json) if isinstance(metadata_json, str) else metadata_json
+            expected_hash = metadata.get("original_sha256") or metadata.get("export_sha256")
+            if expected_hash and expected_hash != normalized.content_hash:
+                raise ValueError("stored source bytes no longer match the imported snapshot hash")
         if source_id and source_type == "web" and normalized.content_hash:
             conn = await asyncpg.connect(DATABASE_URL)
             previous_hash = await conn.fetchval(
@@ -691,7 +702,7 @@ async def process_document_task(
         await conn.execute(
             """UPDATE documents SET progress = 0.30, page_count = $2, title = $3,
                    authors = $4, year = $5, canonical_url = $6, content_hash = $7,
-                   mime_type = $8, metadata = $9, fetched_at = now()
+                   mime_type = $8, metadata = $9::jsonb || metadata, fetched_at = now()
                WHERE id = $1""",
             doc_id, page_count, normalized.title or row["title"], normalized.authors,
             normalized.year, normalized.canonical_url, normalized.content_hash,

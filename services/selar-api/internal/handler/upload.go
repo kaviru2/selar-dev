@@ -3,8 +3,10 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -45,6 +47,11 @@ func authenticatedUser(w http.ResponseWriter, r *http.Request) (string, bool) {
 	return userID, true
 }
 
+func fileSnapshotMetadata(title string, data []byte) json.RawMessage {
+	metadata, _ := json.Marshal(map[string]any{"original_filename": title, "original_sha256": fmt.Sprintf("%x", sha256.Sum256(data)), "snapshot": true, "imported_at": time.Now().UTC().Format(time.RFC3339Nano)})
+	return metadata
+}
+
 func cleanPDFTitle(filename string) string {
 	title := strings.TrimSpace(path.Base(strings.ReplaceAll(filename, "\\", "/")))
 	if title == "" || title == "." || title == "/" {
@@ -81,27 +88,27 @@ func (h *Handler) UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	if !strings.HasSuffix(strings.ToLower(header.Filename), ".pdf") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only PDF allowed"})
+	kind, mime := fileFormat(header.Filename)
+	if kind == "" {
+		badRequest(w, "Supported files: PDF, Markdown, TXT")
 		return
 	}
-	if header.Size > maxPDFSize {
+	if header.Size > maxPDFSize || (kind != "pdf" && header.Size > 10<<20) {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
 		return
 	}
-	magic := make([]byte, len(pdfMagic))
-	if _, err := io.ReadFull(file, magic); err != nil || !bytes.Equal(magic, pdfMagic) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file is not a valid PDF"})
+	data, err := io.ReadAll(io.LimitReader(file, maxPDFSize+1))
+	if err != nil {
+		badRequest(w, "unable to read file")
 		return
 	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unable to read PDF"})
+	if err := validateFile(data, kind); err != nil {
+		badRequest(w, err.Error())
 		return
 	}
-
 	title := cleanPDFTitle(header.Filename)
-	h.createPDFIngestion(w, r, userID, title, func(ctx context.Context, documentID string) (string, error) {
-		return h.storage.Put(ctx, storage.PDFKey(documentID), file, header.Size, pdfContentType)
+	h.createFileIngestion(w, r, userID, title, kind, mime, fileSnapshotMetadata(header.Filename, data), func(ctx context.Context, documentID string) (string, error) {
+		return h.storage.Put(ctx, documentID+"/original"+path.Ext(title), bytes.NewReader(data), int64(len(data)), mime)
 	})
 }
 
@@ -125,7 +132,8 @@ func (h *Handler) CreateUploadURL(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if !strings.HasSuffix(strings.ToLower(req.Filename), ".pdf") || req.ContentType != pdfContentType {
+	kind, mime := fileFormat(req.Filename)
+	if kind == "" || req.ContentType != mime {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only PDF allowed"})
 		return
 	}
@@ -133,7 +141,11 @@ func (h *Handler) CreateUploadURL(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file is empty"})
 		return
 	}
-	if req.Size > maxPDFSize {
+	limit := maxPDFSize
+	if kind != "pdf" {
+		limit = 10 << 20
+	}
+	if req.Size > limit {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
 		return
 	}
@@ -143,9 +155,9 @@ func (h *Handler) CreateUploadURL(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "bad token"})
 		return
 	}
-	upload, err := h.storage.PresignPut(r.Context(), key, pdfContentType, req.Size, directUploadTTL)
+	upload, err := h.storage.PresignPut(r.Context(), key, mime, req.Size, directUploadTTL)
 	if errors.Is(err, storage.ErrDirectUploadUnsupported) {
-		writeJSON(w, http.StatusOK, map[string]any{"mode": "multipart", "max_bytes": maxPDFSize})
+		writeJSON(w, http.StatusOK, map[string]any{"mode": "multipart", "max_bytes": limit})
 		return
 	}
 	if err != nil {
@@ -154,7 +166,7 @@ func (h *Handler) CreateUploadURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"mode": "direct", "upload_id": uploadID, "upload": upload, "max_bytes": maxPDFSize,
+		"mode": "direct", "upload_id": uploadID, "upload": upload, "max_bytes": limit,
 	})
 }
 
@@ -186,8 +198,9 @@ func (h *Handler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload id"})
 		return
 	}
-	if !strings.HasSuffix(strings.ToLower(req.Filename), ".pdf") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only PDF allowed"})
+	kind, mime := fileFormat(req.Filename)
+	if kind == "" {
+		badRequest(w, "Supported files: PDF, Markdown, TXT, DOCX")
 		return
 	}
 	locator := h.storage.Locator(key)
@@ -207,32 +220,51 @@ func (h *Handler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, status, map[string]string{"error": message})
 	}
-	if info.Size <= 0 || info.Size > maxPDFSize {
+	if info.Size <= 0 || info.Size > maxPDFSize || (kind != "pdf" && info.Size > 10<<20) {
 		reject(http.StatusRequestEntityTooLarge, "file too large")
 		return
 	}
-	if !strings.EqualFold(strings.TrimSpace(strings.Split(info.ContentType, ";")[0]), pdfContentType) {
-		reject(http.StatusBadRequest, "only PDF allowed")
+	if !strings.EqualFold(strings.TrimSpace(strings.Split(info.ContentType, ";")[0]), mime) {
+		reject(http.StatusBadRequest, "file content type does not match filename")
 		return
 	}
-	head, err := h.storage.ReadHead(r.Context(), locator, len(pdfMagic))
-	if err != nil || !bytes.Equal(head, pdfMagic) {
-		reject(http.StatusBadRequest, "file is not a valid PDF")
+	reader, _, err := h.storage.Open(r.Context(), locator)
+	if err != nil {
+		reject(http.StatusBadRequest, "could not read upload")
+		return
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(io.LimitReader(reader, maxPDFSize+1))
+	if err != nil || int64(len(data)) != info.Size {
+		reject(http.StatusBadRequest, "uploaded size mismatch")
+		return
+	}
+	if err := validateFile(data, kind); err != nil {
+		reject(http.StatusBadRequest, err.Error())
 		return
 	}
 	title := cleanPDFTitle(req.Filename)
-	h.createPDFIngestion(w, r, userID, title, func(context.Context, string) (string, error) {
-		return locator, nil
+	h.createFileIngestion(w, r, userID, title, kind, mime, fileSnapshotMetadata(req.Filename, data), func(ctx context.Context, documentID string) (string, error) {
+		// A presigned staging PUT can still be reused until expiry. Freeze bytes
+		// into a server-only key before exposing a source snapshot.
+		frozen, err := h.storage.Put(ctx, documentID+"/original"+path.Ext(title), bytes.NewReader(data), int64(len(data)), mime)
+		if err == nil {
+			_ = h.storage.Delete(ctx, locator)
+		}
+		return frozen, err
 	})
 }
 
-// createPDFIngestion creates the source, document, run and durable job, using
-// place to persist (or adopt) the PDF bytes. Every failure rolls back.
-func (h *Handler) createPDFIngestion(w http.ResponseWriter, r *http.Request, userID, title string,
+// createFileIngestion creates the source, document, run and durable job.
+// Storage and database failures roll back the incomplete snapshot.
+func (h *Handler) createFileIngestion(w http.ResponseWriter, r *http.Request, userID, title, kind, mime string, metadata json.RawMessage,
 	place func(ctx context.Context, documentID string) (string, error)) {
 	ctx := r.Context()
+	if metadata == nil {
+		metadata = json.RawMessage(`{}`)
+	}
 	source := &model.ContentSource{
-		UserID: userID, Kind: "pdf", URI: title, Title: title, RefreshPolicy: "never",
+		UserID: userID, Kind: kind, URI: title, Title: title, RefreshPolicy: "never", Config: metadata,
 	}
 	if err := h.store.CreateSource(ctx, source); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create PDF source"})
@@ -240,7 +272,7 @@ func (h *Handler) createPDFIngestion(w http.ResponseWriter, r *http.Request, use
 	}
 	doc := &model.Document{
 		UserID: userID, Title: title, Status: model.DocStatusProcessing,
-		Progress: 0.01, SourceID: &source.ID, SourceType: "pdf", MimeType: pdfContentType,
+		Progress: 0.01, SourceID: &source.ID, SourceType: kind, MimeType: mime, Metadata: metadata,
 	}
 	if err := h.store.CreateDocument(ctx, doc); err != nil {
 		_ = h.store.ArchiveSource(ctx, source.ID, userID)
@@ -271,7 +303,7 @@ func (h *Handler) createPDFIngestion(w http.ResponseWriter, r *http.Request, use
 	}
 	job := &model.IngestionJob{
 		RunID: run.ID, SourceID: source.ID, DocumentID: doc.ID, UserID: userID,
-		SourceType: "pdf", FilePath: locator, Title: source.Title,
+		SourceType: kind, FilePath: locator, Title: source.Title,
 	}
 	if err := h.store.CreateIngestionJob(ctx, job); err != nil {
 		rollback("failed to queue PDF ingestion")

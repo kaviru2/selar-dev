@@ -151,7 +151,7 @@ export class DriveCancelled extends Error {}
 function pickPdf(google: GoogleGlobal, cfg: DriveConfig, token: string): Promise<PickerDoc | null> {
   return new Promise((resolve) => {
     const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
-    view.setMimeTypes("application/pdf");
+    view.setMimeTypes("application/pdf,application/vnd.google-apps.document");
     view.setIncludeFolders(true);
     view.setSelectFolderEnabled(false);
     new google.picker.PickerBuilder()
@@ -159,7 +159,7 @@ function pickPdf(google: GoogleGlobal, cfg: DriveConfig, token: string): Promise
       .setOAuthToken(token)
       .setDeveloperKey(cfg.apiKey)
       .setAppId(cfg.appId)
-      .setTitle("Choose a PDF to import into SELAR")
+      .setTitle("Choose a PDF or Google Doc snapshot to import into SELAR")
       .setCallback((r) => {
         if (r.action === google.picker.Action.PICKED && r.docs?.[0]) resolve(r.docs[0]);
         else if (r.action === google.picker.Action.CANCEL) resolve(null);

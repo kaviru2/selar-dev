@@ -51,7 +51,7 @@ export interface Document {
   added_at: string;
   processed_at: string | null;
   source_id?: string;
-  source_type: "pdf" | "web" | "text";
+  source_type: "pdf" | "web" | "text" | "markdown" | "txt" | "docx";
   source_url?: string;
   canonical_url?: string;
   content_hash?: string;
@@ -99,7 +99,7 @@ export interface DocumentContent {
 
 export interface ContentSource {
   id: string;
-  kind: "pdf" | "web" | "text";
+  kind: "pdf" | "web" | "text" | "markdown" | "txt" | "docx";
   uri?: string;
   canonical_uri?: string;
   title?: string;
@@ -315,7 +315,7 @@ export interface ChatCitation {
   rank: number;
   score: number;
   quote: string;
-  source_type: "pdf" | "web" | "text";
+  source_type: "pdf" | "web" | "text" | "markdown" | "txt" | "docx";
   locator: Record<string, unknown>;
 }
 
