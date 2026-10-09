@@ -1,0 +1,2964 @@
+............F....FFF......................FFsss................s........ [ 40%]
+..................ss..................F.....................FF....FFF.FF [ 81%]
+FFFFFFFF..........s.s.........FFF                                        [100%]
+=================================== FAILURES ===================================
+____________ test_real_database_rejects_forged_and_stale_witnesses _____________
+
+    def test_real_database_rejects_forged_and_stale_witnesses():
+        if not os.getenv("TEST_DATABASE_URL"):
+            pytest.skip("No live test Postgres/pgvector; CI exercises service boundary")
+        import asyncpg
+        from hashlib import sha256
+    
+        async def exercise():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            tx = conn.transaction()
+            await tx.start()
+            try:
+                owner = await conn.fetchval("INSERT INTO users(email,password_hash) VALUES ('contract-owner@example.invalid','x') RETURNING id")
+                intruder = await conn.fetchval("INSERT INTO users(email,password_hash) VALUES ('contract-intruder@example.invalid','x') RETURNING id")
+                async def doc(user, title):
+                    return await conn.fetchval("INSERT INTO documents(user_id,title,content_hash,status) VALUES ($1,$2,'snapshot','ready') RETURNING id", user, title)
+                new_doc, prior_doc, foreign_doc = await doc(owner, "new"), await doc(owner, "prior"), await doc(intruder, "foreign")
+                async def chunk(user, document, text):
+                    return await conn.fetchval("INSERT INTO chunks(user_id,document_id,chunk_index,content,locator) VALUES ($1,$2,0,$3,'{\"page\":2}') RETURNING id", user, document, text)
+                new_chunk = await chunk(owner, new_doc, NEW["content"])
+                prior_chunk = await chunk(owner, prior_doc, PRIOR["content"])
+                foreign_chunk = await chunk(intruder, foreign_doc, PRIOR["content"])
+                async def mental(document):
+                    return await conn.fetchval("INSERT INTO document_mental_models(user_id,document_id,main_claim,key_concepts) VALUES ($1,$2,'claim',ARRAY['gradient descent optimization']) RETURNING id", owner, document)
+                new_model, prior_model = await mental(new_doc), await mental(prior_doc)
+                source = {**NEW, "user_id": owner, "document_id": new_doc, "id": new_chunk}
+                target = {**PRIOR, "user_id": owner, "document_id": prior_doc, "id": prior_chunk}
+                with pytest.raises(asyncpg.PostgresError):
+                    async with conn.transaction():
+                        await conn.execute("INSERT INTO mental_model_links(user_id,source_model_id,target_model_id,link_type,similarity) VALUES ($1,$2,$3,'concept_overlap',.99)", owner, new_model, prior_model)
+                assert await persist_grounded_overlap(conn, CONCEPT, source, target, owner, new_doc,
+                                                       prior_doc, new_model, prior_model, .91)
+                link = await conn.fetchrow("SELECT ml.*, valid_grounded_mental_link(ml) AS valid FROM mental_model_links ml WHERE source_model_id=$1", new_model)
+                assert link["valid"] and link["link_type"] == "concept_overlap"
+                for field, value in (("quote", "invented"), ("asserting_source_id", str(new_doc)),
+                                     ("chunk_id", str(foreign_chunk)), ("source_snapshot_hash", "stale"),
+                                     ("locator", {"page": 99}), ("asserted_concept", "invented overlap")):
+                    forged = {**json.loads(link["target_evidence"]), field: value}
+                    with pytest.raises(asyncpg.PostgresError):
+                        async with conn.transaction():
+                            await conn.execute("UPDATE mental_model_links SET target_evidence=$1 WHERE id=$2", json.dumps(forged), link["id"])
+                with pytest.raises(asyncpg.PostgresError):
+                    async with conn.transaction():
+                        await conn.execute("UPDATE mental_model_links SET source_model_id=$1, target_model_id=$2 WHERE id=$3",
+                                           prior_model, new_model, link["id"])
+                # A changed source snapshot invalidates display/confirmation even if old text survives.
+                await conn.execute("UPDATE documents SET content_hash='refreshed' WHERE id=$1", prior_doc)
+                assert not await conn.fetchval("SELECT valid_grounded_mental_link(ml) FROM mental_model_links ml WHERE id=$1", link["id"])
+            finally:
+                await tx.rollback()
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_candidate_contract.py:153: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_candidate_contract.py:110: in exercise
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+________ test_newer_reading_links_through_older_readings_named_concept _________
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+
+    @db
+    def test_newer_reading_links_through_older_readings_named_concept(worker):
+        """RED before #117: only the newer reading's concepts were tried, so no candidate."""
+        import asyncpg
+    
+        async def exercise():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            owner, early, late = await _owner_with_docs(conn)
+            try:
+                await worker.process_document_task(early, source_type="text", raw_text=EARLY_TEXT, title="Invented notebook")
+                await worker.process_document_task(late, source_type="text", raw_text=LATE_TEXT, title="Invented article")
+                links = await _links(conn, owner)
+                assert len(links) == 1
+                link = links[0]
+                assert link["valid"] and link["status"] == "candidate" and link["review_revision"] == 0
+                assert link["created_via"] == "ai_suggested" and link["link_type"] == "concept_overlap"
+                assert str(link["source_doc"]) == early
+                source, target = json.loads(link["source_evidence"]), json.loads(link["target_evidence"])
+                assert source["asserted_concept"] == target["asserted_concept"] == EARLY_CONCEPT
+                assert source["asserting_source_id"] == early and target["asserting_source_id"] == late
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_candidate_generation.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_candidate_generation.py:115: in exercise
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_ test_backfill_is_insert_only_idempotent_owner_scoped_and_respects_decisions __
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+
+    @db
+    def test_backfill_is_insert_only_idempotent_owner_scoped_and_respects_decisions(worker):
+        import asyncpg
+        from candidate_generation import backfill_owner
+    
+        async def exercise():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            owner, early, late = await _owner_with_docs(conn)
+            other, other_early, other_late = await _owner_with_docs(conn)
+            try:
+                for user_docs in ((early, late), (other_early, other_late)):
+                    await worker.process_document_task(user_docs[0], source_type="text", raw_text=EARLY_TEXT, title="Invented notebook")
+                    await worker.process_document_task(user_docs[1], source_type="text", raw_text=LATE_TEXT, title="Invented article")
+                # Simulate the pre-#117 state: no candidate for this owner.
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id = ANY($1::uuid[])", [owner, other])
+                created = await backfill_owner(conn, owner)
+                assert created == [(early, EARLY_CONCEPT)]
+                assert await backfill_owner(conn, owner) == []  # idempotent
+                assert len(await _links(conn, owner)) == 1
+                assert await _links(conn, other) == []  # another owner's library is untouched
+                # A learner rejection is final: backfill never re-suggests the pair.
+                link_id = (await _links(conn, owner))[0]["id"]
+                await conn.execute("""UPDATE mental_model_links SET status='rejected', responded_at=now(),
+                                      review_revision=1 WHERE id=$1""", link_id)
+                assert await backfill_owner(conn, owner) == []
+                rows = await _links(conn, owner)
+                assert len(rows) == 1 and rows[0]["status"] == "rejected"
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id = ANY($1::uuid[])", [owner, other])
+                await conn.execute("DELETE FROM users WHERE id = ANY($1::uuid[])", [owner, other])
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_candidate_generation.py:167: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_candidate_generation.py:142: in exercise
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_____________________ test_backfill_cli_dry_run_rolls_back _____________________
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5d5940>
+
+    @db
+    def test_backfill_cli_dry_run_rolls_back(worker, monkeypatch):
+        import asyncpg
+        import backfill_candidates
+        monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    
+        async def exercise():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            owner, early, late = await _owner_with_docs(conn)
+            count = "SELECT count(*) FROM mental_model_links WHERE user_id=$1"
+            try:
+                await worker.process_document_task(early, source_type="text", raw_text=EARLY_TEXT, title="Invented notebook")
+                await worker.process_document_task(late, source_type="text", raw_text=LATE_TEXT, title="Invented article")
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                assert await backfill_candidates.run(str(owner), dry_run=True) == [(early, EARLY_CONCEPT)]
+                assert await conn.fetchval(count, owner) == 0
+                assert await backfill_candidates.run(str(owner), dry_run=False) == [(early, EARLY_CONCEPT)]
+                assert await conn.fetchval(count, owner) == 1
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_candidate_generation.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_candidate_generation.py:177: in exercise
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+______ test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5d5ac0>
+
+    @pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="CI pgvector database required")
+    def test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations(monkeypatch):
+        """Actual migrated SQL/retrieval and fabricated documents; only Gemini stubbed."""
+        database = os.environ["TEST_DATABASE_URL"]
+        monkeypatch.setattr(main, "DATABASE_URL", database)
+        monkeypatch.setattr(main, "embed_query_text", lambda _: [1.0] + [0.0] * 3071)
+        generation = []
+        class Models:
+            def generate_content(self, **kwargs):
+                generation.append(kwargs["contents"])
+                return SimpleNamespace(text="The comparison reports a modified baseline [S1].")
+        monkeypatch.setattr(main, "client", SimpleNamespace(models=Models()))
+    
+        async def run():
+            conn = await asyncpg.connect(database)
+            owners = []
+            try:
+                for label in ("owner", "other"):
+                    owner = await conn.fetchval(
+                        "INSERT INTO users(email,password_hash) VALUES ($1,'synthetic') RETURNING id",
+                        f"chat-attribution-{label}-{uuid.uuid4()}@example.invalid")
+                    owners.append(owner)
+                primary = await conn.fetchval(
+                    "INSERT INTO documents(user_id,title,status,source_type) "
+                    "VALUES ($1,'Original CedarAgent paper','ready','pdf') RETURNING id", owners[0])
+                comparison = await conn.fetchval(
+                    "INSERT INTO documents(user_id,title,status,source_type) "
+                    "VALUES ($1,'Birch comparison paper','ready','pdf') RETURNING id", owners[0])
+                foreign = await conn.fetchval(
+                    "INSERT INTO documents(user_id,title,status,source_type) "
+                    "VALUES ($1,'Foreign benchmark paper','ready','pdf') RETURNING id", owners[1])
+                chunk_ids = []
+                for index, (owner, doc, text) in enumerate((
+                    (owners[0], comparison, "Birch compared a modified CedarAgent baseline on BeaconBench."),
+                    (owners[0], comparison, " birch  COMPARED a modified CedarAgent baseline on BeaconBench. "),
+                    (owners[0], primary, "CedarAgent introduces an agent architecture for tools."),
+                    (owners[1], foreign, "Foreign owner compared CedarAgent on BeaconBench."),
+                )):
+                    chunk_ids.append(await conn.fetchval(
+                        "INSERT INTO chunks(user_id,document_id,chunk_index,content,embedding) "
+                        "VALUES ($1,$2,$3,$4,$5::vector) RETURNING id", owner, doc, index, text,
+                        str([1.0] + [0.0] * 3071)))
+                owner_id = str(owners[0])
+                thread_id = str(uuid.uuid4())
+                for question in (
+                    "Did the original CedarAgent paper use BeaconBench?",
+                    "Did the original CedarAgent paper report results on BeaconBench?",
+                ):
+                    disputed = await main.grounded_chat(main.ChatRequest(
+                        user_id=owner_id, thread_id=thread_id, question=question))
+                    assert not generation and disputed["citations"] == []
+                    assert "cannot verify" in disputed["answer"].lower()
+                    assert disputed["metrics"]["candidate_count"] >= 2
+                ordinary = await main.grounded_chat(main.ChatRequest(
+                    user_id=owner_id, thread_id=thread_id,
+                    question="What results did Birch report on BeaconBench?"))
+                assert len(generation) == 1
+                assert "Foreign owner" not in generation[0]
+                assert "Original CedarAgent paper" in generation[0]
+                assert ordinary["citations"] and ordinary["citations"][0]["document_id"] == str(comparison)
+                assert len({candidate["chunk_id"] for candidate in ordinary["candidates"]}
+                           & {str(chunk_ids[0]), str(chunk_ids[1])}) == 1
+                assert str(chunk_ids[3]) not in {c["chunk_id"] for c in ordinary["candidates"]}
+                assert all(c["document_id"] != str(foreign) for c in ordinary["citations"])
+                assert all(c["document_id"] != str(foreign) for c in disputed["citations"])
+            finally:
+                for owner in owners:
+                    await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(run())
+
+test_chat_attribution.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_chat_attribution.py:252: in run
+    conn = await asyncpg.connect(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_________ test_negatively_rated_answer_citations_do_not_boost_recency __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c5c3020>
+
+    @pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="CI pgvector database required")
+    def test_negatively_rated_answer_citations_do_not_boost_recency(monkeypatch):
+        """An unhelpful answer's cited passage must stop being re-surfaced by recency."""
+        database = os.environ["TEST_DATABASE_URL"]
+        monkeypatch.setattr(main, "DATABASE_URL", database)
+        # Orthogonal query vector: the passage can only come back via recency.
+        monkeypatch.setattr(main, "embed_query_text", lambda _: [0.0] * 3071 + [1.0])
+        monkeypatch.setattr(main, "client", SimpleNamespace(models=SimpleNamespace(
+            generate_content=lambda **_: SimpleNamespace(text="Answer [S1]."))))
+    
+        async def run():
+            conn = await asyncpg.connect(database)
+            owner = await conn.fetchval(
+                "INSERT INTO users(email,password_hash) VALUES ($1,'synthetic') RETURNING id",
+                f"chat-feedback-{uuid.uuid4()}@example.invalid")
+            try:
+                doc = await conn.fetchval(
+                    "INSERT INTO documents(user_id,title,status,source_type) "
+                    "VALUES ($1,'Birch comparison paper','ready','pdf') RETURNING id", owner)
+                chunk = await conn.fetchval(
+                    "INSERT INTO chunks(user_id,document_id,chunk_index,content,embedding) "
+                    "VALUES ($1,$2,0,'Birch ran a modified Cedar baseline.',$3::vector) RETURNING id",
+                    owner, doc, str([1.0] + [0.0] * 3071))
+                thread = await conn.fetchval(
+                    "INSERT INTO chat_threads(user_id) VALUES ($1) RETURNING id", owner)
+                message = await conn.fetchval(
+                    "INSERT INTO chat_messages(thread_id,user_id,role,content) "
+                    "VALUES ($1,$2,'assistant','Cedar used it [S1].') RETURNING id", thread, owner)
+                await conn.execute(
+                    "INSERT INTO message_citations(message_id,chunk_id,rank,score,quote) "
+                    "VALUES ($1,$2,1,1,'q')", message, chunk)
+    
+                async def recency_ranks():
+                    result = await main.grounded_chat(main.ChatRequest(
+                        user_id=str(owner), thread_id=str(thread), question="zzqx unrelated"))
+                    return [c["signals"].get("recency") for c in result["candidates"]
+                            if c["chunk_id"] == str(chunk)]
+    
+                assert [r for r in await recency_ranks() if r], "baseline: recency should surface cited chunk"
+                await conn.execute(
+                    "INSERT INTO chat_message_feedback(user_id,message_id,action) VALUES ($1,$2,'unhelpful')",
+                    owner, message)
+                assert not [r for r in await recency_ranks() if r]
+            finally:
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(run())
+
+test_chat_feedback_retrieval.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_chat_feedback_retrieval.py:24: in run
+    conn = await asyncpg.connect(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+____________ test_durable_queue_claims_and_completes_committed_job _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c89ca70>
+
+    @pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is not configured")
+    def test_durable_queue_claims_and_completes_committed_job(monkeypatch):
+        import asyncio
+        import asyncpg
+        import main
+    
+        database_url = os.environ["TEST_DATABASE_URL"]
+        monkeypatch.setattr(main, "DATABASE_URL", database_url)
+    
+        async def exercise_queue():
+            conn = await asyncpg.connect(database_url)
+            email = f"queue-test-{uuid.uuid4()}@example.test"
+            user_id = await conn.fetchval(
+                "INSERT INTO users (email, password_hash) VALUES ($1, 'test') RETURNING id", email
+            )
+            source_id = await conn.fetchval(
+                "INSERT INTO content_sources (user_id, kind, title) VALUES ($1, 'text', 'Queue test') RETURNING id",
+                user_id,
+            )
+            document_id = await conn.fetchval(
+                """INSERT INTO documents (user_id, title, status, source_id, source_type)
+                   VALUES ($1, 'Queue test', 'processing', $2, 'text') RETURNING id""",
+                user_id, source_id,
+            )
+            run_id = await conn.fetchval(
+                """INSERT INTO ingestion_runs (source_id, document_id, user_id)
+                   VALUES ($1, $2, $3) RETURNING id""",
+                source_id, document_id, user_id,
+            )
+            job_id = await conn.fetchval(
+                """INSERT INTO ingestion_jobs (
+                       run_id, source_id, document_id, user_id, source_type, raw_text, title
+                   ) VALUES ($1, $2, $3, $4, 'text', 'Durable queue evidence.', 'Queue test')
+                   RETURNING id""",
+                run_id, source_id, document_id, user_id,
+            )
+            await conn.close()
+    
+            job = await main.claim_ingestion_job()
+            assert str(job["id"]) == str(job_id)
+            assert job["status"] == "leased"
+            assert job["attempts"] == 1
+            await main.finish_ingestion_job(job)
+    
+            conn = await asyncpg.connect(database_url)
+            status = await conn.fetchval("SELECT status FROM ingestion_jobs WHERE id = $1", job_id)
+            assert status == "completed"
+            await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+            await conn.close()
+    
+>       asyncio.run(exercise_queue())
+
+test_main.py:280: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_main.py:240: in exercise_queue
+    conn = await asyncpg.connect(database_url)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+________ test_generation_total_budget_returns_truthful_unavailable_http ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c89c6e0>
+
+    def test_generation_total_budget_returns_truthful_unavailable_http(monkeypatch):
+     import main,practice_routes,practice_service
+     monkeypatch.setattr(main,'DATABASE_URL',DB)
+     monkeypatch.setattr(practice_service,'GENERATION_BUDGET_SECONDS',.04,raising=False)
+     async def slow(task,data):
+      await asyncio.sleep(.1)
+      return await model(task,data)
+     monkeypatch.setattr(practice_routes,'model',slow)
+     async def run():
+      conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+      try:
+       started=time.monotonic()
+       async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app),base_url='http://worker') as client:
+        response=await client.post('/practice',json={'action':'generate','user_id':str(owner),'document_id':str(doc)})
+       assert response.status_code==200 and response.json()['status']=='unavailable'
+       assert time.monotonic()-started<.15
+       assert await conn.fetchval('SELECT count(*) FROM practice_items WHERE user_id=$1',owner)==0
+      finally:
+       await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+>    asyncio.run(run())
+
+test_practice_budget.py:29: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_budget.py:19: in run
+    conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_________ test_recent_reading_cannot_be_reported_as_delayed_unassisted _________
+
+    def test_recent_reading_cannot_be_reported_as_delayed_unassisted():
+     async def run():
+      import practice_service as p
+      conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+      try:
+       item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
+       req={'item_id':item,'request_key':str(uuid.uuid4()),'phase':'warmup','response':'Descent','exposed':False}
+       await p.attempt(conn,owner,req,model)
+       await conn.execute("UPDATE practice_schedule SET due_at=now()-interval '1 day',last_attempt_at=now()-interval '2 days' WHERE user_id=$1",owner)
+       await conn.execute('INSERT INTO reading_sessions(user_id,document_id,started_at) VALUES($1,$2,now())',owner,doc)
+       await p.attempt(conn,owner,{**req,'request_key':str(uuid.uuid4()),'phase':'review'},model)
+       assert (await p.progress(conn,owner))['delayed_unassisted']==0
+      finally:
+       await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+>    asyncio.run(run())
+
+test_practice_exposure.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_exposure.py:9: in run
+    conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+________ test_progress_separates_exposed_warmup_and_delayed_unassisted _________
+
+    def test_progress_separates_exposed_warmup_and_delayed_unassisted():
+     async def run():
+      p=importlib.import_module('practice_service');conn=await asyncpg.connect(DB)
+      owner,other,doc,chunk=await fixture(conn)
+      try:
+       item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
+       for phase in ('warmup','reading_check'):
+        await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':phase,'response':'Descent','exposed':False},model)
+       await conn.execute("UPDATE practice_schedule SET due_at=now()-interval '1 day',last_attempt_at=now()-interval '2 days' WHERE user_id=$1",owner)
+       await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':'review','response':'Descent','exposed':False},model)
+       report=await p.progress(conn,owner)
+       assert report['warmup']==1 and report['reading_check']==1
+       assert report['delayed_unassisted']==1 and report['delayed_scored']==1 and report['delayed_mean_score']==.5
+       assert report['estimated_recall'] is None
+       assert (await p.progress(conn,other))['delayed_unassisted']==0
+       await conn.execute("UPDATE documents SET content_hash='new snapshot' WHERE id=$1",doc)
+       assert (await p.progress(conn,owner))['delayed_unassisted']==0
+      finally:
+       await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+>    asyncio.run(run())
+
+test_practice_progress.py:27: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_progress.py:10: in run
+    p=importlib.import_module('practice_service');conn=await asyncpg.connect(DB)
+                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+________ test_changed_extraction_cannot_rebind_old_attempts_to_new_item ________
+
+    def test_changed_extraction_cannot_rebind_old_attempts_to_new_item():
+     async def run():
+      import practice_service as p
+      conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+      try:
+       item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
+       await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':'warmup','response':'Descent'},model)
+       await conn.execute("UPDATE chunks SET content='Descent reduces error. Changed extraction.' WHERE id=$1",chunk)
+       await p.generate(conn,owner,doc,model)
+       assert (await p.progress(conn,owner))['warmup']==0
+      finally:
+       await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+>    asyncio.run(run())
+
+test_practice_races.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_races.py:11: in run
+    conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+__ test_source_delete_waits_for_generation_then_removes_all_derived_practice ___
+
+    def test_source_delete_waits_for_generation_then_removes_all_derived_practice():
+     async def run():
+      import practice_service as p
+      conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+      started=asyncio.Event();release=asyncio.Event()
+      async def held(task,data):
+       if task=='generate':started.set();await release.wait()
+       return await model(task,data)
+      async def delete():
+       c=await asyncpg.connect(DB)
+       try:await c.execute('DELETE FROM documents WHERE id=$1 AND user_id=$2',doc,owner)
+       finally:await c.close()
+      try:
+       generation=asyncio.create_task(p.generate(conn,owner,doc,held));await started.wait()
+       deletion=asyncio.create_task(delete());await asyncio.sleep(.03);assert not deletion.done()
+       release.set();await generation;await deletion
+       assert await p.items(conn,owner,doc)==[]
+       assert await conn.fetchval('SELECT count(*) FROM practice_items WHERE user_id=$1',owner)==0
+      finally:
+       await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+>    asyncio.run(run())
+
+test_practice_races.py:43: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_races.py:26: in run
+    conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_____ test_owner_private_idempotent_generation_and_live_source_validation ______
+
+    def test_owner_private_idempotent_generation_and_live_source_validation():
+        async def run():
+            p = importlib.import_module('practice_service')
+            conn = await asyncpg.connect(DB)
+            owner = other = None
+            try:
+                owner, other, doc, chunk = await fixture(conn)
+                assert (await p.generate(conn, other, doc, model))['status'] == 'not_found'
+                assert (await p.generate(conn, owner, doc, model))['status'] == 'ready'
+                assert (await p.generate(conn, owner, doc, model))['status'] == 'ready'
+                items = await p.items(conn, owner, doc)
+                assert len(items) == 1 and 'answer' not in items[0] and 'quote' not in items[0]
+                assert await p.items(conn, other, doc) == []
+                await conn.execute("UPDATE chunks SET content='Changed source' WHERE id=$1", chunk)
+                assert await p.items(conn, owner, doc) == []
+            finally:
+                if owner: await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])', [owner, other])
+                await conn.close()
+>       asyncio.run(run())
+
+test_practice_service.py:46: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_service.py:31: in run
+    conn = await asyncpg.connect(DB)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+______ test_attempt_is_private_atomic_idempotent_and_unavailable_unscored ______
+
+    def test_attempt_is_private_atomic_idempotent_and_unavailable_unscored():
+        async def run():
+            p = importlib.import_module('practice_service')
+            conn = await asyncpg.connect(DB)
+            owner, other, doc, chunk = await fixture(conn)
+            try:
+                generated = await p.generate(conn, owner, doc, model)
+                item = generated['items'][0]['id']
+                request = {'item_id': item, 'request_key': str(uuid.uuid4()), 'response': 'Descent', 'phase': 'warmup', 'exposed': False}
+                assert (await p.attempt(conn, other, request, model))['status'] == 'not_found'
+                result = await p.attempt(conn, owner, request, model)
+                assert result['feedback']['score'] == .5 and result['quote'] == 'Descent reduces error.'
+                assert await p.attempt(conn, owner, request, model) == result
+                assert (await p.attempt(conn, owner, {**request, 'response': 'changed'}, model))['status'] == 'conflict'
+                assert await conn.fetchval('SELECT count(*) FROM practice_attempts WHERE user_id=$1', owner) == 1
+            finally:
+                await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])', [owner, other])
+                await conn.close()
+>       asyncio.run(run())
+
+test_practice_service.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_service.py:52: in run
+    conn = await asyncpg.connect(DB)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+________________ test_due_queue_and_duplicate_review_atomicity _________________
+
+    def test_due_queue_and_duplicate_review_atomicity():
+        async def run():
+            p=importlib.import_module('practice_service')
+            conn=await asyncpg.connect(DB)
+            owner,other,doc,chunk=await fixture(conn)
+            try:
+                item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
+                req={'item_id':item,'request_key':str(uuid.uuid4()),'response':'Descent','phase':'reading_check','exposed':True}
+                await p.attempt(conn,owner,req,model)
+                assert (await p.daily(conn,owner))['items']==[]
+                # Test-only persisted fixture aging, no production clock override.
+                await conn.execute("UPDATE practice_schedule SET due_at=now()-interval '1 second' WHERE user_id=$1",owner)
+                assert len((await p.daily(conn,owner))['items'])==1
+                assert (await p.daily(conn,other))['items']==[]
+                req={**req,'request_key':str(uuid.uuid4()),'phase':'review','exposed':False}
+                async def submit():
+                    c=await asyncpg.connect(DB)
+                    try:return await p.attempt(c,owner,req,model)
+                    finally:await c.close()
+                a,b=await asyncio.gather(submit(),submit())
+                assert a==b and a['status']=='recorded'
+                assert (await p.daily(conn,owner))['items']==[]
+                assert (await p.daily(conn,owner))['streak']==1
+                assert await conn.fetchval("SELECT count(*) FROM practice_attempts WHERE user_id=$1 AND phase='review'",owner)==1
+            finally:
+                await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])',[owner,other]);await conn.close()
+>       asyncio.run(run())
+
+test_practice_service.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_practice_service.py:73: in run
+    conn=await asyncpg.connect(DB)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_______ test_reingest_preserves_reviewed_link_as_frozen_snapshot[target] _______
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+side = 'target'
+
+    @pytest.mark.parametrize("side", ["target", "source"])
+    def test_reingest_preserves_reviewed_link_as_frozen_snapshot(worker, side):
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                await _confirm(conn, owner, link["id"])
+                doc, text, title = ((prior, PRIOR_TEXT, "Invented notebook") if side == "target"
+                                    else (new, NEW_TEXT, "Invented article"))
+                await conn.execute("UPDATE documents SET status='processing' WHERE id=$1", doc)
+                await main.process_document_task(doc, source_type="text", raw_text=text, title=title)
+    
+                assert await conn.fetchval("SELECT status FROM documents WHERE id=$1", doc) == "ready"
+                kept = await conn.fetchrow(
+                    "SELECT ml.*, valid_grounded_mental_link(ml) AS valid FROM mental_model_links ml WHERE id=$1",
+                    link["id"])
+                # The learner's decision and the quoted evidence it was made on survive verbatim.
+                assert kept is not None
+                assert kept["status"] == "confirmed" and kept["review_revision"] == 1
+                assert kept["created_via"] == "user_confirmed"
+                assert kept["source_evidence"] == link["source_evidence"]
+                assert kept["target_evidence"] == link["target_evidence"]
+                assert json.loads(kept["source_evidence"])["quote"]
+                # The re-ingested side's passage is gone, so the link no longer has live evidence:
+                # it is hidden from the active graph/review path until re-reviewed.
+                gone = "target_evidence_chunk_id" if side == "target" else "source_evidence_chunk_id"
+                other = "source_evidence_chunk_id" if side == "target" else "target_evidence_chunk_id"
+                assert kept[gone] is None and kept[other] == link[other]
+                assert kept["valid"] is False
+                assert await conn.fetchval(
+                    "SELECT count(*) FROM mental_link_review_events WHERE link_id=$1", link["id"]) == 1
+                # Any other row is a fresh, unreviewed suggestion on live evidence; nothing
+                # rewrites or reuses the reviewed row.
+                others = await conn.fetch(
+                    """SELECT review_revision, valid_grounded_mental_link(ml) AS valid
+                       FROM mental_model_links ml WHERE user_id=$1 AND id<>$2""", owner, link["id"])
+                assert all(r["review_revision"] == 0 and r["valid"] for r in others)
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:114: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:77: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_______ test_reingest_preserves_reviewed_link_as_frozen_snapshot[source] _______
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+side = 'source'
+
+    @pytest.mark.parametrize("side", ["target", "source"])
+    def test_reingest_preserves_reviewed_link_as_frozen_snapshot(worker, side):
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                await _confirm(conn, owner, link["id"])
+                doc, text, title = ((prior, PRIOR_TEXT, "Invented notebook") if side == "target"
+                                    else (new, NEW_TEXT, "Invented article"))
+                await conn.execute("UPDATE documents SET status='processing' WHERE id=$1", doc)
+                await main.process_document_task(doc, source_type="text", raw_text=text, title=title)
+    
+                assert await conn.fetchval("SELECT status FROM documents WHERE id=$1", doc) == "ready"
+                kept = await conn.fetchrow(
+                    "SELECT ml.*, valid_grounded_mental_link(ml) AS valid FROM mental_model_links ml WHERE id=$1",
+                    link["id"])
+                # The learner's decision and the quoted evidence it was made on survive verbatim.
+                assert kept is not None
+                assert kept["status"] == "confirmed" and kept["review_revision"] == 1
+                assert kept["created_via"] == "user_confirmed"
+                assert kept["source_evidence"] == link["source_evidence"]
+                assert kept["target_evidence"] == link["target_evidence"]
+                assert json.loads(kept["source_evidence"])["quote"]
+                # The re-ingested side's passage is gone, so the link no longer has live evidence:
+                # it is hidden from the active graph/review path until re-reviewed.
+                gone = "target_evidence_chunk_id" if side == "target" else "source_evidence_chunk_id"
+                other = "source_evidence_chunk_id" if side == "target" else "target_evidence_chunk_id"
+                assert kept[gone] is None and kept[other] == link[other]
+                assert kept["valid"] is False
+                assert await conn.fetchval(
+                    "SELECT count(*) FROM mental_link_review_events WHERE link_id=$1", link["id"]) == 1
+                # Any other row is a fresh, unreviewed suggestion on live evidence; nothing
+                # rewrites or reuses the reviewed row.
+                others = await conn.fetch(
+                    """SELECT review_revision, valid_grounded_mental_link(ml) AS valid
+                       FROM mental_model_links ml WHERE user_id=$1 AND id<>$2""", owner, link["id"])
+                assert all(r["review_revision"] == 0 and r["valid"] for r in others)
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:114: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:77: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_____________ test_reingest_replaces_unreviewed_candidate[target] ______________
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+side = 'target'
+
+    @pytest.mark.parametrize("side", ["target", "source"])
+    def test_reingest_replaces_unreviewed_candidate(worker, side):
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                doc, text, title = ((prior, PRIOR_TEXT, "Invented notebook") if side == "target"
+                                    else (new, NEW_TEXT, "Invented article"))
+                await conn.execute("UPDATE documents SET status='processing' WHERE id=$1", doc)
+                await main.process_document_task(doc, source_type="text", raw_text=text, title=title)
+                assert await conn.fetchval("SELECT status FROM documents WHERE id=$1", doc) == "ready"
+                assert await conn.fetchval("SELECT count(*) FROM mental_model_links WHERE id=$1", link["id"]) == 0
+                rows = await conn.fetch(
+                    "SELECT ml.*, valid_grounded_mental_link(ml) AS valid FROM mental_model_links ml WHERE user_id=$1",
+                    owner)
+                # A re-ingested source re-derives a candidate only when it is the newly processed side.
+                if side == "source":
+                    assert len(rows) == 1 and rows[0]["valid"] and rows[0]["review_revision"] == 0
+                else:
+                    assert all(r["valid"] for r in rows)
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:142: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:122: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_____________ test_reingest_replaces_unreviewed_candidate[source] ______________
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+side = 'source'
+
+    @pytest.mark.parametrize("side", ["target", "source"])
+    def test_reingest_replaces_unreviewed_candidate(worker, side):
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                doc, text, title = ((prior, PRIOR_TEXT, "Invented notebook") if side == "target"
+                                    else (new, NEW_TEXT, "Invented article"))
+                await conn.execute("UPDATE documents SET status='processing' WHERE id=$1", doc)
+                await main.process_document_task(doc, source_type="text", raw_text=text, title=title)
+                assert await conn.fetchval("SELECT status FROM documents WHERE id=$1", doc) == "ready"
+                assert await conn.fetchval("SELECT count(*) FROM mental_model_links WHERE id=$1", link["id"]) == 0
+                rows = await conn.fetch(
+                    "SELECT ml.*, valid_grounded_mental_link(ml) AS valid FROM mental_model_links ml WHERE user_id=$1",
+                    owner)
+                # A re-ingested source re-derives a candidate only when it is the newly processed side.
+                if side == "source":
+                    assert len(rows) == 1 and rows[0]["valid"] and rows[0]["review_revision"] == 0
+                else:
+                    assert all(r["valid"] for r in rows)
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:142: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:122: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_____ test_reingest_keeps_review_history_of_link_rolled_back_to_candidate ______
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+
+    def test_reingest_keeps_review_history_of_link_rolled_back_to_candidate(worker):
+        """A learner rollback to 'candidate' still has review history and must not be swept as unreviewed."""
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                await _confirm(conn, owner, link["id"])
+                await conn.execute(
+                    """UPDATE mental_model_links SET status='candidate', created_via='ai_suggested',
+                           review_revision=2 WHERE id=$1""", link["id"])
+                await conn.execute(
+                    """INSERT INTO mental_link_review_events(user_id,link_id,revision,action,before_status,after_status,target_revision)
+                       VALUES ($1,$2,2,'rolled_back','confirmed','candidate',0)""", owner, link["id"])
+                await conn.execute("UPDATE documents SET status='processing' WHERE id=$1", new)
+                await main.process_document_task(new, source_type="text", raw_text=NEW_TEXT, title="Invented article")
+                assert await conn.fetchval("SELECT status FROM documents WHERE id=$1", new) == "ready"
+                kept = await conn.fetchrow("SELECT * FROM mental_model_links WHERE id=$1", link["id"])
+                assert kept is not None and kept["review_revision"] == 2
+                assert kept["source_evidence"] == link["source_evidence"]
+                assert await conn.fetchval(
+                    "SELECT count(*) FROM mental_link_review_events WHERE link_id=$1", link["id"]) == 2
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:171: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:150: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+__________ test_database_still_rejects_nulling_live_reviewed_evidence __________
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+
+    def test_database_still_rejects_nulling_live_reviewed_evidence(worker):
+        """The re-ingest exception covers only passages that no longer exist."""
+        import asyncpg
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                await _confirm(conn, owner, link["id"])
+                with pytest.raises(asyncpg.PostgresError):
+                    async with conn.transaction():
+                        await conn.execute(
+                            "UPDATE mental_model_links SET target_evidence_chunk_id=NULL WHERE id=$1", link["id"])
+                with pytest.raises(asyncpg.PostgresError):
+                    async with conn.transaction():
+                        await conn.execute(
+                            "UPDATE mental_model_links SET source_evidence_chunk_id=NULL WHERE id=$1", link["id"])
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:180: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+____ test_failed_reingest_of_linked_document_is_marked_failed_and_unindexed ____
+
+worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-worker/main.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c82cf50>
+
+    def test_failed_reingest_of_linked_document_is_marked_failed_and_unindexed(worker, monkeypatch):
+        main = worker
+    
+        async def exercise():
+            conn, owner, prior, new, link = await _setup(main)
+            try:
+                await _confirm(conn, owner, link["id"])
+                await conn.execute("UPDATE documents SET status='processing' WHERE id=$1", prior)
+    
+                def broken_mental_model(*_args, **_kwargs):
+                    raise RuntimeError("invented failure after chunks were written")
+                monkeypatch.setattr(main, "deterministic_mental_model", broken_mental_model)
+                with pytest.raises(RuntimeError):
+                    await main.process_document_task(prior, source_type="text", raw_text=PRIOR_TEXT,
+                                                     title="Invented notebook")
+                assert await conn.fetchval("SELECT status FROM documents WHERE id=$1", prior) == "failed"
+                assert await conn.fetchval("SELECT count(*) FROM chunks WHERE document_id=$1", prior) == 0
+                kept = await conn.fetchrow("SELECT * FROM mental_model_links WHERE id=$1", link["id"])
+                assert kept["status"] == "confirmed" and kept["review_revision"] == 1
+                assert kept["target_evidence"] == link["target_evidence"]
+            finally:
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_reingest_linked_document.py:222: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:202: in exercise
+    conn, owner, prior, new, link = await _setup(main)
+                                    ^^^^^^^^^^^^^^^^^^
+test_reingest_linked_document.py:43: in _setup
+    conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+______ test_claim_specific_job_leases_once_and_refuses_double_processing _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x111116600>
+
+    @needs_db
+    def test_claim_specific_job_leases_once_and_refuses_double_processing(monkeypatch):
+        import asyncpg
+        import main
+    
+        database_url = os.environ["TEST_DATABASE_URL"]
+        monkeypatch.setattr(main, "DATABASE_URL", database_url)
+    
+        async def exercise():
+            conn = await asyncpg.connect(database_url)
+            user_id, job_id = await _seed_job(conn)
+            _, delayed_id = await _seed_job(conn, available_offset="10 minutes")
+            _, busy_id = await _seed_job(conn, status="leased", attempts=1, lease_offset="5 minutes")
+            try:
+                first, second = await asyncio.gather(main.claim_ingestion_job(str(job_id)), main.claim_ingestion_job(str(job_id)))
+                claimed = [job for job in (first, second) if job]
+                assert len(claimed) == 1, "concurrent triggers must lease a job exactly once"
+                assert claimed[0]["status"] == "leased" and claimed[0]["attempts"] == 1
+                assert await main.claim_ingestion_job(str(job_id)) is None
+                # A trigger is a hint, not an override: backoff and live leases are respected.
+                assert await main.claim_ingestion_job(str(delayed_id)) is None
+                assert await main.claim_ingestion_job(str(busy_id)) is None
+            finally:
+                await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+                await conn.execute("DELETE FROM users WHERE id IN (SELECT user_id FROM ingestion_jobs WHERE id = ANY($1::uuid[]))",
+                                   [delayed_id, busy_id])
+                await conn.close()
+    
+>       asyncio.run(exercise())
+
+test_worker_trigger.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_worker_trigger.py:151: in exercise
+    conn = await asyncpg.connect(database_url)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+_________ test_process_job_runs_claimed_job_through_normal_completion __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11117aa50>
+
+    @needs_db
+    def test_process_job_runs_claimed_job_through_normal_completion(monkeypatch):
+        import asyncpg
+        import main
+    
+        database_url = os.environ["TEST_DATABASE_URL"]
+        monkeypatch.setattr(main, "DATABASE_URL", database_url)
+        seen = []
+    
+        async def fake_task(**kwargs):
+            seen.append(kwargs["doc_id"])
+    
+        monkeypatch.setattr(main, "process_document_task", fake_task)
+    
+        async def exercise():
+            conn = await asyncpg.connect(database_url)
+            user_id, job_id = await _seed_job(conn)
+            try:
+                assert await worker_trigger.process_job(str(job_id)) == "completed"
+                assert await worker_trigger.process_job(str(job_id)) == "not_claimable"
+                assert await conn.fetchval("SELECT status FROM ingestion_jobs WHERE id = $1", job_id) == "completed"
+                assert len(seen) == 1
+            finally:
+                await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+                await conn.close()
+    
+>       asyncio.run(exercise())
+
+test_worker_trigger.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_worker_trigger.py:188: in exercise
+    conn = await asyncpg.connect(database_url)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+___________ test_sweep_requeues_expired_leases_and_drains_ready_jobs ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x111179490>
+
+    @needs_db
+    def test_sweep_requeues_expired_leases_and_drains_ready_jobs(monkeypatch):
+        import asyncpg
+        import main
+    
+        database_url = os.environ["TEST_DATABASE_URL"]
+        monkeypatch.setattr(main, "DATABASE_URL", database_url)
+        processed = []
+    
+        async def fake_task(**kwargs):
+            processed.append(kwargs["doc_id"])
+    
+        monkeypatch.setattr(main, "process_document_task", fake_task)
+    
+        async def exercise():
+            conn = await asyncpg.connect(database_url)
+            # Isolate from other rows: finish anything already ready.
+            await conn.execute("UPDATE ingestion_jobs SET status = 'cancelled' WHERE status IN ('queued', 'leased')")
+            owner_a, stale = await _seed_job(conn, status="leased", attempts=1, lease_offset="-1 minutes")
+            owner_b, ready = await _seed_job(conn)
+            owner_c, later = await _seed_job(conn, available_offset="10 minutes")
+            try:
+                result = await worker_trigger.sweep(max_jobs=10)
+                assert result["processed"] == 2
+                statuses = {row["id"]: row["status"] for row in await conn.fetch(
+                    "SELECT id, status FROM ingestion_jobs WHERE id = ANY($1::uuid[])", [stale, ready, later])}
+                assert statuses[stale] == "completed" and statuses[ready] == "completed"
+                assert statuses[later] == "queued", "backoff must be respected by the sweep"
+            finally:
+                await conn.execute("DELETE FROM users WHERE id = ANY($1::uuid[])", [owner_a, owner_b, owner_c])
+                await conn.close()
+    
+>       asyncio.run(exercise())
+
+test_worker_trigger.py:234: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+test_worker_trigger.py:217: in exercise
+    conn = await asyncpg.connect(database_url)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.venv/lib/python3.12/site-packages/asyncpg/connection.py:2498: in connect
+    return await connect_utils._connect(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1278: in _connect
+    conn = await _connect_addr(
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1088: in _connect_addr
+    return await __connect_addr(params, False, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+params = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+retry = False, addr = ('127.0.0.1', 55449)
+loop = <_UnixSelectorEventLoop running=False closed=True debug=False>
+config = ConnectionConfiguration(command_timeout=None, statement_cache_size=100, max_cached_statement_lifetime=300, max_cacheable_statement_size=15360)
+connection_class = <class 'asyncpg.connection.Connection'>
+record_class = <class 'asyncpg.protocol.record.Record'>
+params_input = ConnectionParameters(user='postgres', password=None, database='selar_e2e_formats', ssl=False, sslmode=<SSLMode.disable...postgres'>, server_settings=None, target_session_attrs=<SessionAttribute.any: 'any'>, krbsrvname=None, gsslib='gssapi')
+
+    async def __connect_addr(
+        params,
+        retry,
+        addr,
+        loop,
+        config,
+        connection_class,
+        record_class,
+        params_input,
+    ):
+        connected = _create_future(loop)
+    
+        proto_factory = lambda: protocol.Protocol(
+            addr, connected, params, record_class, loop)
+    
+        if isinstance(addr, str):
+            # UNIX socket
+            connector = loop.create_unix_connection(proto_factory, addr)
+    
+        elif params.ssl and params.ssl_negotiation is SSLNegotiation.direct:
+            # if ssl and ssl_negotiation is `direct`, skip STARTTLS and perform
+            # direct SSL connection
+            connector = loop.create_connection(
+                proto_factory, *addr, ssl=params.ssl
+            )
+    
+        elif params.ssl:
+            connector = _create_ssl_connection(
+                proto_factory, *addr, loop=loop, ssl_context=params.ssl,
+                ssl_is_advisory=params.sslmode == SSLMode.prefer,
+                retry=retry and params.sslmode == SSLMode.prefer)
+        else:
+            connector = loop.create_connection(proto_factory, *addr)
+    
+        try:
+            tr, pr = await connector
+        except (Exception, asyncio.CancelledError):
+            # The protocol can exist before create_connection() returns.  If
+            # that operation is cancelled, nobody will await authentication.
+            if not connected.done():
+                connected.cancel()
+            elif not connected.cancelled():
+                connected.exception()
+            raise
+    
+        try:
+>           await connected
+E           asyncpg.exceptions.InvalidAuthorizationSpecificationError: role "postgres" does not exist
+
+../../.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py:1173: InvalidAuthorizationSpecificationError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+../../.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/kavirum1a/.hermes/cache/scratch/selar-formats/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_candidate_contract.py::test_real_database_rejects_forged_and_stale_witnesses
+FAILED test_candidate_generation.py::test_newer_reading_links_through_older_readings_named_concept
+FAILED test_candidate_generation.py::test_backfill_is_insert_only_idempotent_owner_scoped_and_respects_decisions
+FAILED test_candidate_generation.py::test_backfill_cli_dry_run_rolls_back - a...
+FAILED test_chat_attribution.py::test_real_chat_retrieval_abstains_and_keeps_owner_scoped_citations
+FAILED test_chat_feedback_retrieval.py::test_negatively_rated_answer_citations_do_not_boost_recency
+FAILED test_main.py::test_durable_queue_claims_and_completes_committed_job - ...
+FAILED test_practice_budget.py::test_generation_total_budget_returns_truthful_unavailable_http
+FAILED test_practice_exposure.py::test_recent_reading_cannot_be_reported_as_delayed_unassisted
+FAILED test_practice_progress.py::test_progress_separates_exposed_warmup_and_delayed_unassisted
+FAILED test_practice_races.py::test_changed_extraction_cannot_rebind_old_attempts_to_new_item
+FAILED test_practice_races.py::test_source_delete_waits_for_generation_then_removes_all_derived_practice
+FAILED test_practice_service.py::test_owner_private_idempotent_generation_and_live_source_validation
+FAILED test_practice_service.py::test_attempt_is_private_atomic_idempotent_and_unavailable_unscored
+FAILED test_practice_service.py::test_due_queue_and_duplicate_review_atomicity
+FAILED test_reingest_linked_document.py::test_reingest_preserves_reviewed_link_as_frozen_snapshot[target]
+FAILED test_reingest_linked_document.py::test_reingest_preserves_reviewed_link_as_frozen_snapshot[source]
+FAILED test_reingest_linked_document.py::test_reingest_replaces_unreviewed_candidate[target]
+FAILED test_reingest_linked_document.py::test_reingest_replaces_unreviewed_candidate[source]
+FAILED test_reingest_linked_document.py::test_reingest_keeps_review_history_of_link_rolled_back_to_candidate
+FAILED test_reingest_linked_document.py::test_database_still_rejects_nulling_live_reviewed_evidence
+FAILED test_reingest_linked_document.py::test_failed_reingest_of_linked_document_is_marked_failed_and_unindexed
+FAILED test_worker_trigger.py::test_claim_specific_job_leases_once_and_refuses_double_processing
+FAILED test_worker_trigger.py::test_process_job_runs_claimed_job_through_normal_completion
+FAILED test_worker_trigger.py::test_sweep_requeues_expired_leases_and_drains_ready_jobs
+25 failed, 144 passed, 8 skipped, 6 warnings in 8.66s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

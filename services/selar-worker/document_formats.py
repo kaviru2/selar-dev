@@ -1,7 +1,26 @@
 """Bounded, network-free WordprocessingML snapshot adapter."""
 from io import BytesIO
 import zipfile
-from defusedxml.ElementTree import fromstring
+from defusedxml.ElementTree import iterparse
+
+
+def fromstring(data):
+    """Bound tree growth during parsing, not after allocating the whole tree."""
+    parser = iterparse(BytesIO(data), events=('start', 'end'), forbid_dtd=True)
+    depth = 0
+    nodes = 0
+    root = None
+    for event, node in parser:
+        if root is None:
+            root = node
+        depth += 1 if event == 'start' else -1
+        nodes += event == 'start'
+        if depth > 128 or nodes > 100000:
+            raise ValueError('DOCX XML depth or node limit exceeded')
+    if root is None:
+        raise ValueError('DOCX XML is empty')
+    return root
+
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 

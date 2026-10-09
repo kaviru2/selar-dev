@@ -1,0 +1,80 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+2026/10/09 12:34:37 connected to database
+2026/10/09 12:34:37 worker trigger enabled: false
+2026/10/09 12:34:37 upload storage backend: local
+2026/10/09 12:34:37 analytics enabled: false; ADMIN_EMAILS entries: 0
+2026/10/09 12:34:37 recaptcha on registration enabled: false
+2026/10/09 12:34:37 google sign-in enabled: false
+2026/10/09 12:34:37 calendar feed: off
+2026/10/09 12:34:37 email notices: off (allowlist empty); transport: dry-run
+2026/10/09 12:34:37 selar-api listening on :62295
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/healthz HTTP/1.1" from 127.0.0.1:62300 - 200 38B in 524µs
+2026/10/09 12:34:37 "POST http://127.0.0.1:62295/auth/register HTTP/1.1" from 127.0.0.1:62301 - 201 534B in 69.426ms
+2026/10/09 12:34:37 "POST http://127.0.0.1:62295/auth/register HTTP/1.1" from 127.0.0.1:62301 - 201 537B in 66.175625ms
+2026/10/09 12:34:37 "POST http://127.0.0.1:62295/api/documents/upload HTTP/1.1" from 127.0.0.1:62301 - 202 954B in 4.4395ms
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/d93ad4eb-7dfb-4467-aefd-2c038340afed/content HTTP/1.1" from 127.0.0.1:62301 - 200 1142B in 2.103167ms
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/d93ad4eb-7dfb-4467-aefd-2c038340afed/content HTTP/1.1" from 127.0.0.1:62301 - 404 39B in 284.75µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/d93ad4eb-7dfb-4467-aefd-2c038340afed HTTP/1.1" from 127.0.0.1:62301 - 404 31B in 275µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/d93ad4eb-7dfb-4467-aefd-2c038340afed HTTP/1.1" from 127.0.0.1:62301 - 200 21B in 6.779792ms
+2026/10/09 12:34:37 "POST http://127.0.0.1:62295/api/documents/upload HTTP/1.1" from 127.0.0.1:62301 - 202 942B in 1.740959ms
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/111d8d52-2f50-46ab-a64c-0bdec8361682/content HTTP/1.1" from 127.0.0.1:62301 - 200 907B in 723.125µs
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/111d8d52-2f50-46ab-a64c-0bdec8361682/content HTTP/1.1" from 127.0.0.1:62301 - 404 39B in 284.125µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/111d8d52-2f50-46ab-a64c-0bdec8361682 HTTP/1.1" from 127.0.0.1:62301 - 404 31B in 172.5µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/111d8d52-2f50-46ab-a64c-0bdec8361682 HTTP/1.1" from 127.0.0.1:62301 - 200 21B in 2.754916ms
+2026/10/09 12:34:37 "POST http://127.0.0.1:62295/api/documents/upload HTTP/1.1" from 127.0.0.1:62301 - 202 1010B in 1.67825ms
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/386e7ec4-0f70-46c4-bb8f-4e06da7c12fe/content HTTP/1.1" from 127.0.0.1:62301 - 200 1107B in 574.875µs
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/386e7ec4-0f70-46c4-bb8f-4e06da7c12fe/content HTTP/1.1" from 127.0.0.1:62301 - 404 39B in 143.042µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/386e7ec4-0f70-46c4-bb8f-4e06da7c12fe HTTP/1.1" from 127.0.0.1:62301 - 404 31B in 154.334µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/386e7ec4-0f70-46c4-bb8f-4e06da7c12fe HTTP/1.1" from 127.0.0.1:62301 - 200 21B in 1.650708ms
+2026/10/09 12:34:37 "POST http://127.0.0.1:62295/api/documents/upload HTTP/1.1" from 127.0.0.1:62301 - 202 946B in 1.477ms
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/92cad7e1-ee65-478a-a334-3758eb92a9e0/content HTTP/1.1" from 127.0.0.1:62301 - 200 948B in 590.791µs
+2026/10/09 12:34:37 "GET http://127.0.0.1:62295/api/documents/92cad7e1-ee65-478a-a334-3758eb92a9e0/content HTTP/1.1" from 127.0.0.1:62301 - 404 39B in 189.917µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/92cad7e1-ee65-478a-a334-3758eb92a9e0 HTTP/1.1" from 127.0.0.1:62301 - 404 31B in 176.584µs
+2026/10/09 12:34:37 "DELETE http://127.0.0.1:62295/api/documents/92cad7e1-ee65-478a-a334-3758eb92a9e0 HTTP/1.1" from 127.0.0.1:62301 - 200 21B in 1.904333ms
+2026/10/09 12:34:37 shutting down server...
+server stopped
+Warning: GEMINI_API_KEY is not set.
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for d93ad4eb-7dfb-4467-aefd-2c038340afed...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for d93ad4eb-7dfb-4467-aefd-2c038340afed...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed d93ad4eb-7dfb-4467-aefd-2c038340afed
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 111d8d52-2f50-46ab-a64c-0bdec8361682...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 111d8d52-2f50-46ab-a64c-0bdec8361682...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 111d8d52-2f50-46ab-a64c-0bdec8361682
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 386e7ec4-0f70-46c4-bb8f-4e06da7c12fe...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 386e7ec4-0f70-46c4-bb8f-4e06da7c12fe...
+Mental model -> Concepts: 1, unverified edges deferred
+Successfully processed 386e7ec4-0f70-46c4-bb8f-4e06da7c12fe
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 92cad7e1-ee65-478a-a334-3758eb92a9e0...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 92cad7e1-ee65-478a-a334-3758eb92a9e0...
+Mental model -> Concepts: 4, unverified edges deferred
+Successfully processed 92cad7e1-ee65-478a-a334-3758eb92a9e0
+.
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 5 warnings in 1.90s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

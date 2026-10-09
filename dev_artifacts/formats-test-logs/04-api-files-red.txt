@@ -1,0 +1,5 @@
+--- FAIL: TestTextFileUploadPlan (0.00s)
+    file_formats_test.go:13: notes.md: 400 {"error":"only PDF allowed"}
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	0.623s
+FAIL

@@ -28,6 +28,8 @@ it("puts all existing import entry points together and hides empty statistics/so
   const imports = host.querySelector("#library-imports");
   expect(imports).not.toBeNull();
   expect(imports?.textContent).toContain("Add content");
+  expect(imports?.textContent).toContain("Markdown, TXT or DOCX");
+  expect(imports?.textContent).toContain("native Google Doc");
   expect(imports?.textContent).toContain("Import from Google Drive");
   expect(host.querySelector('[aria-label="Library summary"]')).toBeNull();
   expect(host.textContent).not.toContain("Sources fixture");

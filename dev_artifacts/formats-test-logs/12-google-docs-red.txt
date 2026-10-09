@@ -1,0 +1,5 @@
+--- FAIL: TestIntegrationGoogleDocsSnapshotWithoutSize (0.01s)
+    google_docs_test.go:28: 400 exported=false {"error":"Only PDF files can be imported from Google Drive"}
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	1.014s
+FAIL
