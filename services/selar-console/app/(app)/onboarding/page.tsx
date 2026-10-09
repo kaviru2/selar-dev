@@ -15,7 +15,9 @@ export default function OnboardingPage() {
       <h2>Wait for Ready, then open the reading</h2>
       <p>Queued and processing readings update in Library. You can leave and return later. If processing fails, use Retry or add another reading. Ready means processing finished, not that you have learned the material.</p>
       <h2>Read at your own pace</h2>
-      <p>With more readings, SELAR may suggest connections. Check the source passages before relying on them. You do not need a connection to start reading.</p>
+      <p>Before reading and end-reading checks offer optional recall practice. You can continue reading without answering; generated practice and feedback may use cloud quota and do not establish mastery.</p>
+      <p>With more readings, SELAR may suggest connections as learning prompts. Recall similarities and differences, compare exact source passages, and use “This link is wrong” to hide an unsuitable prompt. Shared wording is not proof of a relationship. You do not need a connection to start reading.</p>
+      <p><Link href="/review">Review</Link> offers scheduled practice after an end-reading check; <Link href="/progress">Progress</Link> shows observed practice activity, not proven retention gains.</p>
       <p><Link href="/settings">Reading preferences</Link> are optional. You can dismiss the library guide and reopen it from Start here whenever you need help.</p>
       <p>Do not upload sensitive or confidential material.</p>
     </section>

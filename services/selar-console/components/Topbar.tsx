@@ -75,12 +75,8 @@ export function Topbar() {
 
       <div className="topbar-meta">
         {onReader && (
-          <span className="kbd-hint" aria-label="Keyboard shortcuts: J and K to move between suggestions, Y to confirm">
-            <span className="kbd">J</span>
-            <span className="kbd">K</span>
-            move ·{" "}
-            <span className="kbd">Y</span>
-            confirm
+          <span className="kbd-hint" aria-label="Keyboard shortcuts: brackets toggle reader panels">
+            <span className="kbd">[</span><span className="kbd">]</span> panels
           </span>
         )}
 

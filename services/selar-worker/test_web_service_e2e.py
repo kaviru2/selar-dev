@@ -207,6 +207,7 @@ def test_web_api_queue_snapshot_owner_reader_without_promotion(services, monkeyp
                 "email": f"web-owner-{suffix}@example.invalid", "password": PASSWORD})
             assert login.status == 200, login.text()
             page.goto(f"{console}/reader?docId={web}")
+            page.get_by_role('button', name='Continue reading', exact=True).click()
             reader = page.locator(".article-reader")
             reader.get_by_text(ARTICLE_TEXT).wait_for(timeout=20000)
             assert reader.locator(".article-byline a").get_attribute("href") == ARTICLE_URL

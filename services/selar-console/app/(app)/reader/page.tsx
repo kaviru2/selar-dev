@@ -1,5 +1,6 @@
 "use client";
 
+import { ReadingPractice } from "@/components/ReadingPractice";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -50,6 +51,7 @@ export default function ReaderPage() {
   const prefs = useMemo(() => readerPreferences(preferences), [preferences]);
   const positions = useMemo(() => browserPositionStore(), []);
 
+  const [readingVisible, setReadingVisible] = useState(false);
   const [docId, setDocId] = useState(searchParams.get("docId") || "");
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [mentalLinks, setMentalLinks] = useState<MentalModelLink[]>([]);
@@ -142,7 +144,7 @@ export default function ReaderPage() {
   }, [fallbackSuggestionsOn]);
 
   useEffect(() => {
-    if (!docId || documentContent?.document.status !== "ready") return;
+    if (!docId || !readingVisible || documentContent?.document.status !== "ready") return;
 
     const telemetry = createReaderTelemetry();
     telemetryRef.current = telemetry;
@@ -171,7 +173,7 @@ export default function ReaderPage() {
       if (sessionID) endSession(sessionID);
       if (telemetryRef.current === telemetry) telemetryRef.current = null;
     };
-  }, [docId, documentContent?.document.status]);
+  }, [docId, readingVisible, documentContent?.document.status]);
 
   // Pages count as viewed after a short dwell, so scrolling past a page does not.
   const dwellRef = useRef<DwellTracker | null>(null);
@@ -395,6 +397,7 @@ export default function ReaderPage() {
   const showViewer = Boolean(docId && isPdf && !loading && ingestionState !== "processing" && ingestionState !== "failed");
 
   return (
+    <ReadingPractice key={docId} documentId={ingestionState === "ready" ? docId : ""} onReadingChange={setReadingVisible}>
     <div className={`reader${layout.libraryOpen ? " has-library" : ""}${layout.connectionsOpen ? " has-connections" : ""}`}>
       <div
         id="reader-library"
@@ -534,6 +537,7 @@ export default function ReaderPage() {
         />
       )}
     </div>
+    </ReadingPractice>
   );
 }
 
