@@ -800,13 +800,10 @@ export default function GraphPage() {
                 background: "rgba(94,138,170,.06)"
               }}>
                 <span style={{ fontSize: 10, lineHeight: 1.45, color: "var(--ink-3)" }}>
-                  This concept was discovered from cited chat evidence. Confirm it before treating it as established knowledge.
+                  This concept was discovered from cited chat evidence. Explore its source passages as learning material.
                 </span>
                 <div style={{ display: "flex", gap: 7 }}>
-                  <button onClick={() => respondToConcept(selectedNode.id, "confirm")} style={{
-                    border: "1px solid rgba(122,140,92,.45)", borderRadius: 4,
-                    background: "rgba(122,140,92,.1)", color: "#607044", padding: "6px 10px", cursor: "pointer", fontSize: 10
-                  }}>Confirm concept</button>
+                  <p>Source-grounded candidate concept; not evidence of mastery or established knowledge.</p>
                   <button onClick={() => respondToConcept(selectedNode.id, "reject")} style={{
                     border: "1px solid rgba(163,59,50,.28)", borderRadius: 4,
                     background: "transparent", color: "#a33b32", padding: "6px 10px", cursor: "pointer", fontSize: 10
@@ -936,10 +933,7 @@ export default function GraphPage() {
                     )}
                     {(l.state === "candidate" || l.state === "supported") && l.created_via === "deterministic_chat" && (
                       <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={(event) => event.stopPropagation()}>
-                        <button onClick={() => respondToEdge(l.id, "confirm")} style={{
-                          border: "1px solid rgba(122,140,92,.4)", borderRadius: 4, background: "rgba(122,140,92,.08)",
-                          color: "#607044", padding: "4px 8px", cursor: "pointer", fontSize: 9
-                        }}>Confirm</button>
+                        <span>Historical chat suggestion; no relationship is established by co-citation.</span>
                         <button onClick={() => respondToEdge(l.id, "reject")} style={{
                           border: "1px solid rgba(163,59,50,.25)", borderRadius: 4, background: "transparent",
                           color: "#a33b32", padding: "4px 8px", cursor: "pointer", fontSize: 9
