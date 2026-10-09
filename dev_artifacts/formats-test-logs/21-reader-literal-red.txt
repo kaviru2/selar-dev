@@ -1,0 +1,29 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console
+
+ ❯ components/document-formats.test.tsx (5 tests | 1 failed) 30ms
+   × renders DOCX tables and TXT literally without interpreting Markdown 20ms
+     → expected +0 to be 4 // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  components/document-formats.test.tsx > renders DOCX tables and TXT literally without interpreting Markdown
+AssertionError: expected +0 to be 4 // Object.is equality
+
+- Expected
++ Received
+
+- 4
++ 0
+
+ ❯ components/document-formats.test.tsx:19:50
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  12:35:49
+   Duration  1.23s (transform 41ms, setup 0ms, collect 205ms, tests 30ms, environment 578ms, prepare 50ms)
+

@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,30 +79,50 @@ func (h *Handler) ImportDriveFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": driveErrorMessage(status)})
 		return
 	}
-	if meta.MimeType != pdfContentType {
-		badRequest(w, "Only PDF files can be imported from Google Drive")
+	native := meta.MimeType == "application/vnd.google-apps.document"
+	if meta.MimeType != pdfContentType && !native {
+		badRequest(w, "Only PDF files and native Google Docs can be imported from Google Drive")
 		return
 	}
-	size, err := strconv.ParseInt(meta.Size, 10, 64)
-	if err != nil || size <= 0 {
+	size, sizeErr := strconv.ParseInt(meta.Size, 10, 64)
+	if !native && (sizeErr != nil || size <= 0) {
 		badRequest(w, "The Drive file is empty")
 		return
 	}
-	if size > maxPDFSize {
+	limit := maxPDFSize
+	if native {
+		limit = 10 << 20
+	}
+	if !native && size > limit {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
 		return
 	}
 
-	body, status, err := h.driveDownload(r.Context(), req.FileID, req.AccessToken)
+	var body io.ReadCloser
+	if native {
+		body, status, err = h.driveExport(r.Context(), req.FileID, req.AccessToken)
+	} else {
+		body, status, err = h.driveDownload(r.Context(), req.FileID, req.AccessToken)
+	}
 	if err != nil {
-		log.Printf("drive import: download: %v", err)
 		writeJSON(w, status, map[string]string{"error": driveErrorMessage(status)})
 		return
 	}
 	defer body.Close()
-	reader := bufio.NewReaderSize(io.LimitReader(body, size), 64<<10)
-	magic, err := reader.Peek(len(pdfMagic))
-	if err != nil || !bytes.Equal(magic, pdfMagic) {
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read Drive snapshot"})
+		return
+	}
+	if int64(len(data)) > limit {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file too large"})
+		return
+	}
+	if !native && int64(len(data)) != size {
+		badRequest(w, "Drive file size changed; select it again")
+		return
+	}
+	if !bytes.HasPrefix(data, pdfMagic) {
 		badRequest(w, "file is not a valid PDF")
 		return
 	}
@@ -111,9 +131,30 @@ func (h *Handler) ImportDriveFile(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasSuffix(strings.ToLower(title), ".pdf") {
 		title = cleanPDFTitle(title + ".pdf")
 	}
-	h.createPDFIngestion(w, r, userID, title, func(ctx context.Context, documentID string) (string, error) {
-		return h.storage.Put(ctx, storage.PDFKey(documentID), reader, size, pdfContentType)
+	metadata, _ := json.Marshal(map[string]any{"provider": "google_drive", "provider_file_id": req.FileID,
+		"provider_mime_type": meta.MimeType, "original_filename": meta.Name, "imported_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"snapshot": true, "sync": false, "export_mime_type": pdfContentType, "export_sha256": fmt.Sprintf("%x", sha256.Sum256(data))})
+	h.createFileIngestion(w, r, userID, title, "pdf", pdfContentType, metadata, func(ctx context.Context, documentID string) (string, error) {
+		return h.storage.Put(ctx, storage.PDFKey(documentID), bytes.NewReader(data), int64(len(data)), pdfContentType)
 	})
+}
+
+func (h *Handler) driveExport(ctx context.Context, fileID, token string) (io.ReadCloser, int, error) {
+	u := h.driveBase() + "/" + url.PathEscape(fileID) + "/export?" + url.Values{"mimeType": {pdfContentType}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, http.StatusBadGateway, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := driveHTTP.Do(req)
+	if err != nil {
+		return nil, http.StatusBadGateway, err
+	}
+	if res.StatusCode != http.StatusOK {
+		res.Body.Close()
+		return nil, driveStatus(res.StatusCode), fmt.Errorf("drive export status %d", res.StatusCode)
+	}
+	return res.Body, http.StatusOK, nil
 }
 
 func driveErrorMessage(status int) string {

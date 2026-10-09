@@ -190,3 +190,224 @@ def test_backfill_cli_dry_run_rolls_back(worker, monkeypatch):
             await conn.execute("DELETE FROM users WHERE id=$1", owner)
             await conn.close()
     asyncio.run(exercise())
+
+
+# ── Up to MAX_LINKS_PER_PAIR grounded concept links per reading pair ──
+
+from candidate_generation import MAX_LINKS_PER_PAIR, candidate_terms, rank_shared_terms, select_witnesses
+
+
+def test_cap_is_five():
+    assert MAX_LINKS_PER_PAIR == 5
+
+
+def test_candidate_terms_union_names_and_derived_subterms():
+    first = {"key_concepts": [{"name": "Compensation-based recovery"}, "Saga Pattern"]}
+    second = {"key_concepts": ["Retry-Aware Compensation (RAC)", "Agent System Model"]}
+    terms = candidate_terms(first, second)
+    assert terms["compensation-based recovery"] is True and terms["saga pattern"] is True
+    assert terms["retry-aware compensation (rac)"] is True
+    # Derived sub-terms: parentheticals/acronyms stripped, generic and short words dropped.
+    assert terms["compensation"] is False and terms["recovery"] is False
+    assert terms["retry-aware compensation"] is False
+    assert terms["agent system model"] is True
+    for generic in ("system", "agent", "model", "rac", "saga", "pattern", "based"):
+        assert generic not in terms
+
+
+def text_rows(doc, sentences):
+    return [row(doc, f"{doc}{i}", s) for i, s in enumerate(sentences)]
+
+
+def test_derived_subterm_needs_two_chunks_in_each_document():
+    a = text_rows("a", ["Compensation undoes a step.", "Compensation is logged.", "Unrelated."])
+    b = text_rows("b", ["Compensation is rare here.", "Unrelated text."])
+    terms = {"compensation": False}
+    assert rank_shared_terms(terms, a, b) == []
+    b.append(row("b", "b9", "Compensation again appears."))
+    assert [t for t, *_ in rank_shared_terms(terms, a, b)] == ["compensation"]
+
+
+def test_ranking_prefers_original_names_then_evidence_then_multiword():
+    a = text_rows("a", ["The orchard ledger protocol is old.", "Recovery happens.", "Recovery again.",
+                        "Recovery thrice.", "Compensation once.", "Compensation twice."])
+    b = text_rows("b", ["We cite the orchard ledger protocol.", "Recovery here.", "Recovery there.",
+                        "Recovery everywhere.", "Compensation one.", "Compensation two."])
+    terms = {"orchard ledger protocol": True, "compensation": False, "recovery": False}
+    assert [t for t, *_ in rank_shared_terms(terms, a, b)] == ["orchard ledger protocol", "recovery", "compensation"]
+
+
+def _shared(n):
+    names = [f"fabricated concept {chr(97 + i)}lpha" for i in range(n)]
+    a = text_rows("a", [f"Here the {name} is defined." for name in names])
+    b = text_rows("b", [f"Later the {name} is reused." for name in names])
+    return names, a, b
+
+
+def test_select_witnesses_caps_and_skips_existing_concepts():
+    names, a, b = _shared(8)
+    model = {"key_concepts": names}
+    found = select_witnesses(model, {"key_concepts": []}, a, b, OWNER, "a", "b")
+    assert len(found) == MAX_LINKS_PER_PAIR and len({n for n, *_ in found}) == MAX_LINKS_PER_PAIR
+    # Existing active links count toward the cap; reviewed concepts are never re-suggested.
+    existing = {names[0].upper(): "rejected", names[1]: "confirmed", names[2]: "candidate"}
+    again = select_witnesses(model, {"key_concepts": []}, a, b, OWNER, "a", "b", existing)
+    concepts = [n for n, *_ in again]
+    assert len(concepts) == MAX_LINKS_PER_PAIR - 2
+    assert not {names[0], names[1], names[2]} & set(concepts)
+
+
+def test_select_witnesses_dedupes_near_identical_names():
+    a = [row("a", "a0", "The saga pattern coordinates steps."), row("a", "a1", "We call it the Saga Patterns idea.")]
+    b = [row("b", "b0", "A saga pattern is used."), row("b", "b1", "Saga Patterns are classic.")]
+    model = {"key_concepts": ["Saga Pattern", "Saga Patterns"]}
+    found = select_witnesses(model, {"key_concepts": []}, a, b, OWNER, "a", "b")
+    assert [n.lower() for n, *_ in found] == ["saga pattern"]
+
+
+def test_derived_subterm_witness_is_grounded_in_both_quotes():
+    a = text_rows("a", ["Compensation undoes a failed step.", "Compensation is logged twice."])
+    b = text_rows("b", ["Our compensation differs.", "Compensation runs at the end."])
+    first = {"key_concepts": ["Compensation-based recovery"]}
+    second = {"key_concepts": ["Retry-Aware Compensation (RAC)"]}
+    found = select_witnesses(first, second, a, b, OWNER, "a", "b")
+    assert [n for n, *_ in found] == ["compensation"]
+    _, source, target, forward, subterm = found[0]
+    assert forward and subterm
+    assert "compensation" in source["content"].lower() and "compensation" in target["content"].lower()
+
+
+@db
+@pytest.mark.parametrize("side,field", [(side, field) for side in ("source_evidence", "target_evidence")
+                                        for field in ("source_snapshot_hash", "quote", "text_sha256", "asserting_source_id")])
+def test_multi_concept_insert_rejects_tampered_two_sided_snapshot(multi_worker, side, field):
+    import asyncpg
+
+    async def exercise():
+        conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+        owner, early, late = await _owner_with_docs(conn)
+        try:
+            await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+            await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+            link = dict((await _links(conn, owner))[0])
+            evidence = json.loads(link[side]); evidence[field] = "not-the-current-source"
+            link[side] = json.dumps(evidence)
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            with pytest.raises(asyncpg.RaiseError, match="two-sided owner-matched"):
+                await conn.execute("""INSERT INTO mental_model_links
+                    (user_id,source_model_id,target_model_id,link_type,source_evidence_chunk_id,target_evidence_chunk_id,
+                     source_evidence,target_evidence,status,created_via)
+                    VALUES ($1,$2,$3,'concept_overlap',$4,$5,$6::jsonb,$7::jsonb,'candidate','ai_suggested')""",
+                    owner, link["source_model_id"], link["target_model_id"], link["source_evidence_chunk_id"],
+                    link["target_evidence_chunk_id"], link["source_evidence"], link["target_evidence"])
+            assert await _links(conn, owner) == []
+        finally:
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            await conn.execute("DELETE FROM users WHERE id=$1", owner)
+            await conn.close()
+    asyncio.run(exercise())
+
+
+@db
+@pytest.mark.parametrize("direct", [False, True])
+def test_concurrent_opposite_direction_generation_keeps_one_per_concept(multi_worker, direct):
+    import asyncpg
+    from candidate_generation import link_pair, _norm
+
+    async def exercise():
+        conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+        owner, early, late = await _owner_with_docs(conn)
+        peers = []
+        try:
+            await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+            await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+            models = [dict(r) for r in await conn.fetch(
+                "SELECT id AS model_id,document_id,key_concepts FROM document_mental_models WHERE user_id=$1 ORDER BY document_id", owner)]
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            peers = [await asyncpg.connect(os.environ["TEST_DATABASE_URL"]) for _ in range(8)]
+            if direct:
+                from candidate_contract import persist_grounded_overlap
+                from candidate_generation import _ROWS_SQL
+                passages = [dict(await conn.fetchrow(_ROWS_SQL, m["document_id"], owner, 600)) for m in models]
+
+                async def insert_all(c, i):
+                    a, b = i % 2, 1 - i % 2
+                    for name in MULTI:
+                        await persist_grounded_overlap(c, {"key_concepts": [name]}, passages[a], passages[b], owner,
+                                                       models[a]["document_id"], models[b]["document_id"],
+                                                       models[a]["model_id"], models[b]["model_id"], 0.0)
+                await asyncio.gather(*(insert_all(c, i) for i, c in enumerate(peers)))
+            else:
+                await asyncio.gather(*(link_pair(c, owner, models[i % 2], models[1 - i % 2]) for i, c in enumerate(peers)))
+            links = await _links(conn, owner)
+            assert len(links) == MAX_LINKS_PER_PAIR
+            assert len({_norm(json.loads(r["source_evidence"])["asserted_concept"]) for r in links}) == MAX_LINKS_PER_PAIR
+            assert all(r["valid"] for r in links)
+        finally:
+            for c in peers:
+                await c.close()
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            await conn.execute("DELETE FROM users WHERE id=$1", owner)
+            await conn.close()
+    asyncio.run(exercise())
+
+
+MULTI = ["orchard ledger protocol", "harvest audit trail", "fabricated orchard yield",
+         "toy grading rubric", "invented crate tally", "imaginary trellis spacing", "pretend pruning cadence"]
+MULTI_A = "# Invented A\n" + " ".join(f"Notebook A defines the {n} carefully." for n in MULTI) + "\n"
+MULTI_B = "# Invented B\n" + " ".join(f"Article B reuses the {n} later." for n in MULTI) + "\n"
+
+
+@pytest.fixture
+def multi_worker(monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setattr(main, "embed_text_documents",
+                        lambda texts, title="": [[1.0] + [0.0] * 3071 for _ in texts])
+
+    class Models:
+        def generate_content(self, contents, **_):
+            return type("Result", (), {"text": json.dumps({
+                "main_claim": "The invented text describes a fabricated procedure.",
+                "key_concepts": [{"name": n, "description": "toy", "evidence_chunk_index": 0} for n in MULTI],
+                "assumptions": [], "open_questions": [], "domain": "fabricated example",
+                "concept_edges": []})})()
+
+    monkeypatch.setattr(main, "client", type("Client", (), {"models": Models()})())
+    return main
+
+
+@db
+def test_multiple_grounded_links_per_pair_capped_and_rejections_respected(multi_worker):
+    import asyncpg
+    from candidate_generation import backfill_owner
+
+    async def exercise():
+        conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+        owner, early, late = await _owner_with_docs(conn)
+        try:
+            await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+            await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+            links = await _links(conn, owner)
+            assert len(links) == MAX_LINKS_PER_PAIR
+            assert all(l["valid"] and l["status"] == "candidate" for l in links)
+            concepts = [json.loads(l["source_evidence"])["asserted_concept"].lower() for l in links]
+            assert len(set(concepts)) == MAX_LINKS_PER_PAIR
+            assert all(c in l["bridge_explanation"].lower() for c, l in zip(concepts, links))
+            # Reject one, drop the other candidates, backfill: never re-suggest the rejected concept.
+            rejected = links[0]
+            await conn.execute("""UPDATE mental_model_links SET status='rejected', responded_at=now(),
+                                  review_revision=1 WHERE id=$1""", rejected["id"])
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1 AND status='candidate'", owner)
+            created = await backfill_owner(conn, owner)
+            assert len(created) == MAX_LINKS_PER_PAIR
+            assert concepts[0] not in {c.lower() for _, c in created}
+            assert await backfill_owner(conn, owner) == []  # idempotent, cap reached
+            rows = await _links(conn, owner)
+            assert len(rows) == MAX_LINKS_PER_PAIR + 1
+            assert [r["status"] for r in rows].count("rejected") == 1
+        finally:
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            await conn.execute("DELETE FROM users WHERE id=$1", owner)
+            await conn.close()
+    asyncio.run(exercise())

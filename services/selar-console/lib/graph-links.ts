@@ -78,9 +78,9 @@ export function crossReadingNotice(summary: CrossReadingSummary, candidatesShown
     return {
       title: `${n} suggested link${n === 1 ? "" : "s"} to review`,
       body: (candidatesShown
-        ? "Dashed lines are suggestions SELAR has not verified with you. "
+        ? "Dashed lines are prompts for reflection, not established relationships. "
         : "Turn on “To review” to see them. ")
-        + "Select one to compare both passages, then confirm or reject it in the Reader. Nothing is added to your knowledge until you decide.",
+        + "Select one to compare both source passages in the Reader, try an optional reflection, or quietly hide a wrong prompt. Opening or flagging a prompt is not evidence of recall or mastery.",
     };
   }
   if (summary.reviewed === 0) {

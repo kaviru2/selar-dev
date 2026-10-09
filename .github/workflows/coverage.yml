@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/learning-*', 'test/learning-*']
+    branches: [main, 'feat/learning-*', 'test/learning-*', 'feat/document-format-snapshots']
 
 # Cancel superseded PR runs only; never evict main or manual invocations.
 concurrency:

@@ -13,7 +13,10 @@ type UploadPlan =
       max_bytes?: number;
     };
 
-const PDF_TYPE = "application/pdf";
+export function fileContentType(name: string): string | undefined {
+  const extension = name.toLowerCase().split('.').pop() || '';
+  return ({pdf: 'application/pdf', md: 'text/markdown', markdown: 'text/markdown', txt: 'text/plain', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'} as Record<string,string>)[extension];
+}
 
 async function errorFrom(response: Response, fallback: string): Promise<Error> {
   const payload = await response.json().catch(() => ({}));
@@ -21,12 +24,15 @@ async function errorFrom(response: Response, fallback: string): Promise<Error> {
 }
 
 export async function uploadPDF(file: File): Promise<void> {
-  if (!file.name.toLowerCase().endsWith(".pdf")) throw new Error("Only PDF files can be uploaded");
+  const mime = fileContentType(file.name);
+  if (!mime) throw new Error("Only PDF, Markdown, TXT and DOCX files can be uploaded");
+  const limit = mime === 'application/pdf' ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+  if (file.size > limit || !file.size) throw new Error('File is empty or exceeds its size limit');
 
   const planResponse = await fetch("/api/documents/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: file.name, size: file.size, content_type: PDF_TYPE }),
+    body: JSON.stringify({ filename: file.name, size: file.size, content_type: mime }),
   });
   if (!planResponse.ok) throw await errorFrom(planResponse, "Unable to prepare upload");
   const plan = (await planResponse.json()) as UploadPlan;

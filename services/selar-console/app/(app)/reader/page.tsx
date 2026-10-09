@@ -70,6 +70,8 @@ export default function ReaderPage() {
   const [viewer, setViewer] = useState<ViewerState>({ page: 1, numPages: 0 });
   const [navRequest, setNavRequest] = useState<NavRequest | null>(null);
   const navSeq = useRef(0);
+  const annotationDocRef = useRef(docId);
+  useEffect(() => { annotationDocRef.current = docId; }, [docId]);
   const telemetryRef = useRef<ReaderTelemetry | null>(null);
   const panels = useReaderLayout();
   const { layout, toggle: togglePanel, setOpen: setPanelOpen } = panels;
@@ -294,14 +296,28 @@ export default function ReaderPage() {
     color: string,
     page: number,
     comment = "",
+    anchor?: Annotation["anchor"],
   ) => {
     const annotation = await clientFetch<Annotation>("/api/annotations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ document_id: docId, page, bbox: bboxes, type, color, comment }),
+      body: JSON.stringify({ document_id: docId, page, bbox: bboxes, type, color, comment, anchor }),
     });
-    setAnnotations((current) => [...current, annotation]);
+    if (annotationDocRef.current === docId) setAnnotations((current) => [...current, annotation]);
   }, [docId]);
+
+  const updateAnnotation = useCallback(async (annotation: Annotation, color: Annotation["color"], comment: string) => {
+    const saved = await clientFetch<Annotation>(`/api/annotations/${annotation.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color, comment, source_hash: annotation.anchor?.source_hash }),
+    });
+    if (annotationDocRef.current === annotation.document_id) setAnnotations(current => current.map(a => a.id === saved.id ? saved : a));
+  }, []);
+
+  const deleteAnnotation = useCallback(async (annotation: Annotation) => {
+    await clientFetch(`/api/annotations/${annotation.id}`, { method: "DELETE" });
+    if (annotationDocRef.current === annotation.document_id) setAnnotations(current => current.filter(a => a.id !== annotation.id));
+  }, []);
 
   // Passage matches are similarity-only (relation "unclassified"); the API
   // refuses to confirm them, so the reader can only dismiss them (#96).
@@ -459,6 +475,9 @@ export default function ReaderPage() {
             onPositionChange={onPositionChange}
             onScrollDepth={onScrollDepth}
             onCreateAnnotation={createAnnotation}
+            onUpdateAnnotation={updateAnnotation}
+            onDeleteAnnotation={deleteAnnotation}
+            sourceHash={documentContent?.document.content_hash || ""}
             onRespondSuggestion={respondToPassage}
             onOpenSuggestionTarget={(suggestion) => {
               if (!suggestion.tgt_document_id) return;

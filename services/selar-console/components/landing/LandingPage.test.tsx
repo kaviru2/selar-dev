@@ -21,8 +21,13 @@ describe("public landing page", () => {
     expect(html.match(/<h1[ >]/g)).toHaveLength(1);
   });
 
-  it("explains the four-step loop", () => {
-    for (const step of ["Notice", "Explain", "Compare", "Decide"]) expect(text).toContain(step);
+  it("describes optional reflection, source checks and quiet flags without promising saved history", () => {
+    for (const step of ["Notice", "Reflect", "Compare", "Continue"]) expect(text).toContain(step);
+    expect(text).toContain("not saved");
+    expect(text).toContain("not graded");
+    expect(text).toContain("This link is wrong");
+    expect(text).toContain("does not establish a relationship");
+    expect(text).not.toMatch(/keep the link|change it, or reject|reading history|before you see the AI's reason/i);
   });
 
   it("marks SELAR as a research prototype and credits the team and supervisor", () => {

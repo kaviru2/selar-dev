@@ -1,0 +1,163 @@
+ok  	github.com/selar-dev/selar-api/cmd/admin	2.081s
+?   	github.com/selar-dev/selar-api/cmd/migrate	[no test files]
+?   	github.com/selar-dev/selar-api/cmd/replay	[no test files]
+ok  	github.com/selar-dev/selar-api/cmd/server	14.640s
+ok  	github.com/selar-dev/selar-api/internal/allowlist	2.581s
+ok  	github.com/selar-dev/selar-api/internal/analytics	4.174s
+ok  	github.com/selar-dev/selar-api/internal/calendar	3.378s
+ok  	github.com/selar-dev/selar-api/internal/dbconfig	5.926s
+ok  	github.com/selar-dev/selar-api/internal/googleauth	7.363s
+--- FAIL: TestIntegrationExportMyDataIsAZipOfOwnRowsOnly (0.02s)
+    account_data_test.go:73: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationDeleteAccountRemovesRowsAndStoredObjects (0.01s)
+    account_data_test.go:135: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationDeleteAccountWithReviewedGroundedLink (0.01s)
+    account_data_test.go:186: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationSettingsMergeDefaultsAndCohortLock (0.01s)
+    account_test.go:111: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationLegacyPreferencesRouteMergesAndIgnoresUnknownKeys (0.01s)
+    account_test.go:147: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationProfileAndEmailChange (0.01s)
+    account_test.go:165: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationPasswordChangeEndsOtherSessions (0.01s)
+    account_test.go:188: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationAdminEmailsBootstrapAndForbidOthers (0.19s)
+    analytics_test.go:150: register selar.qa+admin-51dc5e3e@example.com: 409 {"error":"email already in use"}
+--- FAIL: TestIntegrationConsentBeaconExportAndDeleteMyData (0.18s)
+    analytics_test.go:182: register selar.qa+admin-b260d086@example.com: 409 {"error":"email already in use"}
+--- FAIL: TestIntegrationCalendarFeedLifecycle (0.00s)
+    calendar_test.go:61: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationDirectUploadQueuesStorageLocatorAndOwnerOnlyDelete (0.00s)
+    direct_upload_integration_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+2026/10/09 13:12:42 drive import: metadata: drive metadata status 401
+2026/10/09 13:12:42 drive import: metadata: drive metadata status 404
+2026/10/09 13:12:42 drive import: metadata: drive metadata status 500
+--- FAIL: TestIntegrationDriveImportQueuesIngestion (0.00s)
+    drive_import_test.go:143: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationTextFilesQueueOriginal (0.00s)
+    file_formats_test.go:43: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationDirectFormatFiles (0.00s)
+    file_formats_test.go:117: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationFlagCannotRetractNewerDisplayedRevision (0.00s)
+    flag_revision_test.go:26: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+2026/10/09 13:12:42 google sign-in: invalid Google ID token
+aud
+--- FAIL: TestIntegrationGoogleSignInCreatesThenSignsIn (0.02s)
+    google_auth_test.go:121: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationGoogleSignInLinksVerifiedMatchingEmail (0.03s)
+    google_auth_test.go:165: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationGoogleDocsSnapshotWithoutSize (0.01s)
+    google_docs_test.go:43: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationGraphProjectsGroundedCandidatesDistinctly (0.01s)
+    graph_candidates_integration_test.go:46: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationLockedCohortCannotUseKnownWitnessID (0.00s)
+    learning_links_test.go:27: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationEmailNoticesDryRunEndToEnd (0.01s)
+    notifications_test.go:69: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationSuggestionConditionGate (0.01s)
+    suggestion_gate_integration_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationUnclassifiedPassageResponseStatusCodes (0.00s)
+    unclassified_passage_integration_test.go:40: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+2026/10/09 13:12:42 recaptcha refused register: recaptcha: token missing
+2026/10/09 13:12:42 recaptcha refused register: recaptcha: token rejected
+2026/10/09 13:12:42 WARNING recaptcha unavailable, allowing register without verification: recaptcha: verification service unavailable
+dial tcp: timeout
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	8.360s
+ok  	github.com/selar-dev/selar-api/internal/linktoken	6.919s
+ok  	github.com/selar-dev/selar-api/internal/middleware	6.860s
+--- FAIL: TestIntegrationRunAppliesAllThenIsIdempotent (0.03s)
+    integration_test.go:51: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationAdoptsDockerInitdbDatabaseAndAppliesTheRest (0.00s)
+    integration_test.go:78: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationStatusIsReadOnly (0.00s)
+    integration_test.go:118: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationRefusesEditedAppliedMigration (0.00s)
+    integration_test.go:143: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationRefusesAmbiguousPartialSchema (0.00s)
+    integration_test.go:160: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestIntegrationPracticeUpgradePreservesFormalInstruments (0.00s)
+    practice_upgrade_test.go:9: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/migrate	6.983s
+ok  	github.com/selar-dev/selar-api/internal/model	7.299s
+ok  	github.com/selar-dev/selar-api/internal/notify	6.340s
+ok  	github.com/selar-dev/selar-api/internal/offlinegraph	7.488s
+ok  	github.com/selar-dev/selar-api/internal/quiz	6.958s
+ok  	github.com/selar-dev/selar-api/internal/recaptcha	7.353s
+ok  	github.com/selar-dev/selar-api/internal/settings	6.928s
+ok  	github.com/selar-dev/selar-api/internal/storage	6.499s
+?   	github.com/selar-dev/selar-api/internal/storage/storagetest	[no test files]
+--- FAIL: TestAccountDeletionWritesAnonymousWithdrawalRecord (0.03s)
+    account_withdrawal_test.go:32: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsRecordsPerUserEventsOnlyWithConsent (0.00s)
+    analytics_test.go:57: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsWithdrawingConsentStopsRecordingAndDeleteRemovesEvents (0.00s)
+    analytics_test.go:88: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsDeletingAUserDeletesTheirEvents (0.00s)
+    analytics_test.go:111: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsPromoteByEmailAndRoleLookup (0.00s)
+    analytics_test.go:125: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsAdminAggregatesFilterByGroupAndDate (0.00s)
+    analytics_test.go:149: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsGroupLabelValidation (0.00s)
+    analytics_test.go:201: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAnalyticsQuizAttemptFacts (0.00s)
+    analytics_test.go:213: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestChatFeedbackRollbackUnhelpfulRetractsHelpfulEvidence (0.00s)
+    chat_feedback_rollback_test.go:124: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestChatFeedbackRollbackHelpfulAfterNegativeDoesNotReinforce (0.00s)
+    chat_feedback_rollback_test.go:162: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestChatGraphSafetyFeedbackAndLegacyProjection (0.00s)
+    chat_graph_safety_test.go:36: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedChatConceptDiscoveryIntegration (0.00s)
+    chat_test.go:53: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestDeleteDocumentWithReviewedGroundedLinkCascades (0.00s)
+    delete_linked_document_test.go:14: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestDeleteDocumentWithCandidateGroundedLinkCascades (0.00s)
+    delete_linked_document_test.go:35: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizLearnerFlowEnforcesPolicyAndHidesKeys (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizFeedbackNeverHidesScoreAndKeys (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizTimeLimitAutoSubmitsAndRejectsLateAnswers (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizNoGoingBackServesOnlyCurrentQuestion (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizAudienceWindowAndRelativeAnchor (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizEditingLocksQuestionsOnceAttemptsExist (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestQuizCloseAndExpiredDeadlinesFinaliseAttemptsForAdmins (0.00s)
+    quiz_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestResearchAssertionProvenanceLifecycle (0.00s)
+    research_assertions_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedReviewRejectsMissingAndChangedWitness (0.00s)
+    reviewed_invalid_test.go:9: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedReviewQuarantinesLegacyMentalConceptEdges (0.00s)
+    reviewed_legacy_test.go:6: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedReviewLifecycleAndCurrentGraphProjection (0.00s)
+    reviewed_lifecycle_test.go:9: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedReviewPreviewIsOwnerScopedAndSideEffectFree (0.00s)
+    reviewed_links_test.go:57: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedReviewHidesSupersededModelVersion (0.00s)
+    reviewed_version_test.go:9: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestGroundedReviewUnclassifiedPassageMatchDismissOnly (0.00s)
+    unclassified_passage_test.go:39: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAccountMergeUserSettingsKeepsOtherKeys (0.00s)
+    user_settings_test.go:40: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAccountCohortLocksAreScopedToCohort (0.00s)
+    user_settings_test.go:57: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAccountUpdateEmailRejectsTakenAddressCaseInsensitively (0.00s)
+    user_settings_test.go:77: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAccountUpdatePasswordBumpsSessionVersion (0.00s)
+    user_settings_test.go:101: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAccountDisplayNameRoundTrip (0.00s)
+    user_settings_test.go:124: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+--- FAIL: TestAccountListAndDeleteCohortSettingLocks (0.00s)
+    user_settings_test.go:135: failed to connect to `user=postgres database=selar_e2e_formats`: 127.0.0.1:55449 (127.0.0.1): server error: FATAL: role "postgres" does not exist (SQLSTATE 28000)
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/store	5.774s
+?   	github.com/selar-dev/selar-api/internal/store/migrations	[no test files]
+ok  	github.com/selar-dev/selar-api/internal/workertrigger	5.871s
+FAIL

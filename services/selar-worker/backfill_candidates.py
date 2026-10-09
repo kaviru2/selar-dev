@@ -4,8 +4,8 @@ Usage: DATABASE_URL=... python backfill_candidates.py <owner-uuid> [--dry-run]
 
 Runs the same exact two-sided witness contract as ingestion over every pair of
 the owner's latest ready reading models, in both directions. It makes no model
-calls, never updates or deletes a link, skips any pair that already has a link
-(including a learner rejection), and every insert still passes the database
+calls, never updates or deletes a link, adds at most MAX_LINKS_PER_PAIR links per
+pair, never re-suggests a concept already linked (including a learner rejection), and every insert still passes the database
 ``grounded_mental_link_write`` trigger. ``--dry-run`` rolls the transaction back.
 """
 import asyncio

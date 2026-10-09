@@ -60,7 +60,7 @@ export function DriveImportFooter({ onImported }: { onImported?: () => void }) {
       <span role="status" aria-live="polite" style={{ fontSize: 11, color: status.kind === "error" ? "var(--error)" : "var(--ink-4)" }}>
         {status.kind === "done" && `Importing “${status.name}”. It will appear above when processed.`}
         {status.kind === "error" && status.message}
-        {status.kind === "idle" && "Pick a PDF; SELAR sees only the files you choose."}
+        {status.kind === "idle" && "Pick a PDF or Google Doc. Imported as a snapshot, not synced; only the files you choose are shared."}
       </span>
     </div>
   );

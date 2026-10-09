@@ -1,0 +1,34 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________________ test_docx_rejects_excessive_xml_depth _____________________
+
+    def test_docx_rejects_excessive_xml_depth():
+>       from document_formats import docx_blocks
+
+test_file_formats.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Bounded, network-free WordprocessingML snapshot adapter."""
+    from io import BytesIO
+    import zipfile
+>   from defusedxml.ElementTree import fromstring
+E   ModuleNotFoundError: No module named 'defusedxml'
+
+document_formats.py:4: ModuleNotFoundError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_file_formats.py::test_docx_rejects_excessive_xml_depth - ModuleNo...
+1 failed, 13 deselected, 5 warnings in 0.61s
+<sys>:0: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

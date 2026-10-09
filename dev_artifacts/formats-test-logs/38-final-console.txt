@@ -1,0 +1,205 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console
+
+ ✓ lib/reader/navigation.test.ts (19 tests) 33ms
+ ✓ lib/theme.test.tsx (9 tests) 136ms
+stderr | components/ConnectionsPanel.interaction.test.tsx > guided connections sidebar > lets the reader open a compare quote in place, and falls back to the link otherwise
+Not implemented: navigation to another Document
+
+ ✓ components/admin-quiz/admin-quiz.interaction.test.tsx (6 tests) 237ms
+stderr | components/ConnectionsPanel.interaction.test.tsx > guided connections sidebar > keeps a link with a revision-bound decision and offers undo
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | components/ConnectionsPanel.interaction.test.tsx > guided connections sidebar > keeps a link with a revision-bound decision and offers undo
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | components/processing-disclosure.test.tsx > processing disclosure in real entry points > announces direct-upload server errors and resets the chooser for retry
+Error: Upload rejected
+    at errorFrom (/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console/lib/upload.ts:23:10)
+    at Module.uploadPDF (/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console/lib/upload.ts:37:31)
+    at handleUpload (/Users/kavirum1a/.hermes/cache/scratch/selar-formats/services/selar-console/components/UploadButton.tsx:22:7)
+
+stderr | components/ConnectionsPanel.interaction.test.tsx > guided connections sidebar > requires a reason before marking a link as not real
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ components/processing-disclosure.test.tsx (7 tests) 421ms
+stderr | components/ConnectionsPanel.interaction.test.tsx > guided connections sidebar > relabels with the learner's own note
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ConnectionsPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ components/reader/PdfViewer.popover.test.tsx (6 tests) 646ms
+ ✓ components/ConnectionsPanel.interaction.test.tsx (10 tests) 694ms
+ ✓ app/(auth)/auth-pages.test.tsx (12 tests) 653ms
+ ✓ lib/design-tokens.test.ts (69 tests) 13ms
+ ✓ components/quiz/TakeQuiz.interaction.test.tsx (5 tests) 606ms
+   ✓ TakeQuiz > debounces text autosave 341ms
+ ✓ lib/analytics.test.ts (9 tests) 6ms
+(node:7029) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ lib/quiz/quiz.test.ts (7 tests) 59ms
+ ✓ components/GraphCorrectionProposal.test.tsx (2 tests) 101ms
+ ✓ app/(app)/settings/page.test.tsx (7 tests) 955ms
+ ✓ app/(app)/chat/graph-safety.test.tsx (3 tests) 184ms
+ ✓ lib/reader-layout.test.ts (13 tests) 10ms
+ ✓ lib/upload.test.ts (4 tests) 26ms
+ ✓ lib/graph-links.test.ts (7 tests) 9ms
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > keeps analytics off and shows a one-time prompt for undecided users
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > keeps analytics off and shows a one-time prompt for undecided users
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > enables analytics after an explicit yes and records the choice
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > enables analytics after an explicit yes and records the choice
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > enables analytics after an explicit yes and records the choice
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > stays off after 'No thanks'
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > stays off after 'No thanks'
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > stays off after 'No thanks'
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > does not prompt users who already decided, and enables only consenting ones
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > does not prompt users who already decided, and enables only consenting ones
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | components/AnalyticsProvider.test.tsx > AnalyticsProvider > does not prompt users who already decided, and enables only consenting ones
+The current testing environment is not configured to support act(...)
+
+ ✓ components/AnalyticsProvider.test.tsx (4 tests) 162ms
+ ✓ app/api/[...go_api]/route.test.ts (5 tests) 40ms
+ ✓ lib/reader/text-anchor.test.ts (10 tests) 4ms
+ ✓ lib/settings.test.ts (15 tests) 17ms
+ ✓ components/DriveImportFooter.test.tsx (4 tests) 200ms
+ ✓ components/CalendarSettings.test.tsx (3 tests) 195ms
+ ✓ lib/reader/position.test.ts (6 tests) 15ms
+ ✓ lib/api.test.ts (7 tests) 11ms
+ ✓ components/auth/Recaptcha.test.tsx (4 tests) 313ms
+ ✓ components/document-formats.test.tsx (6 tests) 127ms
+ ✓ lib/connection-guide.test.ts (5 tests) 29ms
+ ✓ app/api/auth/account-routes.test.ts (4 tests) 24ms
+ ✓ components/landing/LandingPage.test.tsx (7 tests) 11ms
+ ✓ components/EmailNoticeSettings.test.tsx (2 tests) 181ms
+ ✓ components/ui/ui-kit.test.tsx (5 tests) 23ms
+ ✓ lib/reader/dwell.test.ts (4 tests) 6ms
+ ✓ lib/reader/rects.test.ts (5 tests) 7ms
+ ✓ lib/admin.test.ts (6 tests) 12ms
+ ✓ lib/google-drive.test.ts (4 tests) 16ms
+ ✓ components/AssertionProvenance.test.tsx (2 tests) 100ms
+ ✓ lib/nav.test.ts (4 tests) 6ms
+ ✓ lib/reader-highlights.test.ts (2 tests) 6ms
+ ✓ lib/safe-redirect.test.ts (20 tests) 19ms
+ ✓ lib/reader-telemetry.test.ts (3 tests) 13ms
+ ✓ lib/link-evidence.test.ts (2 tests) 5ms
+ ✓ components/Topbar.prototype.test.tsx (2 tests) 107ms
+ ✓ components/brand/brand.test.tsx (3 tests) 68ms
+ ✓ app/api/auth/google/google-routes.test.ts (10 tests) 45ms
+ ✓ components/SuggestionVisibilityToggle.test.tsx (2 tests) 82ms
+ ✓ lib/format.test.ts (5 tests) 50ms
+ ✓ components/Topbar.admin.test.tsx (2 tests) 251ms
+ ✓ proxy.test.ts (17 tests) 23ms
+ ✓ app/api/auth/session-expired/route.test.ts (3 tests) 22ms
+ ✓ lib/auth.test.ts (4 tests) 5ms
+ ✓ lib/reviewed-links.test.ts (2 tests) 2ms
+ ✓ app/(app)/quiz/page.test.tsx (1 test) 4ms
+
+ Test Files  53 passed (53)
+      Tests  385 passed (385)
+   Start at  12:49:33
+   Duration  17.04s (transform 2.33s, setup 0ms, collect 8.37s, tests 6.99s, environment 67.97s, prepare 7.49s)
+

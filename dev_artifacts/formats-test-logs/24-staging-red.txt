@@ -1,0 +1,5 @@
+--- FAIL: TestIntegrationDirectFormatFiles (0.02s)
+    file_formats_test.go:138: paper.pdf snapshot changed with staging upload
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	1.023s
+FAIL

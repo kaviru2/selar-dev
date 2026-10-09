@@ -1,7 +1,7 @@
 name: Synthetic service E2E
 on:
   pull_request:
-    branches: [main, 'feat/learning-*', 'test/learning-*']
+    branches: [main, 'feat/learning-*', 'test/learning-*', 'feat/document-format-snapshots']
   push:
     branches: [main]
   workflow_dispatch:
@@ -69,4 +69,4 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Run actual service-boundary scenario
         working-directory: services/selar-worker
-        run: python -m pytest -vv -s test_synthetic_service_e2e.py test_chat_service_e2e.py test_web_service_e2e.py test_learning_loop_e2e.py
+        run: python -m pytest -vv -s test_synthetic_service_e2e.py test_chat_service_e2e.py test_web_service_e2e.py test_learning_loop_e2e.py test_format_service_e2e.py

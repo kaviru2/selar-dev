@@ -111,6 +111,30 @@
 .rd-icon:hover:not(:disabled), .rd-grp > button:hover:not(:disabled) { background: var(--rd-control-hover); }
 .rd-icon:disabled, .rd-grp > button:disabled { opacity: 0.4; cursor: default; }
 .rd-icon.on, .rd-grp > button.on { background: var(--rd-control-on-bg); color: var(--rd-control-on-ink); }
+/* The suggestion toggle is wrapped (for its hidden lock explanation), so the
+   direct-child toolbar button rules above do not reach it. Mirror them. */
+.rd-grp > .suggestion-visibility-control { display: inline-flex; align-items: center; flex: none; }
+.rd-grp > .suggestion-visibility-control > button {
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rd-control-ink);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rd-grp > .suggestion-visibility-control > button:hover:not(:disabled) { background: var(--rd-control-hover); }
+.rd-grp > .suggestion-visibility-control > button.on { background: var(--rd-control-on-bg); color: var(--rd-control-on-ink); }
+.rd-grp > .suggestion-visibility-control > button:disabled { cursor: help; }
+/* Locked by the study group: read-only but legible (not the 0.4 disabled fade). */
+.rd-grp > .suggestion-visibility-control > button.is-locked { opacity: 0.8; }
 .rd-page-form { display: flex; align-items: center; gap: 4px; padding: 0 4px; font-family: var(--font-mono); font-size: var(--t-sm); white-space: nowrap; }
 .rd-page-input {
   width: 3.4em;

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
-import { useEffect } from "react";
+import { createElement, useEffect } from "react";
 import remarkGfm from "remark-gfm";
 import type { DocumentContent } from "@/lib/api";
 
@@ -10,7 +10,13 @@ function Markdown({ children, inline = false }: { children: string; inline?: boo
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      components={inline ? { p: ({ children: value }) => <>{value}</> } : undefined}
+      skipHtml
+      urlTransform={(url) => /^(https?:\/\/|mailto:|#)/i.test(url) ? url : ''}
+      components={{
+        ...(inline ? { p: ({ children: value }: { children?: React.ReactNode }) => <>{value}</> } : {}),
+        img: ({ alt }) => <span>{alt ? `[Image omitted: ${alt}]` : '[Image omitted]'}</span>,
+        a: ({ href, children }) => <a href={href} rel="noopener noreferrer" target="_blank">{children}</a>,
+      }}
     >
       {children}
     </ReactMarkdown>
@@ -31,9 +37,10 @@ export function ArticleReader({ content, targetBlock }: { content: DocumentConte
         <div className="article-byline">
           {content.document.authors || "Unknown author"}
           {content.document.year ? ` · ${content.document.year}` : ""}
-          {content.document.source_url && <> · <a href={content.document.source_url} target="_blank" rel="noreferrer">Original source ↗</a></>}
+          {content.document.source_url && /^https?:\/\//i.test(content.document.source_url) && <> · <a href={content.document.source_url} target="_blank" rel="noreferrer">Original source ↗</a></>}
         </div>
       </header>
+      {typeof content.document.metadata?.limitations === 'string' && <p role="note">{content.document.metadata.limitations}</p>}
       <div className="article-body">
         {content.blocks.map((block) => {
           const asset = assetsByBlock.get(block.block_index);
@@ -47,9 +54,15 @@ export function ArticleReader({ content, targetBlock }: { content: DocumentConte
               </figure>
             );
           }
-          if (block.kind === "heading") return <h2 id={`block-${block.block_index}`} key={block.id}><Markdown inline>{block.text}</Markdown></h2>;
+          if (block.metadata?.literal) {
+            const rows = block.metadata.rows;
+            if (block.kind === 'table' && Array.isArray(rows)) return <table id={`block-${block.block_index}`} key={block.id}><tbody>{rows.map((row: unknown, index: number) => <tr key={index}>{Array.isArray(row) && row.map((cell: unknown, col: number) => <td key={col} style={{whiteSpace:'pre-wrap'}}>{String(cell)}</td>)}</tr>)}</tbody></table>;
+            if (block.kind === 'heading') return <h2 id={`block-${block.block_index}`} key={block.id}>{block.text}</h2>;
+            return <div id={`block-${block.block_index}`} key={block.id} style={{whiteSpace:'pre-wrap'}}>{block.text}</div>;
+          }
+          if (block.kind === "heading") return createElement(`h${Math.max(1, Math.min(6, Number(block.metadata?.level) || 2))}`, {id:`block-${block.block_index}`,key:block.id}, <Markdown inline>{block.text}</Markdown>);
           if (block.kind === "quote") return <blockquote id={`block-${block.block_index}`} key={block.id}><Markdown>{block.text}</Markdown></blockquote>;
-          if (block.kind === "list") return <div className="article-list" id={`block-${block.block_index}`} key={block.id}>• <Markdown inline>{block.text}</Markdown></div>;
+          if (block.kind === "list") return <div className="article-list" id={`block-${block.block_index}`} key={block.id}>{typeof block.metadata?.marker === 'string' ? block.metadata.marker : '•'} <Markdown inline>{block.text}</Markdown></div>;
           if (block.kind === "code") return <pre id={`block-${block.block_index}`} key={block.id}>{block.text}</pre>;
           return <div className="article-paragraph" id={`block-${block.block_index}`} key={block.id}><Markdown>{block.text}</Markdown></div>;
         })}

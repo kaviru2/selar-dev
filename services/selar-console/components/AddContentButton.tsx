@@ -4,7 +4,7 @@ import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/ui/Icon";
 import { ProcessingDisclosure } from "@/components/ProcessingDisclosure";
-import { uploadPDF } from "@/lib/upload";
+import { uploadPDF, fileContentType } from "@/lib/upload";
 
 type AddMode = "web" | "text" | "pdf";
 type UploadProgress = { completed: number; total: number } | null;
@@ -41,12 +41,12 @@ export function AddContentButton() {
 
   function acceptFiles(files: File[]) {
     if (!files.length) return;
-    const nonPdfs = files.filter((file) => !file.name.toLowerCase().endsWith(".pdf"));
-    const oversized = files.filter((file) => file.size > MAX_PDF_SIZE);
+    const nonPdfs = files.filter((file) => !fileContentType(file.name));
+    const oversized = files.filter((file) => file.size > (fileContentType(file.name) === 'application/pdf' ? MAX_PDF_SIZE : 10 * 1024 * 1024));
     if (nonPdfs.length || oversized.length) {
       const problems = [
-        nonPdfs.length ? `${nonPdfs.map((file) => file.name).join(", ")} ${nonPdfs.length === 1 ? "is not a PDF" : "are not PDFs"}` : "",
-        oversized.length ? `${oversized.map((file) => file.name).join(", ")} ${oversized.length === 1 ? "is" : "are"} larger than 50 MB` : "",
+        nonPdfs.length ? `${nonPdfs.map((file) => file.name).join(", ")}: supported formats are PDF, Markdown, TXT and DOCX (.doc/.docm unsupported)` : "",
+        oversized.length ? `${oversized.map((file) => file.name).join(", ")}: limit is 50 MB for PDF, 10 MB for other files` : "",
       ].filter(Boolean);
       setError(problems.join(". "));
       return;
@@ -59,7 +59,7 @@ export function AddContentButton() {
         if (!duplicate) unique.push(file);
       }
       if (unique.length > MAX_PDF_BATCH) {
-        setError(`Upload up to ${MAX_PDF_BATCH} PDFs at a time`);
+        setError(`Upload up to ${MAX_PDF_BATCH} files at a time`);
         return unique.slice(0, MAX_PDF_BATCH);
       }
       setError("");
@@ -85,7 +85,7 @@ export function AddContentButton() {
     setSubmitting(true);
     setError("");
     const form = new FormData(event.currentTarget);
-    let uploadedPDFs = 0;
+    let uploadedfiles = 0;
     try {
       if (mode === "pdf") {
         if (!selectedFiles.length) throw new Error("Choose at least one PDF first");
@@ -97,7 +97,7 @@ export function AddContentButton() {
           } catch (cause) {
             throw new Error(`${file.name}: ${cause instanceof Error ? cause.message : "Unable to upload PDF"}`);
           }
-          uploadedPDFs = index + 1;
+          uploadedfiles = index + 1;
         }
         setUploadProgress({ completed: selectedFiles.length, total: selectedFiles.length });
       } else {
@@ -118,9 +118,9 @@ export function AddContentButton() {
       dialogRef.current?.close();
       router.refresh();
     } catch (cause) {
-      if (mode === "pdf" && uploadedPDFs > 0) setSelectedFiles(selectedFiles.slice(uploadedPDFs));
+      if (mode === "pdf" && uploadedfiles > 0) setSelectedFiles(selectedFiles.slice(uploadedfiles));
       const message = cause instanceof Error ? cause.message : "Unable to add content";
-      setError(uploadedPDFs > 0 ? `${uploadedPDFs} uploaded successfully. ${message}` : message);
+      setError(uploadedfiles > 0 ? `${uploadedfiles} uploaded successfully. ${message}` : message);
     } finally {
       setUploadProgress(null);
       setSubmitting(false);
@@ -148,7 +148,7 @@ export function AddContentButton() {
                 ? { icon: "link" as const, label: "From the web", hint: "Article or blog" }
                 : value === "text"
                   ? { icon: "note" as const, label: "Paste text", hint: "Notes or Markdown" }
-                  : { icon: "doc" as const, label: "Upload PDF", hint: "Paper or report" };
+                  : { icon: "doc" as const, label: "Upload PDF & files", hint: "PDF, Markdown, TXT, DOCX" };
               return <button key={value} type="button" role="tab" aria-selected={mode === value} className={mode === value ? "active" : ""} onClick={() => chooseMode(value)}>
                 <span className="source-tab-icon"><Icon name={details.icon} size={17} /></span>
                 <span><strong>{details.label}</strong><small>{details.hint}</small></span>
@@ -183,7 +183,7 @@ export function AddContentButton() {
           )}
           {mode === "pdf" && (
             <div className="pdf-upload-section">
-              <input ref={fileInputRef} id="pdf-upload-input" type="file" accept="application/pdf,.pdf" multiple aria-label="Choose PDF files to upload" onChange={(event) => acceptFiles(Array.from(event.target.files || []))} />
+              <input ref={fileInputRef} id="pdf-upload-input" type="file" accept=".pdf,.md,.markdown,.txt,.docx" multiple aria-label="Choose PDF, Markdown, TXT or DOCX files to upload" onChange={(event) => acceptFiles(Array.from(event.target.files || []))} />
               <div
                 className={`pdf-dropzone${dragActive ? " drag-active" : ""}${selectedFiles.length ? " compact" : ""}`}
                 onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
@@ -199,21 +199,21 @@ export function AddContentButton() {
                 {selectedFiles.length ? (
                   <>
                     <span className="pdf-upload-icon"><Icon name="plus" size={18} /></span>
-                    <div className="pdf-drop-copy"><strong>Add more PDFs</strong><span>Drop them here or <u>choose files</u></span></div>
+                    <div className="pdf-drop-copy"><strong>Add more files</strong><span>Drop them here or <u>choose files</u></span></div>
                     <small>Up to {MAX_PDF_BATCH} per batch</small>
                   </>
                 ) : (
                   <>
                     <span className="pdf-upload-icon"><Icon name="upload" size={25} /></span>
-                    <div className="pdf-drop-copy"><strong>Drop your PDFs here</strong><span>or <u>choose files</u> from your computer</span></div>
-                    <small>PDF only · Up to 50 MB each · {MAX_PDF_BATCH} per batch</small>
+                    <div className="pdf-drop-copy"><strong>Drop your files here</strong><span>or <u>choose files</u> from your computer</span></div>
+                    <small>PDF up to 50 MB · Markdown, TXT, DOCX up to 10 MB · {MAX_PDF_BATCH} per batch</small>
                   </>
                 )}
               </div>
               {selectedFiles.length > 0 && (
                 <div className="pdf-queue">
                   <div className="pdf-queue-head">
-                    <strong>{selectedFiles.length} {selectedFiles.length === 1 ? "PDF" : "PDFs"} ready</strong>
+                    <strong>{selectedFiles.length} {selectedFiles.length === 1 ? "PDF" : "files"} ready</strong>
                     <span>{formatFileSize(selectedFiles.reduce((total, file) => total + file.size, 0))} total</span>
                   </div>
                   <div className="pdf-queue-list">
@@ -228,11 +228,11 @@ export function AddContentButton() {
                 </div>
               )}
               <div role="status" aria-live="polite">
-                {uploadProgress ? `Uploading PDF ${Math.min(uploadProgress.completed + 1, uploadProgress.total)} of ${uploadProgress.total}` : selectedFiles.length ? `${selectedFiles.length} PDFs ready to upload` : ""}
+                {uploadProgress ? `Uploading PDF ${Math.min(uploadProgress.completed + 1, uploadProgress.total)} of ${uploadProgress.total}` : selectedFiles.length ? `${selectedFiles.length} files ready to upload` : ""}
               </div>
               <div className="pdf-feature-row">
                 <span><Icon name="check" size={13} /> Text and citations</span>
-                <span><Icon name="check" size={13} /> Figures and diagrams</span>
+                <span>DOCX: text and tables only. Tracked changes, comments and footnotes are rejected; .doc/.docm unsupported. Export a reviewed PDF for full visual fidelity.</span>
                 <span><Icon name="check" size={13} /> Semantic links</span>
               </div>
             </div>
@@ -242,7 +242,7 @@ export function AddContentButton() {
             <div className="add-content-assurance">Prototype testing only</div>
             <button type="button" className="btn" onClick={() => dialogRef.current?.close()}>Cancel</button>
             <button type="submit" className="btn primary add-submit" disabled={submitting || (mode === "pdf" && !selectedFiles.length)}>
-              {submitting ? <><Icon name="spinner" size={12} className="animate-spin" /> {mode === "pdf" && uploadProgress ? `Uploading ${Math.min(uploadProgress.completed + 1, uploadProgress.total)} of ${uploadProgress.total}` : "Importing…"}</> : <>{mode === "web" ? "Import article" : mode === "text" ? "Save text" : selectedFiles.length ? `Upload ${selectedFiles.length} PDF${selectedFiles.length === 1 ? "" : "s"}` : "Upload PDFs"} <Icon name="arrow_right" size={12} /></>}
+              {submitting ? <><Icon name="spinner" size={12} className="animate-spin" /> {mode === "pdf" && uploadProgress ? `Uploading ${Math.min(uploadProgress.completed + 1, uploadProgress.total)} of ${uploadProgress.total}` : "Importing…"}</> : <>{mode === "web" ? "Import article" : mode === "text" ? "Save text" : selectedFiles.length ? `Upload ${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"}` : "Upload files"} <Icon name="arrow_right" size={12} /></>}
             </button>
           </div>
         </form>

@@ -18,7 +18,13 @@ def _same_identity(left, right):
             and bool(str(left)) and bool(str(right)) and str(left) == str(right))
 
 
-def grounded_overlap(model, source, target, owner, source_doc, target_doc):
+# A derived sub-term of a key concept (migration 025): lowercase, >= 8 chars.
+SUBTERM_RE = re.compile(r"^[a-z][a-z0-9 -]{7,}$")
+
+
+def grounded_overlap(model, source, target, owner, source_doc, target_doc, subterm=False):
+    """Exact two-sided witness. ``subterm=True`` admits one derived sub-term name
+    (``SUBTERM_RE``); the caller guarantees it is a whole-word part of a key concept."""
     if _same_identity(source_doc, target_doc):
         return None
     source, target = dict(source), dict(target)
@@ -39,7 +45,10 @@ def grounded_overlap(model, source, target, owner, source_doc, target_doc):
     concepts = model.get("key_concepts", [])
     for concept in concepts:
         name = concept.get("name", "") if isinstance(concept, dict) else str(concept)
-        if len(name.split()) < 2 or len(name) < 12:
+        if subterm:
+            if not SUBTERM_RE.match(name):
+                continue
+        elif len(name.split()) < 2 or len(name) < 12:
             continue
         passages = []
         for row in (source, target):
@@ -71,8 +80,8 @@ def grounded_overlap(model, source, target, owner, source_doc, target_doc):
 
 
 async def persist_grounded_overlap(conn, model, source, target, owner, source_doc, target_doc,
-                                   source_model_id, target_model_id, similarity):
-    witness = grounded_overlap(model, source, target, owner, source_doc, target_doc)
+                                   source_model_id, target_model_id, similarity, subterm=False):
+    witness = grounded_overlap(model, source, target, owner, source_doc, target_doc, subterm)
     if not witness:
         return False
     # Recheck all witness fields against live owner-matched source/chunk rows in
@@ -94,7 +103,7 @@ async def persist_grounded_overlap(conn, model, source, target, owner, source_do
         WHERE sm.id = $2 AND sm.user_id = $1 AND sm.status = 'ready' AND tm.status = 'ready'
           AND sc.document_id = sm.document_id AND tc.document_id = tm.document_id
           AND sd.id <> td.id
-        ON CONFLICT (source_model_id, target_model_id, link_type) DO NOTHING
+        ON CONFLICT DO NOTHING
     """, owner, source_model_id, target_model_id, similarity,
         "Both readings explicitly discuss " + witness["concept"] + ". Compare their treatment.",
         json.dumps(witness["source_evidence"]), json.dumps(witness["target_evidence"]))

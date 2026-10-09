@@ -63,7 +63,7 @@ func TestDriveImportRejectsBeforeTouchingStore(t *testing.T) {
 		{"path traversal id", nil, driveBody("../../about?x=1", driveToken), http.StatusBadRequest},
 		{"token with whitespace", nil, driveBody(driveFileID, "a b"), http.StatusBadRequest},
 		{"not a PDF", func() *httptest.Server {
-			s, _ := fakeDrive(t, "notes.docx", "application/vnd.google-apps.document", pdf, 0)
+			s, _ := fakeDrive(t, "notes.xlsx", "application/vnd.google-apps.spreadsheet", pdf, 0)
 			return s
 		}, driveBody(driveFileID, driveToken), http.StatusBadRequest},
 		{"bad magic", func() *httptest.Server {

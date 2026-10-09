@@ -1,0 +1,25 @@
+2026/10/09 13:28:31 applied migration 001_init.sql
+2026/10/09 13:28:31 applied migration 002_add_summary.sql
+2026/10/09 13:28:31 applied migration 003_runtime_mental_model.sql
+2026/10/09 13:28:31 applied migration 004_adaptive_chat.sql
+2026/10/09 13:28:31 applied migration 005_chat_graph_reducer.sql
+2026/10/09 13:28:31 applied migration 006_graph_governance.sql
+2026/10/09 13:28:31 applied migration 007_multimodal_sources.sql
+2026/10/09 13:28:31 applied migration 008_grounded_chat_concepts.sql
+2026/10/09 13:28:31 applied migration 009_durable_ingestion_jobs.sql
+2026/10/09 13:28:31 applied migration 010_grounded_candidates.sql
+2026/10/09 13:28:31 applied migration 011_reviewed_assertions.sql
+2026/10/09 13:28:31 applied migration 012_reingest_frozen_reviews.sql
+2026/10/09 13:28:31 applied migration 013_quiz_system.sql
+2026/10/09 13:28:31 applied migration 014_user_settings.sql
+2026/10/09 13:28:31 applied migration 015_admin_roles_analytics.sql
+2026/10/09 13:28:31 applied migration 016_google_sign_in.sql
+2026/10/09 13:28:31 applied migration 017_research_assertions.sql
+2026/10/09 13:28:31 applied migration 018_calendar_feed.sql
+2026/10/09 13:28:31 applied migration 019_email_notifications.sql
+2026/10/09 13:28:31 applied migration 020_study_withdrawals.sql
+2026/10/09 13:28:31 applied migration 021_document_practice.sql
+2026/10/09 13:28:31 applied migration 022_practice_schedule.sql
+2026/10/09 13:28:31 applied migration 023_document_file_formats.sql
+2026/10/09 13:28:31 applied migration 024_annotation_text_anchors.sql
+2026/10/09 13:28:31 migrations complete on 127.0.0.1: 0 adopted, 24 applied, 24 total

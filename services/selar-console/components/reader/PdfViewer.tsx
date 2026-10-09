@@ -15,6 +15,9 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { Icon } from "@/components/ui/Icon";
 import { visibleSuggestionBoxes } from "@/lib/reader-highlights";
 import type { Annotation, LinkSuggestion } from "@/lib/api";
+import type { TextAnchor } from "@/lib/reader/annotation-anchor";
+import { annotationBoxes, captureSelectionAnchor } from "@/lib/reader/annotation-dom";
+import { AnnotationEditor, HighlightsList, annotationColors } from "./AnnotationTools";
 import {
   buildLayout,
   captureAnchor,
@@ -37,6 +40,7 @@ import { mergeLineRects, normalizeRects, parseBBoxes, type NormalizedBBox } from
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import "./reader.css";
+import "./annotation-tools.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -51,6 +55,8 @@ export interface NavRequest {
   page: number;
   /** Text to find and flash on the target page. */
   quote?: string;
+  /** User marks use a full source-bound anchor rather than a best-effort quote. */
+  anchor?: TextAnchor;
   /** Fallback boxes (0..1) to flash when the quote cannot be located. */
   bboxes?: NormalizedBBox[] | string;
 }
@@ -81,7 +87,10 @@ export interface PdfViewerProps {
   onStateChange: (state: ViewerState) => void;
   onPositionChange?: (anchor: ScrollAnchor) => void;
   onScrollDepth?: (depth: number) => void;
-  onCreateAnnotation?: (type: string, bboxes: NormalizedBBox[], color: string, page: number, comment?: string) => void;
+  sourceHash?: string;
+  onCreateAnnotation?: (type: string, bboxes: NormalizedBBox[], color: string, page: number, comment?: string, anchor?: TextAnchor) => Promise<void>;
+  onUpdateAnnotation?: (annotation: Annotation, color: Annotation["color"], comment: string) => Promise<void>;
+  onDeleteAnnotation?: (annotation: Annotation) => Promise<void>;
   /** Passage matches are similarity-only; the reader can only dismiss them (#96). */
   onRespondSuggestion: (id: string, action: "rejected") => Promise<boolean>;
   onOpenSuggestionTarget: (suggestion: LinkSuggestion) => void;
@@ -98,6 +107,8 @@ interface Flash {
 }
 
 interface SelectionMenuState {
+  anchor: TextAnchor | null;
+  quote: string;
   page: number;
   boxes: NormalizedBBox[];
   x: number;
@@ -134,6 +145,7 @@ export default function PdfViewer(props: PdfViewerProps) {
     docId, initialPage, initialFraction = 0, zoom, onZoomChange, navRequest, annotationsOn, suggestionsOn,
     suggestions, annotations, showThumbnails, onToggleThumbnails, highlightColor = "yellow", toolbarStart, toolbarExtras, toolbarEnd, onStateChange,
     onPositionChange, onScrollDepth, onCreateAnnotation, onRespondSuggestion, onOpenSuggestionTarget,
+    sourceHash = "", onUpdateAnnotation, onDeleteAnnotation,
   } = props;
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -164,6 +176,19 @@ export default function PdfViewer(props: PdfViewerProps) {
   const [textReady, setTextReady] = useState<Record<number, number>>({});
   const [flash, setFlash] = useState<Flash | null>(null);
   const [selectionMenu, setSelectionMenu] = useState<SelectionMenuState | null>(null);
+  const [selectionColor, setSelectionColor] = useState<Annotation["color"]>(annotationColors.includes(highlightColor as Annotation["color"]) ? highlightColor as Annotation["color"] : "yellow");
+  const [annotationBusy, setAnnotationBusy] = useState(false);
+  const [annotationError, setAnnotationError] = useState("");
+  const [highlightsOpen, setHighlightsOpen] = useState(false);
+  const [editor, setEditor] = useState<{ annotation?: Annotation; selection?: SelectionMenuState } | null>(null);
+  const [markBoxes, setMarkBoxes] = useState<Record<string, NormalizedBBox[]>>({});
+  useLayoutEffect(() => {
+    const boxes: Record<string, NormalizedBBox[]> = {};
+    for (const a of annotations) boxes[a.id] = annotationBoxes(rootRef.current?.querySelector(`.rd-page[data-page="${a.page}"]`) || null, a, sourceHash);
+    // DOM geometry is only available after the PDF text layer commits; measure before paint.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMarkBoxes(boxes);
+  }, [annotations, sourceHash, textReady, zoom, range]);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [popoverBusy, setPopoverBusy] = useState(false);
   const [popoverError, setPopoverError] = useState("");
@@ -313,8 +338,9 @@ export default function PdfViewer(props: PdfViewerProps) {
     if (!pageElement || !ready) return;
     pendingFlashRef.current = null;
     const pageRect = pageElement.getBoundingClientRect();
-    let boxes: NormalizedBBox[] = [];
-    if (request.quote) {
+    if (request.anchor && request.anchor.source_hash !== sourceHash) return;
+    let boxes: NormalizedBBox[] = request.anchor ? annotationBoxes(pageElement, { anchor: request.anchor, bbox: request.bboxes || [] } as Annotation, sourceHash) : [];
+    if (request.quote && !request.anchor) {
       const spans = textSegments(pageElement);
       const match = locateQuote(spans.map((span) => span.textContent || ""), request.quote);
       if (match) {
@@ -338,7 +364,7 @@ export default function PdfViewer(props: PdfViewerProps) {
       stickyPageRef.current = request.page;
       updateFromScroll();
     }
-  }, [textReady, range, navRequest, updateFromScroll]);
+  }, [textReady, range, navRequest, updateFromScroll, sourceHash]);
 
   useEffect(() => {
     if (!flash) return;
@@ -499,49 +525,45 @@ export default function PdfViewer(props: PdfViewerProps) {
     };
   }, [scale, zoomTo, scrollElement]);
 
-  // ——— Selection → quick highlight / note (full toolbar arrives with the highlighting PR) ———
+  // ——— Selection: capture immutable quote/offsets before focus moves to controls. ———
   useEffect(() => {
-    function onPointerUp(event: PointerEvent) {
+    function onSelectionEnd(event: Event) {
       const target = event.target as HTMLElement | null;
-      if (target?.closest(".rd-selection-menu, .rd-popover")) return;
+      if (target?.closest(".rd-selection-menu, .rd-popover, .rd-annotation-editor, .rd-highlights") || editor || annotationBusy) return;
+      if (event instanceof KeyboardEvent && !event.shiftKey) return;
       requestAnimationFrame(() => {
         const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || !selection.rangeCount) {
-          setSelectionMenu(null);
-          return;
-        }
+        if (!selection || selection.isCollapsed || !selection.rangeCount) { setSelectionMenu(null); return; }
         const range = selection.getRangeAt(0);
-        const startPage = (range.startContainer.parentElement ?? null)?.closest<HTMLElement>(".rd-page");
-        if (!startPage || !rootRef.current?.contains(startPage)) return;
+        const startPage = range.startContainer.parentElement?.closest<HTMLElement>(".rd-page");
+        const endPage = range.endContainer.parentElement?.closest<HTMLElement>(".rd-page");
+        if (!startPage || startPage !== endPage || !rootRef.current?.contains(startPage)) { setSelectionMenu(null); return; }
         const page = Number(startPage.dataset.page);
         const pageRect = startPage.getBoundingClientRect();
-        const rects = Array.from(range.getClientRects()).filter((rect) => rect.top < pageRect.bottom && rect.bottom > pageRect.top);
-        const boxes = normalizeRects(mergeLineRects(rects), pageRect);
+        const boxes = normalizeRects(mergeLineRects(Array.from(range.getClientRects())), pageRect);
         if (!boxes.length) return;
         const last = boxes[boxes.length - 1];
-        setPopover(null);
-        setSelectionMenu({
-          page,
-          boxes,
-          x: Math.min((last.x + last.w) * pageRect.width, pageRect.width - 170),
-          y: (last.y + last.h) * pageRect.height + 6,
-        });
+        const anchor = captureSelectionAnchor(startPage, range, sourceHash);
+        setPopover(null); setAnnotationError("");
+        setSelectionMenu({ page, boxes, anchor, quote: anchor?.exact || range.toString(),
+          x: Math.max(0, Math.min(last.x * pageRect.width, pageRect.width - 320)),
+          y: (last.y + last.h) * pageRect.height + 6 });
       });
     }
-    document.addEventListener("pointerup", onPointerUp);
-    return () => document.removeEventListener("pointerup", onPointerUp);
-  }, []);
+    document.addEventListener("pointerup", onSelectionEnd);
+    document.addEventListener("keyup", onSelectionEnd);
+    return () => { document.removeEventListener("pointerup", onSelectionEnd); document.removeEventListener("keyup", onSelectionEnd); };
+  }, [sourceHash, editor, annotationBusy]);
 
-  function createFromSelection(type: "highlight" | "note") {
-    if (!selectionMenu || !onCreateAnnotation) return;
-    if (type === "highlight") {
-      onCreateAnnotation("highlight", selectionMenu.boxes, highlightColor, selectionMenu.page);
-    } else {
-      const comment = window.prompt("Add a note about this passage:");
-      if (comment?.trim()) onCreateAnnotation("note", selectionMenu.boxes, "sage", selectionMenu.page, comment.trim());
-    }
-    window.getSelection()?.removeAllRanges();
-    setSelectionMenu(null);
+  async function createFromSelection() {
+    if (!selectionMenu?.anchor || !onCreateAnnotation || annotationBusy) return;
+    setAnnotationBusy(true); setAnnotationError("");
+    try {
+      await onCreateAnnotation("highlight", selectionMenu.boxes, selectionColor, selectionMenu.page, "", selectionMenu.anchor);
+      window.getSelection()?.removeAllRanges(); setSelectionMenu(null); setAnnounce("Highlight saved");
+      scrollRef.current?.focus({ preventScroll: true });
+    } catch (error) { setAnnotationError(error instanceof Error ? error.message : "Could not save highlight. Please retry."); }
+    finally { setAnnotationBusy(false); }
   }
 
   // ——— Suggestions: hit-test clicks instead of blocking selection with overlays ———
@@ -673,6 +695,7 @@ export default function PdfViewer(props: PdfViewerProps) {
           </button>
         </div>
         {toolbarExtras}
+        <button type="button" aria-label="My highlights" aria-expanded={highlightsOpen} onClick={() => setHighlightsOpen(value => !value)}>Highlights ({annotations.length})</button>
         <div className="rd-spacer" />
         {toolbarEnd}
       </div>
@@ -707,6 +730,28 @@ export default function PdfViewer(props: PdfViewerProps) {
         </div>
       )}
 
+      {editor && <AnnotationEditor key={editor.annotation?.id || "new-note"}
+        title={editor.annotation ? "Edit highlight" : "Add note"}
+        quote={editor.annotation?.anchor?.exact || editor.selection?.quote}
+        color={editor.annotation?.color || selectionColor} comment={editor.annotation?.comment || ""}
+        onCancel={() => setEditor(null)}
+        onSave={async (color, comment) => {
+          if (editor.annotation && onUpdateAnnotation) await onUpdateAnnotation(editor.annotation, color, comment);
+          else if (editor.selection?.anchor && onCreateAnnotation) {
+            if (editor.selection.anchor.source_hash !== sourceHash) throw new Error("Source changed. Select the passage again.");
+            await onCreateAnnotation("note", editor.selection.boxes, color, editor.selection.page, comment, editor.selection.anchor);
+          } else throw new Error("Annotation editing is unavailable.");
+          setEditor(null); setSelectionMenu(null); window.getSelection()?.removeAllRanges(); setAnnounce("Annotation saved");
+        }} />}
+      {highlightsOpen && <HighlightsList annotations={annotations} sourceHash={sourceHash}
+        onJump={a => {
+          if (a.anchor && a.anchor.source_hash !== sourceHash) return;
+          pendingFlashRef.current = { id: Date.now(), page: a.page, quote: a.anchor?.exact, anchor: a.anchor || undefined, bboxes: a.bbox };
+          goToPage(a.page); setHighlightsOpen(false); setTextReady(ready => ({...ready}));
+          scrollRef.current?.focus({ preventScroll: true });
+        }}
+        onEdit={a => setEditor({ annotation: a })}
+        onDelete={async a => { if (!onDeleteAnnotation) throw new Error("Deleting is unavailable."); await onDeleteAnnotation(a); }} />}
       <div className="rd-body">
         <Document
           file={`/api/documents/${docId}/pdf`}
@@ -761,7 +806,7 @@ export default function PdfViewer(props: PdfViewerProps) {
                           />
                         );
                       })}
-                      {userMarks.flatMap((annotation) => parseBBoxes(annotation.bbox).map((bbox, markIndex) => (
+                      {userMarks.flatMap((annotation) => (markBoxes[annotation.id] || []).map((bbox, markIndex) => (
                         <div
                           key={`a-${annotation.id}-${markIndex}`}
                           className={`rd-mark rd-user ${annotation.type} c-${annotation.color}`}
@@ -775,9 +820,14 @@ export default function PdfViewer(props: PdfViewerProps) {
                     </div>
 
                     {menuVisible?.page === page && (
-                      <div className="rd-selection-menu" role="toolbar" aria-label="Selection actions" style={{ left: menuVisible.x, top: menuVisible.y }} onPointerDown={(event) => event.preventDefault()}>
-                        <button type="button" onClick={() => createFromSelection("highlight")}><Icon name="highlight" size={12} /> Highlight</button>
-                        <button type="button" onClick={() => createFromSelection("note")}><Icon name="note" size={12} /> Add note</button>
+                      <div className="rd-selection-menu" role="toolbar" aria-label="Selection actions" style={{ left: menuVisible.x, top: menuVisible.y }}>
+                        <select aria-label="Selection highlight color" value={selectionColor} onChange={e => setSelectionColor(e.target.value as Annotation["color"])} disabled={annotationBusy}>{annotationColors.map(color => <option key={color} value={color}>{color}</option>)}</select>
+                        <button type="button" disabled={!menuVisible.anchor || annotationBusy} onClick={createFromSelection}><Icon name="highlight" size={12} /> {annotationBusy ? "Saving…" : "Highlight"}</button>
+                        <button type="button" disabled={!menuVisible.anchor || annotationBusy} onClick={() => setEditor({ selection: menuVisible })}><Icon name="note" size={12} /> Add note</button>
+                        <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(menuVisible.quote); setAnnounce("Quote copied"); } catch { setAnnotationError("Could not copy. Use your browser's copy command."); } }}>Copy</button>
+                        <button type="button" aria-label="Close selection actions" disabled={annotationBusy} onClick={() => { setSelectionMenu(null); scrollRef.current?.focus({preventScroll:true}); }}>×</button>
+                        {!menuVisible.anchor && <span>Source not ready, or selection outside text. Copy is still available.</span>}
+                        {annotationError && <span role="alert">{annotationError}</span>}
                       </div>
                     )}
 

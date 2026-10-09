@@ -1,0 +1,5 @@
+--- FAIL: TestDOCXStructuralValidation (0.00s)
+    file_formats_test.go:66: unsupported file format
+FAIL
+FAIL	github.com/selar-dev/selar-api/internal/handler	0.576s
+FAIL
