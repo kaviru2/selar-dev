@@ -1,0 +1,114 @@
+/* practice.css — reading practice (warm-up / end-reading check), daily review
+ * and practice progress. Built only from tokens in app/tokens.css, so light
+ * and dark themes both work. Presentation only (issue #77, item 5). */
+
+.practice-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(20px, 3vw, 36px) clamp(16px, 4vw, 40px) 56px;
+  background: var(--bg-2);
+  color: var(--ink);
+}
+.practice-inner { max-width: 780px; margin: 0 auto; }
+.practice-inner--wide { max-width: 880px; }
+
+.practice-title {
+  margin: 4px 0 6px;
+  font: 600 clamp(24px, 2.6vw, 30px)/1.2 var(--font-display);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.practice-lede { margin: 0 0 18px; max-width: 62ch; color: var(--ink-3); font-size: 15px; line-height: 1.55; }
+.practice-status { margin: 10px 0; color: var(--ink-3); font-size: 14px; }
+.practice-error {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--error) 35%, var(--rule));
+  border-radius: var(--selar-radius-md);
+  background: color-mix(in srgb, var(--error) 8%, var(--bg-raised));
+  color: var(--error);
+  font-size: 13.5px;
+}
+.practice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.practice-links { margin-top: 20px; color: var(--ink-4); font-size: 14px; }
+.practice-link { color: var(--accent); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Bar above the source while reading. */
+.practice-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+/* Practice question card (also used by Daily review). */
+.practice-card { display: grid; gap: 10px; margin: 14px 0; }
+.practice-label {
+  color: var(--accent-2);
+  font: 700 11.5px/1.2 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.practice-question { margin: 0; font: 600 18px/1.35 var(--font-serif); color: var(--ink); }
+.practice-field { display: grid; gap: 6px; color: var(--ink-2); font-size: 13.5px; font-weight: 600; }
+.practice-field textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1.5px solid var(--rule-2);
+  border-radius: var(--selar-radius-md);
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 15px/1.5 var(--font-sans);
+}
+.practice-field textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--selar-focus); }
+.practice-field textarea:disabled { opacity: 0.6; }
+.practice-check { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); font-size: 13.5px; line-height: 1.4; }
+.practice-check input { margin-top: 2px; accent-color: var(--accent); }
+.practice-result { display: grid; gap: 8px; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+.practice-result strong { color: var(--ink); }
+.practice-result p { margin: 0; }
+.practice-result blockquote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--ink);
+  font: 14px/1.55 var(--font-serif);
+}
+.practice-result small, .practice-section small { color: var(--ink-4); font-size: 12.5px; line-height: 1.45; }
+
+/* Progress sections. */
+.practice-section { display: grid; gap: 8px; margin: 0 0 14px; }
+.practice-section h2 { margin: 0; font: 650 16px/1.3 var(--font-sans); color: var(--ink); }
+.practice-section p { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+.practice-stats { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0; font-size: 14px; }
+.practice-stats dt { color: var(--ink-3); }
+.practice-stats dd { margin: 0; color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Reflection prompts in the Reader connections panel. */
+.cx-panel > .cx-intro { margin: 10px 14px 0; }
+.cx-reflection { gap: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--rule); border-radius: var(--r-lg); background: var(--bg-raised); }
+.cx-reflection .cx-h { margin-bottom: 2px; font-size: 14px; }
+.cx-reflection .cx-q { display: grid; gap: 6px; margin: 0; }
+.cx-reflection .cx-note { margin: 0; }
+.cx-reflection .cx-btn { margin-top: 0; }
+.cx-reflection .cx-quote { margin: 0; }
+.cx-flag { align-self: flex-start; color: var(--ink-3); text-decoration: underline; text-underline-offset: 2px; }
+.cx-flag:hover:not(:disabled) { color: var(--error); }
+.cx-flag:disabled { opacity: 0.5; cursor: default; }
+.cx-summary { margin-top: 6px; }
+.cx-summary small { display: block; }
+.connection-evidence p { white-space: pre-line; }
+
+/* Graph empty state sits centred over the canvas. */
+.graph-empty { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 24px; }
+.graph-empty .ui-empty { max-width: 360px; }
+.graph-loading { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; backdrop-filter: blur(4px); }
+.graph-loading > div { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--accent); }
+.graph-loading span { color: var(--ink-3); font: 12px var(--font-mono); }

@@ -8,7 +8,7 @@
 .rd-viewer {
   /* Reader palette (token-derived). Override per theme. */
   --rd-canvas: var(--bg-3);
-  --rd-page-bg: #fff;
+  --rd-page-bg: var(--selar-white);
   --rd-page-shadow: var(--shadow-2);
   --rd-control-bg: var(--bg);
   --rd-control-ink: var(--ink-2);
@@ -16,14 +16,14 @@
   --rd-control-hover: var(--bg-2);
   --rd-control-on-bg: var(--ink);
   --rd-control-on-ink: var(--bg);
-  --rd-flash: color-mix(in srgb, var(--accent, #1f5135) 34%, transparent);
-  --rd-flash-ring: var(--accent, #1f5135);
-  --rd-evidence-fill: color-mix(in srgb, var(--selar-amber, #d97706) 14%, transparent);
-  --rd-evidence-line: color-mix(in srgb, var(--selar-amber, #d97706) 80%, transparent);
-  --rd-evidence-confirmed-fill: color-mix(in srgb, var(--selar-green-500, #5b8a6f) 16%, transparent);
-  --rd-evidence-confirmed-line: var(--selar-green-500, #5b8a6f);
-  --rd-find: color-mix(in srgb, var(--selar-amber, #d97706) 38%, transparent);
-  --rd-find-current: color-mix(in srgb, var(--selar-rust, #b4532a) 55%, transparent);
+  --rd-flash: color-mix(in srgb, var(--accent) 34%, transparent);
+  --rd-flash-ring: var(--accent);
+  --rd-evidence-fill: color-mix(in srgb, var(--selar-amber) 14%, transparent);
+  --rd-evidence-line: color-mix(in srgb, var(--selar-amber) 80%, transparent);
+  --rd-evidence-confirmed-fill: color-mix(in srgb, var(--selar-green-500) 16%, transparent);
+  --rd-evidence-confirmed-line: var(--selar-green-500);
+  --rd-find: color-mix(in srgb, var(--selar-amber) 38%, transparent);
+  --rd-find-current: color-mix(in srgb, var(--selar-rust) 55%, transparent);
   --rd-hl-yellow: rgba(250, 204, 21, 0.38);
   --rd-hl-green: rgba(74, 222, 128, 0.32);
   --rd-hl-blue: rgba(96, 165, 250, 0.32);
@@ -263,7 +263,7 @@
 }
 .rd-page .textLayer { z-index: 2; }
 .rd-page .annotationLayer { z-index: 3; }
-.rd-page .textLayer ::selection { background: color-mix(in srgb, var(--selar-sky-600, #2f5f8f) 35%, transparent); }
+.rd-page .textLayer ::selection { background: color-mix(in srgb, var(--selar-sky-600) 35%, transparent); }
 
 /* ——— Selection menu & suggestion popover ——— */
 .rd-selection-menu, .rd-popover { position: absolute; z-index: 10; }
@@ -323,8 +323,8 @@
 }
 .rd-btn:hover:not(:disabled) { background: var(--bg-2); }
 .rd-btn:disabled { opacity: 0.45; cursor: default; }
-.rd-btn-pri { border-color: var(--selar-green-800, var(--ink)); background: var(--selar-green-800, var(--ink)); color: #fff; }
-.rd-btn-pri:hover:not(:disabled) { background: var(--selar-green-900, var(--ink)); }
+.rd-btn-pri { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.rd-btn-pri:hover:not(:disabled) { background: var(--accent-strong); }
 .rd-popover-actions .rd-btn:first-child { flex-basis: 100%; justify-content: center; }
 .rd-popover-state { font: var(--t-xs) var(--font-mono); text-transform: uppercase; color: var(--accent); }
 .rd-popover-state.rejected { color: var(--error); }
