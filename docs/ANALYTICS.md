@@ -189,6 +189,17 @@ only records the label.
 
 ## Measurement change log
 
+### 2026-10-09: up to 5 grounded concept links per reading pair
+
+Approved by Kaviru on 2026-10-09 (show the top 3-5 links per pair, cap 5).
+
+- Treatment participants may see up to 5 suggestions per pair of readings
+  instead of 1. Each suggestion is a distinct shared concept with an exact
+  two-sided witness; counts of suggested/confirmed/rejected mental-model links
+  per participant are therefore not comparable across this change.
+- Existing reviewed links are untouched; a backfill (`backfill_candidates.py`,
+  see docs/BACKFILL_CANDIDATES.md) may add candidates to existing pairs when run.
+
 ### 2026-10-09: continuous-scroll Reader (#91, PR #104)
 
 Approved by Kaviru on 2026-10-09 (option A: adopt the new definitions).
