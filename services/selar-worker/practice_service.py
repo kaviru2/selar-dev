@@ -1,5 +1,7 @@
 """Database boundary for private, source-bound practice; no formal instruments."""
+import asyncio
 import json
+GENERATION_BUDGET_SECONDS = 40  # below Go server WriteTimeout=60s and Modal=120s
 from practice import Unavailable, digest, generate_item, validated_feedback
 from practice_schedule import next_interval, streak
 
@@ -38,6 +40,7 @@ async def daily(conn, owner):
 async def attempt(conn, owner, request, model):
     fingerprint = digest(json.dumps(request, sort_keys=True))
     async with conn.transaction():
+        await conn.execute("SET LOCAL lock_timeout='3s'")
         await conn.execute('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', f'practice-attempt:{owner}:{request["request_key"]}')
         prior = await conn.fetchrow('SELECT request_hash,feedback FROM practice_attempts WHERE user_id=$1 AND request_key=$2', owner, request['request_key'])
         row = await conn.fetchrow('SELECT p.payload ' + LIVE + ' AND p.id=$2 FOR UPDATE OF p,d,c', owner, request['item_id'])
@@ -58,6 +61,9 @@ async def attempt(conn, owner, request, model):
         result = {'status': 'recorded', 'feedback': feedback, 'quote': payload['quote'],
                   'answer': payload['answer'], 'locator': payload['locator']}
         exposed = request.get('exposed', False) or request['phase']=='reading_check'
+        recent_read = await conn.fetchval('''SELECT EXISTS(SELECT 1 FROM reading_sessions rs JOIN practice_items pi ON pi.document_id=rs.document_id AND pi.user_id=rs.user_id
+            WHERE pi.id=$1 AND rs.user_id=$2 AND (rs.ended_at IS NULL OR greatest(rs.started_at,rs.ended_at)>now()-interval '1 day'))''',request['item_id'],owner)
+        exposed = exposed or bool(recent_read)
         delayed = bool(request['phase']=='review' and schedule and schedule['delayed'] and not exposed)
         await conn.execute('''INSERT INTO practice_attempts(user_id,item_id,request_key,request_hash,phase,response,exposed,feedback,delayed_unassisted)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)''', owner, request['item_id'], request['request_key'], fingerprint,
@@ -85,6 +91,7 @@ async def generate(conn, owner, document, model):
     # Serialize retries without touching formal instruments; re-read source under
     # lock after model calls, protecting publish against deletion/re-ingestion.
     async with conn.transaction():
+        await conn.execute("SET LOCAL lock_timeout='3s'")
         await conn.execute('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', f'practice:{owner}:{document}')
         doc = await conn.fetchrow("SELECT content_hash FROM documents WHERE id=$1 AND user_id=$2 AND status='ready' AND content_hash<>'' FOR UPDATE", document, owner)
         if not doc:
@@ -96,12 +103,14 @@ async def generate(conn, owner, document, model):
         if not sources:
             return {'status': 'unavailable', 'message': 'No located source passages; retry after ingestion', 'items': []}
         try:
-            generated = [await generate_item(dict(source), model) for source in sources]
+            generated = await asyncio.wait_for(asyncio.gather(*(generate_item(dict(source), model) for source in sources)), timeout=GENERATION_BUDGET_SECONDS)
         except Exception:
             return {'status': 'unavailable', 'message': 'AI generation or separate grounding check unavailable/rejected; retry', 'items': []}
         for item in generated:
             await conn.execute("""INSERT INTO practice_items(user_id,document_id,chunk_id,document_hash,chunk_hash,payload)
                 VALUES($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(user_id,document_id,document_hash,chunk_id)
-                DO UPDATE SET chunk_hash=EXCLUDED.chunk_hash,payload=EXCLUDED.payload""",
+                DO NOTHING""",
                 owner, document, item['chunk_id'], doc['content_hash'], item['chunk_hash'], json.dumps(item))
-        return {'status': 'ready', 'items': await items(conn, owner, document)}
+        published = await items(conn, owner, document)
+        return {'status': 'ready' if published else 'unavailable', 'items': published,
+                'message': '' if published else 'Source extraction changed; re-ingest before generating new practice.'}

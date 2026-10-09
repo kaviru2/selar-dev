@@ -32,8 +32,8 @@ func TestIntegrationLockedCohortCannotUseKnownWitnessID(t *testing.T) {
 	}
 	defer pool.Exec(ctx, `DELETE FROM cohort_setting_locks WHERE reason='direct-gate'`)
 	h := New(store.New(pool))
-	for _, fn := range []http.HandlerFunc{h.PreviewMentalModelLink, h.RespondToMentalModelLink, h.FlagMentalModelLink} {
-		req := authed(httptest.NewRequest("POST", "/known-id", strings.NewReader(`{"action":"confirmed","revision":0}`)), f.userID)
+	for _, fn := range []http.HandlerFunc{h.PreviewMentalModelLink, h.RespondToMentalModelLink, h.FlagMentalModelLink, h.RespondToSuggestion} {
+		req := authed(httptest.NewRequest("POST", "/known-id", strings.NewReader(`{"action":"rejected","revision":0}`)), f.userID)
 		route := chi.NewRouteContext()
 		route.URLParams.Add("id", f.docID)
 		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, route))

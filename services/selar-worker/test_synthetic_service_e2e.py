@@ -308,17 +308,16 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             quiz = page.goto(f"{console}/quiz")
             assert quiz is not None and quiz.status == 404
             page.goto(f"{console}/reader?docId={pdf_id}&page=1")
+            page.get_by_role('button',name='Continue reading',exact=True).click()
             page.locator(".pdf-page-container .textLayer").get_by_text(PDF_LINE).wait_for(timeout=20000)
             _dismiss_optional_consent(page)
             assert "1 / 1" in page.locator(".page-indicator").first.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
-            card = page.get_by_role("region", name="Review a suggested connection")
-            card.get_by_text("Fabricated notebook A").wait_for(timeout=20000)
-            assert card.count() == 1
-            # Step 1 names the suggestion in plain words, without quotes or a percentage score.
-            assert "suggestion, not a fact" in card.inner_text()
-            assert card.locator("blockquote").count() == 0
-            assert "%" not in card.inner_text()
+            page.get_by_role('button',name='Continue reading',exact=True).click()
+            card = page.get_by_role('region',name='Connection reflection').filter(has_text='Fabricated notebook A').first
+            card.get_by_role('textbox',name='Your reflection').wait_for(timeout=20000)
+            assert card.locator('blockquote').count()==0
+            assert '%' not in card.inner_text()
             page.goto(f"{console}/library")
             page.get_by_role("button", name="Add content").click()
             disclosure = page.locator("dialog[open] .processing-disclosure")
@@ -326,43 +325,18 @@ def test_auth_ingestion_exact_witness_review_graph_reader_and_stale_rejection(se
             assert "Google Gemini" in disclosure.inner_text()
             assert "You can export your data or delete your account" in disclosure.inner_text()
             page.goto(f"{console}/reader?docId={latest}")
-            card = page.get_by_role("region", name="Review a suggested connection")
-            card.get_by_text("Fabricated notebook A").wait_for(timeout=20000)
-            start = card.get_by_role("button", name="Think about this link →")
-            # The button stays disabled until the exact source preview arrives;
-            # wait for that prerequisite instead of racing the client fetch.
-            expect(start).to_be_enabled(timeout=10000)
-            start.focus()
-            start.press("Enter")
-            heading = card.get_by_role("heading", name="Explain it in your own words")
-            heading.wait_for(timeout=10000)
-            assert heading.evaluate("element => element === document.activeElement"), "each step must move focus to its heading"
-            # Explain before evidence: the passages stay hidden at this step.
-            assert card.locator("blockquote").count() == 0
-            card.get_by_role("textbox", name="Your explanation of how the readings connect").fill(
-                "The two toy examples both describe gradient descent optimization.")
-            card.get_by_text("without looking (optional)").click()
-            card.get_by_role("textbox", name="Your recall of the earlier reading").fill(
-                "Both fabricated examples reduce a toy error score.")
-            card.get_by_role("button", name="Show me the passages →").click()
-            card.get_by_role("heading", name="Compare with the sources").wait_for(timeout=10000)
-            assert card.locator("blockquote").count() == 2
-            assert "gradient descent optimization" in card.inner_text().lower()
-            assert "Both fabricated examples reduce a toy error score." in card.inner_text()
-            assert card.get_by_role("link", name="open ↗").count() == 2
-            with page.expect_response(lambda response: (
-                response.request.method == "POST"
-                and f"/api/mental-model-links/{link['id']}/respond" in response.url
-            )) as submitted_review:
-                card.get_by_role("button", name="Yes, keep this link").click()
-            assert submitted_review.value.status == 200
-            # Private drafts are never sent with the decision.
-            assert "toy error score" not in (submitted_review.value.request.post_data or "")
-            assert "gradient descent optimization" not in (submitted_review.value.request.post_data or "")
-            page.get_by_text("Link kept.").wait_for(timeout=10000)
-            page.get_by_role("tab", name="Kept links").click()
-            page.get_by_text("↔ Fabricated notebook A").wait_for(timeout=10000)
+            page.get_by_role('button',name='Continue reading',exact=True).click()
+            card = page.get_by_role('region',name='Connection reflection').filter(has_text='Fabricated notebook A').first
+            card.get_by_role('textbox',name='Your reflection').fill('Both fabricated examples reduce a toy error score.')
+            card.get_by_role('button',name='Compare passages',exact=True).click()
+            assert card.locator('blockquote').count()==2
+            assert card.get_by_role('button',name='This link is wrong',exact=True).count()==1
+            assert card.get_by_role('button',name='Yes, keep this link').count()==0
             browser.close()
+        # Legacy audit lifecycle remains API-tested; the new learner UI never
+        # submits approval decisions or turns reflection into a graph assertion.
+        _request(client,'POST',f"{api}/api/mental-model-links/{link['id']}/respond",token,
+                 json={'action':'confirmed','revision':0})
         confirmed = _request(client, "GET", f"{api}/api/mental-model-links?document_id={latest}", token)
         assert any(item["id"] == link["id"] and item["status"] == "confirmed" for item in confirmed)
         review = _request(client, "GET", f"{api}/api/mental-model-links/{link['id']}/preview", token)

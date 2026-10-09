@@ -38,5 +38,28 @@ Added owner-private current-source progress aggregates and `/progress`, plus Rev
 - RED DB + UI/navigation: `m5-red.log`, `m5-ui-red.log`.
 - Full worker/Postgres, console test and build pass: `m5-worker.log`, `m5-ui.log`, `m5-build.log`.
 
-## Remaining milestones
-6 pending full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
+## Milestone 6 — integrated real-service acceptance
+Added synthetic multipart PDF upload → durable ingestion → automatic generation → Chromium warm-up → source reading → end-reading check → test-only persisted day-N aging → daily review → progress. API, worker, Next, Chromium and isolated PostgreSQL/pgvector are real; only external model responses are synthetic. Browser borrower isolation, disabled-cohort direct witness routes, quiet flag/readback and zero graph/recall-success side effects are asserted. Existing PDF, web and chat service scenarios still run; historical review lifecycle remains an explicit API audit fixture rather than the removed reader UI.
+
+Independent-review fixes included in this final integration slice:
+- Warm-up does not create reading sessions or formal first-reading anchors; source-visible stage starts the session. Browser/DB assertion verifies zero before Continue reading and one afterward.
+- Three source items generate concurrently with a 40-second total model budget and bounded lock waits. The real HTTP regression uses six synthetic 11-second provider calls and completes in **22.11 seconds**, without changing server timeouts. Budget exhaustion is unavailable, not a fabricated item.
+- Wrong-link flags carry the displayed revision; stale flags return 409 without history mutation. Legacy similarity-response route also respects disabled cohorts.
+- Changed extraction cannot overwrite an item and silently rebind old attempts. Delete/generation race, prior source invalidation, and no-reported-assistance plus recent in-app-reading exclusion are tested.
+- Generation/verifier/grader model identifiers and policy versions retained. Injection/negation/partial-response tests verify the model boundary, not live-model accuracy.
+- Upgrade 020→practice migrations preserves a submitted formal free-recall attempt, pending manual review, questions, rubric and feedback-never configuration byte-for-byte; clean migration and rerun tests also pass.
+
+### Final local receipts
+All paths below are under `/Users/kavirum1a/.hermes/cache/scratch/selar-loop-receipts`.
+- `TEST_DATABASE_URL=postgres://selar_e2e@127.0.0.1:55447/selar_e2e?sslmode=disable go test -count=1 ./...` (API directory) → passed, `m6-go.log`.
+- `go vet ./...` → passed, `m6-vet.log`.
+- `TEST_DATABASE_URL=postgres://selar_e2e@127.0.0.1:55447/selar_e2e ../../.venv/bin/python -m pytest -q` (worker directory) → **153 passed, 7 dedicated-service skips**, `m6-worker.log`. Those skipped scenarios are exercised by the next command, not claimed executed here.
+- `SELAR_SYNTHETIC_E2E=1 TEST_DATABASE_URL=postgres://selar_e2e@127.0.0.1:55447/selar_e2e TEST_API_BINARY=/Users/kavirum1a/.hermes/cache/scratch/selar-loop-receipts/selar-e2e-api TEST_CONSOLE_DIR=/Users/kavirum1a/.hermes/cache/scratch/selar-learning-loop/services/selar-console ../../.venv/bin/python -m pytest -vv -s test_synthetic_service_e2e.py test_chat_service_e2e.py test_web_service_e2e.py test_learning_loop_e2e.py` → **9 passed**, `m6-e2e.log`.
+- `pnpm test` → **56 files / 376 tests passed**, `m6-ui.log`; `pnpm build` → passed, `m6-build.log`.
+- Additional RED receipts: `m6-e2e-red.log`, `m6-session-red.log`, `m6-flags-red.log`, `m6-budget-red.log`, `m6-races-red.log`, `m6-exposure-red.log`, `m6-copy-red.log`.
+- Existing PyMuPDF/SWIG/Starlette deprecation and React test-act warnings are visible in raw logs; no runtime failures are hidden.
+
+### Publication and limitations
+Six substantive stacked PRs; earlier milestone heads intentionally remain immutable. Final integration adds CI/coverage/synthetic workflow branch filters for `feat/learning-*` so full checks run against the integrated head while preserving milestone diffs. Remote head/check receipts are attached to PRs after publication; no earlier green run certifies a later head.
+
+Not deployed. Live Gemini generation, entailment and grading quality are not validated by synthetic providers; they require deployment-side provider configuration/availability and separate evaluation. Practice generation is bounded synchronous work, not a new durable generation queue; unavailable/timeout offers retry. Schedule is an explicitly tested heuristic, not FSRS or a calibrated memory estimate. Streak days use UTC, not inferred local timezone. No participant/study readiness or efficacy is claimed. Parent must review/merge the full stack; no PR merged and no issue closed. Existing PR #133 may need UI reconciliation, #134 remains independent.

@@ -19,7 +19,7 @@ export function ConnectionsPanel({docId,links,loading,mentalModel,reloadLinks,pa
 function Reflection({link,reload,onOpenWitness}:{link:MentalModelLink;reload:()=>Promise<MentalModelLink[]>;onOpenWitness?:OpenWitness}){
  const [preview,setPreview]=useState<MentalLinkReviewPreview|null>(null),[error,setError]=useState(''),[draft,setDraft]=useState(''),[show,setShow]=useState(false),[hidden,setHidden]=useState(false),[busy,setBusy]=useState(false);
  useEffect(()=>{let active=true;clientFetch<MentalLinkReviewPreview>(`/api/mental-model-links/${link.id}/preview`).then(p=>{if(active)setPreview(p);}).catch(()=>{if(active)setError('Source evidence unavailable');});return()=>{active=false;};},[link.id]);
- async function flag(){setBusy(true);try{await clientFetch(`/api/mental-model-links/${link.id}/flag`,{method:'POST'});await reload();setHidden(true);}catch{setError('Could not hide this prompt; reload and retry.');}finally{setBusy(false);}}
+ async function flag(){setBusy(true);try{await clientFetch(`/api/mental-model-links/${link.id}/flag`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:preview?.revision})});await reload();setHidden(true);}catch{setError('Could not hide this prompt; reload and retry.');}finally{setBusy(false);}}
  if(hidden)return <p role="status">Prompt hidden.</p>;
  if(!isReviewable(preview))return <p role="status">{error||'Source evidence unavailable; no reflection prompt shown.'}</p>;
  return <section className="cx-card" aria-label="Connection reflection"><h3>{link.source_document_title} ↔ {link.target_document_title}</h3>

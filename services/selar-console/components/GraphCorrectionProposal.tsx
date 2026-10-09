@@ -89,7 +89,7 @@ export function GraphCorrectionProposal({ messages, sourceMessageId }: { message
   if (proposal) {
     return (
       <div className="graph-correction" aria-label="Proposed graph correction">
-        <strong>{proposal.state === "proposed" ? "Proposed correction — not yet in your graph" : `Correction ${proposal.state}`}</strong>
+        <strong>{proposal.state === "proposed" ? "Proposed correction — not yet in your graph" : `Correction ${proposal.state === "confirmed" ? "saved" : proposal.state}`}</strong>
         <span>
           <em>{proposal.asserting_document_title}</em> asserts: {proposal.subject} {RESEARCH_PREDICATES[proposal.predicate] || proposal.predicate} {proposal.object}
           {" "}({proposal.scope === "reported_about_other" ? "reported about another work, not that work's own paper" : "its own work"})
@@ -97,7 +97,7 @@ export function GraphCorrectionProposal({ messages, sourceMessageId }: { message
         {proposal.evidence.map((evidence) => <blockquote key={evidence.chunk_id}>{evidence.quote}</blockquote>)}
         {proposal.state === "proposed" && (
           <div className="graph-correction-actions">
-            <button disabled={busy} onClick={() => respond("confirm")}>Confirm and add to graph</button>
+            <button disabled={busy} onClick={() => respond("confirm")}>Save sourced assertion</button>
             <button disabled={busy} onClick={() => respond("reject")}>Discard</button>
           </div>
         )}
@@ -110,7 +110,7 @@ export function GraphCorrectionProposal({ messages, sourceMessageId }: { message
   return (
     <form className="graph-correction" aria-label="Propose a graph correction" onSubmit={(event) => { event.preventDefault(); if (ready) propose(); }}>
       <strong>Propose a source-scoped correction</strong>
-      <span>State what one paper claims and quote the passage that says so. Nothing changes until you confirm the preview.</span>
+      <span>State what one paper claims and quote the passage that says so. Save the source-scoped assertion to record your edit.</span>
       <label>Supporting passage
         <select value={chunkId} onChange={(event) => {
           setChunkId(event.target.value);

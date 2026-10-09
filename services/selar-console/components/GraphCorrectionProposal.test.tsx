@@ -64,10 +64,10 @@ it("creates only a proposed assertion and confirms the exact revision previewed"
     evidence: [{ chunk_id: "chunk-rac", quote: racQuote }] });
   expect(container.textContent).toContain("not yet in your graph");
   expect(container.textContent).toContain("not that work's own paper");
-  const confirm = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Confirm"))!;
+  const confirm = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Save sourced assertion"))!;
   await act(async () => { confirm.click(); });
   expect(clientFetch.mock.calls[1][0]).toBe("/api/research-assertions/as-1/respond");
   expect(JSON.parse(clientFetch.mock.calls[1][1].body)).toEqual({ action: "confirm", revision: 1 });
-  expect(container.textContent).toContain("Correction confirmed");
+  expect(container.textContent).toContain("Correction saved");
   await act(async () => root.unmount());
 });
