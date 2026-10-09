@@ -6,10 +6,16 @@ on:
   pull_request:
     branches: [main, 'feat/learning-*', 'test/learning-*', 'feat/document-format-snapshots']
 
+# Cancel superseded PR runs only; never evict main or manual invocations.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   go-coverage:
     name: Go API Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: services/selar-api
@@ -37,19 +43,22 @@ jobs:
   console-coverage:
     name: Console Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: services/selar-console
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: services/selar-console/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -69,6 +78,7 @@ jobs:
   worker-coverage:
     name: Worker Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: services/selar-worker
@@ -78,6 +88,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/selar-worker/requirements.txt
 
       - name: Install dependencies
         run: |

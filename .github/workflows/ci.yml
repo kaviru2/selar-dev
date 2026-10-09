@@ -8,10 +8,17 @@ on:
   merge_group:
     branches: [main]
 
+# Only newer runs of the same PR may supersede one another. Non-PR
+# invocations use run_id: main, merge queues and manual runs remain independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-api:
     name: Build Go API
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: services/selar-api
@@ -39,19 +46,22 @@ jobs:
   build-console:
     name: Build Next.js Console
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: services/selar-console
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: services/selar-console/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -62,6 +72,7 @@ jobs:
   check-worker:
     name: Check Python Worker
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -87,6 +98,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/selar-worker/requirements.txt
 
       - uses: actions/setup-go@v5
         with:
@@ -94,7 +107,11 @@ jobs:
           cache-dependency-path: services/selar-api/go.sum
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: pip install -r requirements.txt pytest PyYAML
+
+      - name: Test workflow cost-control contracts
+        working-directory: .
+        run: python scripts/test_workflow_contracts.py
 
       - name: Apply database migrations with the checksum-tracked runner
         run: |

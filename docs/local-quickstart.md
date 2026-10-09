@@ -10,7 +10,7 @@ Install these tools before starting; this guide does not install system packages
 
 | Tool | Requirement / source of truth |
 |---|---|
-| Git and repository access | `kaviru2/selar-dev` is private; authenticate using your normal Git credentials. |
+| Git | `kaviru2/selar-dev` is public; HTTPS cloning does not require repository access credentials. |
 | Go | 1.25.5 or newer, as declared in [go.mod](../services/selar-api/go.mod). |
 | Node.js and npm/npx | Use a version compatible with the console dependencies. This smoke test used Node 25.5.0; the [console Dockerfile](../services/selar-console/Dockerfile) uses Node 22. |
 | pnpm | 11.5.1, pinned in [package.json](../services/selar-console/package.json). Commands below use `npx` to select that version without replacing your global pnpm. |
@@ -152,7 +152,7 @@ The database and uploads remain under `.local/` for your next session. Do not us
 
 | Symptom | Check |
 |---|---|
-| Clone denied | Ask the repository owner for access; do not switch to a similarly named repository. |
+| Clone denied | Confirm the exact public HTTPS URL above and check your network/proxy or Git credential configuration; do not switch to a similarly named repository. |
 | `vector` extension unavailable | Install pgvector for the PostgreSQL major version used by `initdb`, then rerun migrations. Installing PostgreSQL alone is insufficient. |
 | Database fails during startup on macOS | Read `.local/postgres.log`; the tested machine needed `LC_ALL=C` as shown above. Keep the checkout path reasonably short for the Unix socket path. |
 | Connection refused / login fails | Confirm database and API ports, migrations, and `API_INTERNAL_URL` in the console terminal. The root dotenv file is not loaded by Next.js automatically. |
@@ -162,7 +162,7 @@ The database and uploads remain under `.local/` for your next session. Do not us
 
 ## Costs and data boundary
 
-The repository has an [Apache-2.0 license](../LICENSE); it is still private. That is not a promise of free hosted access. Local software does not remove hardware, electricity or storage costs, and hosted infrastructure has its own billing/quotas.
+The repository is public and has an [Apache-2.0 license](../LICENSE). That is not a promise of free hosted access. Local software does not remove hardware, electricity or storage costs, and hosted infrastructure has its own billing/quotas.
 
 The current worker uses **Google Gemini** for model-backed processing, including practice generation, a separate support check and answer grading. Opening a reading can request generation before you answer. These calls may consume quota, and automated checking does not validate real-world accuracy. Self-hosted does not mean offline: content used for embeddings and generation can leave your machine for that provider. Review the provider account's current terms, billing, limits and data policy before supplying a key. No fixed price or sufficient free quota is promised here. There is no working Ollama/local-model setup verified by this guide.
 

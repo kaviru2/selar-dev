@@ -25,7 +25,7 @@ flowchart LR
 | Run SELAR on your computer | Follow the [local quickstart](docs/local-quickstart.md): isolated database, API, worker and console, with a no-model-call smoke check. |
 | Operate a hosted deployment | Read the existing [deployment guide](docs/DEPLOYMENT.md); local development settings are not production settings. |
 
-This canonical repository, `kaviru2/selar-dev`, is **private**. Cloning requires repository access; this README does not promise public sign-up or a publicly available hosted service.
+This canonical repository, `kaviru2/selar-dev`, is **public** and can be cloned without repository access credentials. Public source code does not promise public sign-up or a publicly available hosted service.
 
 ## What is available
 
