@@ -24,23 +24,23 @@ const STEPS: { n: string; title: string; body: string; illo: IllustrationName; t
   },
   {
     n: "2",
-    title: "Explain",
-    body: "Before you see the AI's reason, you're asked to put the connection in your own words. If you can't see one, saying so is a perfectly good answer.",
+    title: "Reflect",
+    body: "Optionally recall similarities or differences in your own words. Your reflection is not graded, not saved and not sent anywhere. You can compare the passages without writing one.",
     illo: "explain",
     tint: "sky",
   },
   {
     n: "3",
     title: "Compare",
-    body: "Both source passages appear side by side, quoted exactly, with page references. You check the suggestion against what the texts actually say.",
+    body: "Open the exact source passages and their locations. Check the prompt against what the texts actually say: shared wording does not establish a relationship.",
     illo: "compare",
     tint: "warm",
   },
   {
     n: "4",
-    title: "Decide",
-    body: "Keep the link, change it, or reject it. Nothing is saved to your reading history unless you choose to keep it.",
-    illo: "decide",
+    title: "Continue",
+    body: "Return to your reading whenever you like. If a prompt is wrong, use “This link is wrong” to quietly hide it. Opening or flagging a prompt is not evidence of recall or mastery.",
+    illo: "reading",
     tint: "amber",
   },
 ];
@@ -84,8 +84,8 @@ const SURVEY = [
 
 const NOT_LIST: { title: string; body: string }[] = [
   { title: "Not a summariser", body: "It never condenses your reading into AI notes. You read the source." },
-  { title: "Not an answer machine", body: "It asks you questions. Your explanation comes before its reason." },
-  { title: "Not the final word", body: "Every suggestion can be wrong. You can reject it, and that's a useful outcome too." },
+  { title: "Not an answer machine", body: "Connection prompts invite your own reflection and a check of the sources, not an AI verdict." },
+  { title: "Not the final word", body: "Every suggestion can be wrong. You can check its sources or quietly flag it to hide the prompt." },
   { title: "Not a proven study aid (yet)", body: "We haven't tested whether it helps people remember. That study is still to come." },
 ];
 
@@ -119,12 +119,12 @@ export function LandingPage() {
               Today&apos;s reading, meet <span className="lp-underline">last week&apos;s</span>.
             </h1>
             <p className="lp-lede">
-              SELAR is a PDF reader that sometimes says: <em>&ldquo;this might connect to something you read before.&rdquo;</em> It shows you both passages, asks how you think they relate, and lets you decide whether the link is worth keeping.
+              SELAR is a PDF reader that sometimes says: <em>&ldquo;this might connect to something you read before.&rdquo;</em> It invites an optional reflection, lets you compare the source passages, and offers a quiet way to flag a wrong prompt.
             </p>
             <p className="lp-principle">
               <span><Icon name="sparkles" size={15} /> AI suggests</span>
               <span><Icon name="doc" size={15} /> Sources show</span>
-              <span><Icon name="pen" size={15} /> You explain and decide</span>
+              <span><Icon name="pen" size={15} /> You reflect and check</span>
             </p>
             <div className="lp-hero-actions">
               <ButtonLink href="/register" variant="primary" size="lg">
@@ -144,7 +144,7 @@ export function LandingPage() {
           <div className="lp-section-head">
             <span className="ui-eyebrow">How it works</span>
             <h2 id="how-title">Four small steps, and you make the call</h2>
-            <p>Each suggestion walks you through the same short loop. It usually takes a minute or two. You can skip any suggestion you&apos;re not in the mood for.</p>
+            <p>Each prompt offers a reflection and a source check. You can skip the reflection or return to your reading at any time.</p>
           </div>
           <ol className="lp-steps">
             {STEPS.map((s) => (
@@ -200,7 +200,7 @@ export function LandingPage() {
                 </li>
               ))}
             </ul>
-            <p className="lp-small">Those concerns shaped the design. Every suggestion quotes both sources so you can check it, and you explain the link before the AI gives its reason.</p>
+            <p className="lp-small">Those concerns shaped the design. Connection prompts need two exact, located passages so you can check the sources. Reflection stays optional and private to the current view.</p>
           </div>
         </section>
 
@@ -260,7 +260,7 @@ export function LandingPage() {
           <Illustration name="library" width={170} />
           <div>
             <h2 id="cta-title">Bring two readings.<br /> See what you make of them.</h2>
-            <p>Create an account, upload a couple of PDFs from the same course, and try the notice, explain, compare and decide loop yourself.</p>
+            <p>Create an account, upload a couple of PDFs from the same course, and try the notice, reflect, compare and continue loop yourself.</p>
           </div>
           <div className="lp-cta-actions">
             <ButtonLink href="/register" variant="primary" size="lg">Create account</ButtonLink>

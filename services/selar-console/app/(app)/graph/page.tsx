@@ -10,6 +10,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AssertionProvenance } from "@/components/AssertionProvenance";
 import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
+import styles from "./graph.module.css";
+import { NODE_TYPE_COLORS, REL_COLORS, useGraphColors } from "@/lib/graph-theme";
 import { candidateReviewURL, crossReadingNotice, crossReadingSummary, isCandidateLink, linkDash, linkLayer } from "@/lib/graph-links";
 
 type ForceGraphComponent = (typeof import("react-force-graph-2d"))["default"];
@@ -63,32 +65,8 @@ function isInteractionLink(link: GraphLinkMetadata): boolean {
   return linkLayer(link) === "yours";
 }
 
-const REL_COLORS: Record<string, string> = {
-  prerequisite_of: "#c96442",
-  related_to: "#9a938a",
-  sub_concept_of: "#8a6a3d",
-  contradicts: "#c0443a",
-  extends: "#7a8c5c",
-  concept_overlap: "#5e8aaa",
-  claim_extension: "#7a8c5c",
-  assumption_conflict: "#c0443a",
-  question_resolution: "#9a6a9a",
-  has_claim: "#c8c1b7",
-  has_assumption: "#c8c1b7",
-  raises: "#c8c1b7",
-  uses_concept: "#6f7f8c",
-};
-
-const NODE_TYPE_COLORS: Record<GraphNodeType, string> = {
-  concept: "#5e8aaa",
-  entity: "#4f7a74",
-  document: "#c96442",
-  claim: "#7a8c5c",
-  assumption: "#8a6a3d",
-  question: "#9a6a9a",
-};
-
 export default function GraphPage() {
+  const canvasColor = useGraphColors();
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [links, setLinks] = useState<GraphLink[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +122,17 @@ export default function GraphPage() {
     return impact;
   }, [links]);
 
+  // A stopped animation loop does not repaint when its draw callbacks change.
+  // Paint one frame for a theme change, then retain the user's paused state.
+  useEffect(() => {
+    if (!isPhysicsPaused) return;
+    const frame = requestAnimationFrame(() => {
+      fgRef.current?.resumeAnimation();
+      fgRef.current?.pauseAnimation();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [canvasColor, isPhysicsPaused]);
+
   // Measure container dimensions dynamically to prevent canvas overflow
   useEffect(() => {
     if (!containerRef.current) return;
@@ -183,7 +172,7 @@ export default function GraphPage() {
           state: n.state,
           documentTitle: n.document_title,
           val: Math.max(3, (connCount[n.id] || 0) + 2),
-          color: NODE_TYPE_COLORS[n.node_type] || "#9a938a",
+          color: NODE_TYPE_COLORS[n.node_type] || "var(--ink-3)",
         }));
 
         const gLinks: GraphLink[] = data.edges.map((e) => ({
@@ -334,85 +323,57 @@ export default function GraphPage() {
     }
   };
 
-  // Node drawing with high quality shadows and glowing styles
+  // Canvas drawing uses resolved CSS colours; labels remain readable in both themes.
   const nodeCanvasObject = useCallback((node: RenderNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    if (typeof node.x !== 'number' || typeof node.y !== 'number' || !isFinite(node.x) || !isFinite(node.y)) {
-      return;
-    }
+    if (typeof node.x !== "number" || typeof node.y !== "number" || !isFinite(node.x) || !isFinite(node.y)) return;
     const isSel = node.id === selId;
     const isHovered = node.id === hoverNode;
     const isDimmed = hoverNode !== null && !connectedNodes.has(node.id);
     const interactionImpact = interactionNodeImpact.get(node.id);
-
     const r = Math.sqrt(node.val || 1) * 4.2;
     const fontSize = Math.max(10 / globalScale, 4.5);
-
     ctx.save();
-
-    // Dimmed effect for highlighting path context
-    ctx.globalAlpha = isDimmed ? 0.20 : 1.0;
-
-    // A colored ring makes concepts touched by chat/reactions visible without
-    // replacing their semantic node-type color.
+    ctx.globalAlpha = isDimmed ? 0.20 : 1;
     if (showInteractionChanges && interactionImpact) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, r + 3.5, 0, 2 * Math.PI);
-      ctx.strokeStyle = interactionImpact === "active" ? "#7a8c5c" : "#b35b43";
+      ctx.strokeStyle = canvasColor(interactionImpact === "active" ? "var(--accent)" : "var(--error)");
       ctx.lineWidth = 1.4 / globalScale;
       ctx.setLineDash([3 / globalScale, 2 / globalScale]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
-
-    // Outer Glow / Ring
     if (isSel || isHovered) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, r + (isSel ? 4.5 : 2.5), 0, 2 * Math.PI);
-      ctx.fillStyle = isSel ? `${node.color}1c` : `${node.color}10`;
+      ctx.save();
+      ctx.globalAlpha *= isSel ? 0.11 : 0.06;
+      ctx.fillStyle = canvasColor(node.color);
       ctx.fill();
-      ctx.strokeStyle = isSel ? node.color : `${node.color}66`;
+      ctx.restore();
+      ctx.strokeStyle = canvasColor(node.color);
       ctx.lineWidth = 1.2 / globalScale;
       ctx.stroke();
     }
-
-    // Modern drop shadow for the node sphere
-    ctx.shadowColor = "rgba(26, 24, 22, 0.16)";
-    ctx.shadowBlur = 6 * globalScale;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 2.5 * globalScale;
-
-    // Main Node Circle (Flat & Clean color fill)
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-    ctx.fillStyle = node.color;
+    ctx.fillStyle = canvasColor(node.color);
     ctx.fill();
-
-    // Reset shadow for borders and text
-    ctx.shadowColor = "transparent";
-
-    // Node Border
-    ctx.strokeStyle = isSel ? "#ffffff" : "rgba(255, 255, 255, 0.65)";
+    ctx.strokeStyle = canvasColor("var(--bg)");
     ctx.lineWidth = isSel ? 2.5 / globalScale : 1.2 / globalScale;
     ctx.stroke();
-
-    // Node Label (Always show selected or zoomed nodes)
-    const showLabel = globalScale > 1.45 || node.nodeType === "document" || isSel || isHovered;
-    if (showLabel) {
-      ctx.font = `${isSel ? '600' : '500'} ${fontSize}px sans-serif`;
+    if (globalScale > 1.45 || node.nodeType === "document" || isSel || isHovered) {
+      ctx.font = `${isSel ? "600" : "500"} ${fontSize}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-
-      // Draw outline for clear contrast instead of overlapping solid background blocks
-      ctx.strokeStyle = "#faf9f7";
+      ctx.strokeStyle = canvasColor("var(--bg)");
       ctx.lineWidth = 4 / globalScale;
       ctx.strokeText(node.name, node.x, node.y + r + 5);
-
-      ctx.fillStyle = isSel ? "#1a1816" : "#46413c";
+      ctx.fillStyle = canvasColor(isSel ? "var(--ink)" : "var(--ink-3)");
       ctx.fillText(node.name, node.x, node.y + r + 5);
     }
-
     ctx.restore();
-  }, [selId, hoverNode, connectedNodes, interactionNodeImpact, showInteractionChanges]);
+  }, [selId, hoverNode, connectedNodes, interactionNodeImpact, showInteractionChanges, canvasColor]);
 
 
   const linkCanvasObject = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -441,28 +402,28 @@ export default function GraphPage() {
     ctx.setLineDash(linkDash(link).map((d) => d / globalScale));
 
     if (isCandidate) {
-      ctx.strokeStyle = "#b0782a";
-      ctx.globalAlpha = isDimmed ? 0.25 : isSelectedPath || isHoveredPath ? 1 : 0.85;
+      ctx.strokeStyle = canvasColor("var(--text-amber)");
+      ctx.globalAlpha = isDimmed ? 0.25 : 1;
       ctx.lineWidth = (isSelectedPath || isHoveredPath ? 2.2 : 1.5) / globalScale;
     } else if (isInactive) {
-      ctx.strokeStyle = isInteraction ? "#b35b43" : "#b9b1a8";
+      ctx.strokeStyle = canvasColor(isInteraction ? "var(--error)" : "var(--ink-3)");
       ctx.globalAlpha = isInteraction ? 0.65 : 0.16;
       ctx.lineWidth = (isInteraction ? 1.4 : 0.6) / globalScale;
     } else if (isDimmed) {
-      ctx.strokeStyle = "#ded9d2";
+      ctx.strokeStyle = canvasColor("var(--rule-2)");
       ctx.globalAlpha = 0.08;
       ctx.lineWidth = 0.5 / globalScale;
     } else if (isInteraction) {
-      ctx.strokeStyle = "#7a8c5c";
-      ctx.globalAlpha = isSelectedPath || isHoveredPath ? 1 : 0.8;
+      ctx.strokeStyle = canvasColor("var(--accent)");
+      ctx.globalAlpha = 1;
       ctx.lineWidth = (isSelectedPath || isHoveredPath ? 2.4 : 1.5) / globalScale;
     } else if (isSelectedPath || isHoveredPath) {
-      ctx.strokeStyle = REL_COLORS[link.relation] || "#c96442";
-      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = canvasColor(REL_COLORS[link.relation] || "var(--ink-3)");
+      ctx.globalAlpha = 1;
       ctx.lineWidth = 2.0 / globalScale;
     } else {
-      ctx.strokeStyle = "#c8c1b7";
-      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = canvasColor("var(--ink-3)");
+      ctx.globalAlpha = 1;
       ctx.lineWidth = 0.8 / globalScale;
     }
 
@@ -477,19 +438,18 @@ export default function GraphPage() {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      const labelText = link.relation.replace(/_/g, " ");
+      const labelText = `${link.relation.replace(/_/g, " ")}${isCandidate ? " · to review" : ""}`;
       const labelWidth = ctx.measureText(labelText).width;
-
-      // Label text badge background
-      ctx.fillStyle = "rgba(250, 249, 247, 0.9)";
+      // Labels stay opaque even when an inactive edge is subdued.
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = canvasColor("var(--bg)");
       ctx.fillRect(midX - labelWidth / 2 - 2, midY - fontSize / 2 - 1, labelWidth + 4, fontSize + 2);
-
-      ctx.fillStyle = isCandidate ? "#b0782a" : isInteraction ? (isInactive ? "#b35b43" : "#7a8c5c") : (REL_COLORS[link.relation] || "#c96442");
-      ctx.fillText(isCandidate ? `${labelText} · to review` : labelText, midX, midY);
+      ctx.fillStyle = canvasColor(isCandidate ? "var(--text-amber)" : isInteraction ? (isInactive ? "var(--error)" : "var(--accent)") : (REL_COLORS[link.relation] || "var(--ink-3)"));
+      ctx.fillText(labelText, midX, midY);
     }
 
     ctx.restore();
-  }, [selId, hoverNode]);
+  }, [selId, hoverNode, canvasColor]);
 
   // Filter nodes matching search query
   const filteredNodes = useMemo(() => {
@@ -503,18 +463,15 @@ export default function GraphPage() {
   };
 
   return (
-    <div className="graph" style={{ display: "flex", width: "100%", height: "100%", position: "relative", overflow: "hidden" }}>
+    <div className={`graph ${styles.workspace}`}>
 
-      {/* Search and Control Deck (Floating overlay top-left) */}
-      <div style={{
-        position: "absolute", top: 16, left: 16, zIndex: 10,
-        display: "flex", gap: 10, alignItems: "center"
-      }}>
+      {/* Controls occupy their own row so they cannot cover the graph or inspector. */}
+      <div className={styles.controls}>
         {/* Concept Finder Search Bar */}
         <div style={{ position: "relative" }}>
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
-            background: "rgba(250, 249, 247, 0.8)", backdropFilter: "blur(12px)",
+            background: "var(--bg-raised)", backdropFilter: "blur(12px)",
             border: "1px solid var(--rule)", borderRadius: "var(--r-md)",
             padding: "6px 12px", width: 240, boxShadow: "var(--shadow-1)",
             transition: "all 0.2s ease"
@@ -548,7 +505,7 @@ export default function GraphPage() {
           {filteredNodes.length > 0 && (
             <div style={{
               position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0,
-              background: "rgba(250, 249, 247, 0.95)", backdropFilter: "blur(16px)",
+              background: "var(--bg-raised)", backdropFilter: "blur(16px)",
               border: "1px solid var(--rule)", borderRadius: "var(--r-md)",
               boxShadow: "var(--shadow-2)", overflow: "hidden", zIndex: 20,
               maxHeight: 200, overflowY: "auto"
@@ -576,7 +533,7 @@ export default function GraphPage() {
         {/* Toolbar Controls */}
         <div style={{
           display: "flex", gap: 2,
-          background: "rgba(250, 249, 247, 0.8)", backdropFilter: "blur(12px)",
+          background: "var(--bg-raised)", backdropFilter: "blur(12px)",
           border: "1px solid var(--rule)", borderRadius: "var(--r-md)",
           padding: 2, boxShadow: "var(--shadow-1)"
         }}>
@@ -644,7 +601,7 @@ export default function GraphPage() {
       </div>
 
       {/* Main Graph Viewport */}
-      <div ref={containerRef} style={{
+      <div ref={containerRef} className={styles.viewport} style={{
         flex: 1, position: "relative",
         background: "var(--bg)",
         // Premium subtle blueprint grid pattern
@@ -715,14 +672,14 @@ export default function GraphPage() {
               const tgtId = endpointId(link.target);
               return (srcId === selId || tgtId === selId) ? 2.2 : 1.2;
             }}
-            linkDirectionalParticleColor={(link) => isInteractionLink(link) ? "#7a8c5c" : (REL_COLORS[link.relation] || "var(--accent)")}
+            linkDirectionalParticleColor={(link) => canvasColor(isCandidateLink(link) ? "var(--text-amber)" : isInteractionLink(link) ? "var(--accent)" : (REL_COLORS[link.relation] || "var(--ink-3)"))}
           />
         )}
 
         {/* Legend Panel (Floating bottom-left) */}
-        <div style={{
+        <div className={styles.legend} style={{
           position: "absolute", bottom: 16, left: 16, display: "flex", flexDirection: "column", gap: 6,
-          background: "rgba(250, 249, 247, 0.8)", backdropFilter: "blur(12px)",
+          background: "var(--bg-raised)", backdropFilter: "blur(12px)",
           border: "1px solid var(--rule)", borderRadius: "var(--r-md)",
           padding: "8px 12px", fontSize: 10, fontFamily: "var(--font-mono)",
           boxShadow: "var(--shadow-1)"
@@ -742,10 +699,10 @@ export default function GraphPage() {
       </div>
 
       {/* Inspect / Detail Side Panel */}
-      <aside style={{
-        width: 340, borderLeft: "1px solid var(--rule)", background: "rgba(250, 249, 247, 0.5)",
+      <aside aria-label="Node details" className={styles.details} style={{
+        borderLeft: "1px solid var(--rule)", background: "var(--bg-raised)",
         backdropFilter: "blur(20px)", display: "flex", flexDirection: "column", padding: "24px 20px",
-        overflowY: "auto", zIndex: 10, boxShadow: "-2px 0 20px rgba(0,0,0,0.02)"
+        overflowY: "auto", zIndex: 10, boxShadow: "var(--shadow-1)"
       }}>
         {selectedNode ? (
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -754,14 +711,15 @@ export default function GraphPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
               <span style={{
                 fontSize: 9, fontFamily: "var(--font-mono)", fontWeight: 600,
-                color: selectedNode.color, background: `${selectedNode.color}15`,
-                border: `1px solid ${selectedNode.color}33`,
+                color: selectedNode.color, background: "var(--bg)",
+                border: `1px solid ${selectedNode.color}`,
                 borderRadius: 4, padding: "2px 8px", textTransform: "uppercase"
               }}>
                 {selectedNode.nodeType.replace(/_/g, " ")} · {selectedNode.state}
               </span>
               <span style={{ flex: 1 }} />
               <button
+                aria-label="Close node details"
                 onClick={() => setSelId(null)}
                 style={{
                   background: "none", border: "none", cursor: "pointer",
@@ -796,8 +754,8 @@ export default function GraphPage() {
             {selectedNode.nodeType === "concept" && selectedNode.state === "candidate" && (
               <div style={{
                 display: "grid", gap: 9, padding: 12, marginBottom: 20,
-                border: "1px solid rgba(94,138,170,.28)", borderRadius: "var(--r-md)",
-                background: "rgba(94,138,170,.06)"
+                border: "1px solid var(--rule-2)", borderRadius: "var(--r-md)",
+                background: "var(--bg)"
               }}>
                 <span style={{ fontSize: 10, lineHeight: 1.45, color: "var(--ink-3)" }}>
                   This concept was discovered from cited chat evidence. Explore its source passages as learning material.
@@ -805,8 +763,8 @@ export default function GraphPage() {
                 <div style={{ display: "flex", gap: 7 }}>
                   <p>Source-grounded candidate concept; not evidence of mastery or established knowledge.</p>
                   <button onClick={() => respondToConcept(selectedNode.id, "reject")} style={{
-                    border: "1px solid rgba(163,59,50,.28)", borderRadius: 4,
-                    background: "transparent", color: "#a33b32", padding: "6px 10px", cursor: "pointer", fontSize: 10
+                    border: "1px solid var(--error)", borderRadius: 4,
+                    background: "transparent", color: "var(--error)", padding: "6px 10px", cursor: "pointer", fontSize: 10
                   }}>Reject</button>
                 </div>
               </div>
@@ -869,8 +827,8 @@ export default function GraphPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{
                         fontSize: 8, fontFamily: "var(--font-mono)", fontWeight: 700,
-                        color: relColor, background: `${relColor}15`,
-                        border: `1px solid ${relColor}33`,
+                        color: relColor, background: "var(--bg)",
+                        border: `1px solid ${relColor}`,
                         borderRadius: 10, padding: "1px 6px", textTransform: "uppercase"
                       }}>
                         {l.relation.replace(/_/g, " ")}
@@ -878,7 +836,7 @@ export default function GraphPage() {
                       <span style={{ flex: 1 }} />
                       <span style={{
                         fontSize: 8, fontFamily: "var(--font-mono)", textTransform: "uppercase",
-                        color: ["rejected", "archived", "superseded"].includes(l.state) ? "#a33b32" : "#7a8c5c"
+                        color: ["rejected", "archived", "superseded"].includes(l.state) ? "var(--error)" : "var(--accent)"
                       }}>
                         {l.state}
                       </span>
@@ -893,7 +851,7 @@ export default function GraphPage() {
                       Focus {peer?.name || "related node"}
                     </button>
                     {l.created_via === "deterministic_chat" && (
-                      <span style={{ color: "#7a8c5c", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
+                      <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
                         Adapted from grounded chat · {Math.round((l.confidence || 0) * 100)}% confidence
                       </span>
                     )}
@@ -903,12 +861,12 @@ export default function GraphPage() {
                     {l.assertion_id && <AssertionProvenance link={l} />}
                     {isCandidateLink(l) && (
                       <div onClick={(event) => event.stopPropagation()} className="graph-candidate-card">
-                        <span style={{ color: "#8a5a1a", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
-                          Suggested by SELAR · not reviewed · not part of your knowledge until you decide
+                        <span style={{ color: "var(--text-amber)", fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 600 }}>
+                          Prompt for reflection · check both sources · not evidence of mastery or an established relationship
                         </span>
                         {l.source_quote && <blockquote>{l.source_quote}</blockquote>}
                         {l.target_quote && <blockquote>{l.target_quote}</blockquote>}
-                        {candidateReviewURL(l) && <Link href={candidateReviewURL(l)!}>Compare and decide in the Reader</Link>}
+                        {candidateReviewURL(l) && <Link href={candidateReviewURL(l)!}>Compare source passages in the Reader</Link>}
                       </div>
                     )}
                     {l.created_via !== "deterministic_chat" && !l.mental_link_id && !l.assertion_id && !isCandidateLink(l) && (
@@ -927,7 +885,7 @@ export default function GraphPage() {
                       <Link href={`/reader?docId=${encodeURIComponent(l.source_document_id)}&linkId=${encodeURIComponent(l.mental_link_id)}`}>Open reviewed assertion in reader</Link>
                     </div>}
                     {l.valid_to && (
-                      <span style={{ color: "#a33b32", fontFamily: "var(--font-mono)", fontSize: 9 }}>
+                      <span style={{ color: "var(--error)", fontFamily: "var(--font-mono)", fontSize: 9 }}>
                         No longer active since {new Date(l.valid_to).toLocaleDateString()}
                       </span>
                     )}
@@ -935,8 +893,8 @@ export default function GraphPage() {
                       <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={(event) => event.stopPropagation()}>
                         <span>Historical chat suggestion; no relationship is established by co-citation.</span>
                         <button onClick={() => respondToEdge(l.id, "reject")} style={{
-                          border: "1px solid rgba(163,59,50,.25)", borderRadius: 4, background: "transparent",
-                          color: "#a33b32", padding: "4px 8px", cursor: "pointer", fontSize: 9
+                          border: "1px solid var(--error)", borderRadius: 4, background: "transparent",
+                          color: "var(--error)", padding: "4px 8px", cursor: "pointer", fontSize: 9
                         }}>Reject</button>
                       </div>
                     )}

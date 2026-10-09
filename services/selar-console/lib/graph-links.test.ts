@@ -53,7 +53,9 @@ describe("graph link presentation (#117)", () => {
     expect(summary.candidates).toBe(1);
     expect(summary.unconnected).toBe(1);
     expect(crossReadingNotice(summary, true)?.title).toBe("1 suggested link to review");
-    expect(crossReadingNotice(summary, true)?.body).toMatch(/Nothing is added/);
+    expect(crossReadingNotice(summary, true)?.body).toMatch(/optional reflection/);
+    expect(crossReadingNotice(summary, true)?.body).toMatch(/quietly hide a wrong prompt/);
+    expect(crossReadingNotice(summary, true)?.body).not.toMatch(/confirm or reject|until you decide|added to your knowledge/);
     expect(crossReadingNotice(summary, false)?.body).toMatch(/Turn on “To review”/);
   });
 
