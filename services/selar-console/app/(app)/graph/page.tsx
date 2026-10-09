@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { clientFetch, type GraphData, type GraphNodeType, type ReplayReport } from "@/lib/api";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -609,10 +610,10 @@ export default function GraphPage() {
         backgroundSize: "20px 20px"
       }}>
         {loading && (
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 5, backdropFilter: "blur(4px)" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-              <Icon name="spinner" size={24} className="animate-spin" style={{ color: "var(--accent)" }} />
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--ink-3)" }}>Assembling neural network...</span>
+          <div className="graph-loading" role="status">
+            <div>
+              <Icon name="spinner" size={24} className="animate-spin" />
+              <span>Loading graph…</span>
             </div>
           </div>
         )}
@@ -628,18 +629,12 @@ export default function GraphPage() {
         )}
 
         {!loading && visibleNodes.length === 0 && (
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 5 }}>
-            <div style={{ textAlign: "center", maxWidth: 280, padding: 24 }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>🕸️</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
-                {nodes.length === 0 ? "No mental models mapped yet" : "No graph layer selected"}
-              </div>
-              <div style={{ fontSize: 12, marginTop: 6, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                {nodes.length === 0
-                  ? "Process documents to create evidence-backed claims, concepts, assumptions, and open questions."
-                  : "Turn on PDF knowledge, Your changes or To review to inspect that layer."}
-              </div>
-            </div>
+          <div className="graph-empty">
+            <EmptyState compact illustration="graph" title={nodes.length === 0 ? "No mental models mapped yet" : "No graph layer selected"}>
+              {nodes.length === 0
+                ? "Process documents to create evidence-backed claims, concepts, assumptions, and open questions."
+                : "Turn on PDF knowledge, Your changes or To review to inspect that layer."}
+            </EmptyState>
           </div>
         )}
 

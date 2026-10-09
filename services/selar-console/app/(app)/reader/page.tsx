@@ -571,7 +571,7 @@ function ConnectionCard({ source, evidence, status, onReject, onReveal }: {
   return (
     <article className={`match-card passage-card ${status}`}>
       <div className="connection-source">{source}</div>
-      <details className="connection-evidence"><summary>View both passages</summary><p style={{ whiteSpace: "pre-line" }}>{evidence}</p></details>
+      <details className="connection-evidence"><summary>View both passages</summary><p>{evidence}</p></details>
       <div className="foot">
         {onReveal && <button className="reveal" onClick={onReveal}><Icon name="eye" size={11} /> Show on page</button>}
         {reviewed ? (
