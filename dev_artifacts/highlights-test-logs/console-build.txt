@@ -1,0 +1,66 @@
+$ next build
+▲ Next.js 16.2.4 (Turbopack)
+- Experiments (use with caution):
+  ✓ authInterrupts
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 11.3s
+  Running TypeScript ...
+  Finished TypeScript in 10.3s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/31) ...
+  Generating static pages using 7 workers (7/31) 
+  Generating static pages using 7 workers (15/31) 
+  Generating static pages using 7 workers (23/31) 
+✓ Generating static pages using 7 workers (31/31) in 825ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /about
+├ ƒ /admin
+├ ƒ /admin/quiz-attempts/[id]
+├ ƒ /admin/quizzes
+├ ƒ /admin/quizzes/[id]
+├ ƒ /admin/quizzes/[id]/results
+├ ƒ /admin/quizzes/new
+├ ƒ /admin/users
+├ ƒ /admin/users/[id]
+├ ƒ /api/[...go_api]
+├ ƒ /api/auth/delete-account
+├ ƒ /api/auth/google/callback
+├ ƒ /api/auth/google/start
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/password
+├ ƒ /api/auth/preferences
+├ ƒ /api/auth/register
+├ ƒ /api/auth/session-expired
+├ ○ /apple-icon.png
+├ ƒ /chat
+├ ƒ /graph
+├ ○ /icon.svg
+├ ƒ /library
+├ ○ /login
+├ ○ /manifest.webmanifest
+├ ƒ /onboarding
+├ ○ /opengraph-image.png
+├ ƒ /progress
+├ ƒ /quiz
+├ ƒ /quizzes
+├ ƒ /quizzes/[id]
+├ ƒ /quizzes/result/[attemptId]
+├ ƒ /reader
+├ ○ /register
+├ ƒ /review
+├ ƒ /settings
+├ ○ /styleguide
+└ ○ /twitter-image.png
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

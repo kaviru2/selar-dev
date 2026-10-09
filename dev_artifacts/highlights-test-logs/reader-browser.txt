@@ -1,0 +1,30 @@
+PASS indicator shows page 1 of N "1 / 16"
+PASS virtualised: only nearby pages mounted {"mounted":3,"total":16}
+PASS all pages laid out (placeholders)
+PASS wheel scroll advances page indicator "4 / 16"
+PASS Next page lands at top of target page (small margin) {"p":5,"topDelta":8}
+PASS End goes to last page "16 / 16"
+PASS Home goes to page 1 "1 / 16"
+PASS PgDn + → advance one page each "3 / 16"
+PASS typing a page number jumps "9 / 16"
+PASS zoom preserves reading position {"anchorBefore":{"page":"9","frac":0.2615586738972438},"anchorAfter":{"page":"9","frac":0.26128266033254155}}
+PASS zoomed canvas is re-rendered at resolution (not CSS-scaled)
+PASS thumbnail click jumps "5 / 16"
+PASS Ctrl/⌘+F finds matches across pages "1 of 19"
+PASS find highlights in text layer
+PASS deep link ?page=2 opens page 2 "2 / 16"
+PASS text selection works "Paragraph 1 on page 2 describes interlea"
+PASS selection toolbar appears
+PASS highlight created
+PASS last position remembered per document "7 / 16"
+PASS URL tracks current page "http://localhost:18852/reader?docId=f0e7ef3f-33bd-449d-9f2a-1dd38ac6fac2&page=7"
+PASS next suggestion flashes passage "1 / 16"
+PASS evidence marks don't block text selection "none"
+PASS clicking evidence opens popover
+PASS Escape closes popover
+PASS Show on page flashes target "2 / 16"
+PASS mobile: page fits width 342
+PASS mobile: Connections toggle visible
+PASS mobile: Connections opens as an overlay
+PASS no page errors []
+29/29 checks passed
