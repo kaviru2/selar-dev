@@ -88,6 +88,28 @@ describe("Settings page", () => {
     expect(host.textContent).toContain("Set by your study group");
   });
 
+  it("gives every preference checkbox a name that says what it controls", async () => {
+    locked = ["suggestions.show_on_open"];
+    await render();
+    const names = Array.from(host.querySelectorAll('input[type="checkbox"]')).map((box) => box.getAttribute("aria-label"));
+    expect(names).toEqual(["Remember position", "Page thumbnails", "Show suggestions when a document opens"]);
+    const lockedBox = byLabel("Show suggestions when a document opens");
+    expect(lockedBox.disabled).toBe(true);
+    expect(lockedBox.title).toBe("Set by your study group; it cannot be changed here.");
+  });
+
+  it("shows the save status in the section that was changed", async () => {
+    await render();
+    await act(async () => byText("green").click());
+    const reader = host.querySelector('section[aria-label="Reader"]')!;
+    const suggestions = host.querySelector('section[aria-label="Suggestions"]')!;
+    expect(reader.querySelector('[role="status"]')?.textContent).toBe("Saved");
+    expect(suggestions.querySelector('[role="status"]')).toBeNull();
+    await act(async () => byLabel("Show suggestions when a document opens").click());
+    expect(suggestions.querySelector('[role="status"]')?.textContent).toBe("Saved");
+    expect(reader.querySelector('[role="status"]')).toBeNull();
+  });
+
   it("only enables Delete account after the exact phrase and a password", async () => {
     await render();
     const del = byText("Delete account") as HTMLButtonElement;
