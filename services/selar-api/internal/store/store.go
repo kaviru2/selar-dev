@@ -327,14 +327,8 @@ func (s *Store) GetDocumentStats(ctx context.Context, userID string) (*model.Doc
 		`SELECT
 		   COUNT(DISTINCT d.id),
 		   COALESCE(SUM((SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id)), 0),
-		   -- "Links you kept": grounded links the learner kept (confirmed or
-		   -- corrected) in the Reader, plus legacy kept passage matches from
-		   -- before grounded review. Retracted/rejected rows are excluded.
-		   (SELECT COUNT(*) FROM mental_model_links ml
-		     WHERE ml.user_id = $1 AND ml.review_revision > 0
-		       AND ml.status IN ('confirmed', 'relabeled'))
-		   + (SELECT COUNT(*) FROM link_suggestions ls
-		     WHERE ls.user_id = $1 AND ls.status IN ('confirmed', 'relabeled'))
+		   COALESCE((SELECT COUNT(*) FROM link_suggestions ls
+		     WHERE ls.user_id = $1 AND ls.status = 'confirmed'), 0)
 		 FROM documents d WHERE d.user_id = $1 AND d.visible`,
 		userID,
 	).Scan(&stats.TotalDocuments, &stats.TotalChunks, &stats.ConfirmedLinks)
