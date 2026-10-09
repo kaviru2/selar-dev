@@ -35,6 +35,7 @@ async def generate_item(source, model):
             'chunk_id': str(source['id']), 'chunk_hash': digest(source['content']),
             'locator': json.loads(source['locator']) if isinstance(source['locator'], str) else source['locator'],
             'label': 'AI-generated practice', 'version': VERSION,
+            'generation_model': draft.get('_model','unspecified'), 'verifier_model':check.get('_model','unspecified'),
             'grounding': 'exact quote + separate AI check (not established truth)'}
 
 
@@ -44,4 +45,4 @@ def validated_feedback(result):
              and result.get('confident') is True)
     return {'score': score if valid else None, 'provisional': not valid,
             'feedback': str(result.get('feedback', 'Uncertain AI feedback; unscored'))[:4000],
-            'version': VERSION, 'label': 'AI practice feedback, not a formal assessment'}
+            'version': VERSION, 'model': result.get('_model','unspecified'), 'label': 'AI practice feedback, not a formal assessment'}

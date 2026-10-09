@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"github.com/go-chi/chi/v5"
 	"github.com/selar-dev/selar-api/internal/middleware"
 	"github.com/selar-dev/selar-api/internal/model"
@@ -26,11 +27,22 @@ func (h *Handler) FlagMentalModelLink(w http.ResponseWriter, r *http.Request) {
 	if !h.requireLearningLinks(w, r) {
 		return
 	}
+	var request struct {
+		Revision *int64 `json:"revision"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1000)).Decode(&request); err != nil || request.Revision == nil || *request.Revision < 0 {
+		writeJSON(w, 400, map[string]string{"error": "displayed revision required"})
+		return
+	}
 	owner := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	preview, err := h.store.PreviewMentalModelLink(r.Context(), owner, id)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "live prompt not found"})
+		return
+	}
+	if preview.Revision != *request.Revision {
+		writeJSON(w, 409, map[string]string{"error": "prompt changed; refresh"})
 		return
 	}
 	if preview.Status == model.MentalLinkRejected || preview.Status == model.MentalLinkArchived {

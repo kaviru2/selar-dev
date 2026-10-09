@@ -108,7 +108,7 @@ def graph_command_response(started: float) -> Dict[str, Any]:
               "To correct the graph, propose a source-scoped assertion below: pick the cited "
               "passage of the paper that makes the claim, state what that paper asserts and "
               "whether it is about its own work or another work it reports on. It is added "
-              "only after you confirm the exact preview.")
+              "only when you save that source-scoped assertion.")
     return {
         "answer": answer,
         "model_version": "deterministic-graph-command-boundary-v1",

@@ -188,7 +188,7 @@ The Library **Add content** flow accepts a public article/blog URL, pasted text 
 
 PDF batches accept up to 10 files, with a 50 MB limit per file. The console transfers files sequentially, the API validates the PDF signature, caps each request, and spills multipart data above 8 MB to temporary disk. Accepted PDF, web, and text work is stored in a PostgreSQL-backed queue before the API responds. Workers claim jobs with expiring leases, renew active leases, retry transient failures up to three times, and recover abandoned work after a restart. The worker processes one document at a time by default (`INGESTION_CONCURRENCY=1`) to keep several large PDFs from multiplying peak memory use. Queue polling is disabled for ad-hoc local worker processes unless `INGESTION_QUEUE_ENABLED=true`; Docker Compose enables it on the worker service so a stray local `uvicorn` process cannot consume jobs without access to the shared upload volume.
 
-Grounded chat can add a missing concept candidate when a bounded phrase from the question appears directly in cited library evidence. The reducer does not mine generated answers or feedback comments for facts. Candidates preserve message/chunk provenance, create at most three candidate relationships per turn, and can be confirmed or rejected in the Graph workspace.
+Grounded chat can identify candidate concepts when a bounded phrase from the question appears in cited library evidence. This is discovery metadata, not evidence of relationships or recall success. Co-citation and similarity do not automatically create graph assertions. The Graph workspace retains historical source-scoped records; cross-reading learning prompts live in the reader.
 
 The Managed sources panel can copy a small **Save to SELAR** bookmarklet. The bookmarklet only opens the authenticated SELAR add screen with the current URL—no API key or page contents are stored in the bookmark. Public pages are fetched server-side with redirect, size, content-type, robots, and private-network protections. It does not bypass authentication or paywalls.
 
@@ -267,9 +267,9 @@ selar-dev/
 1. Open [http://localhost:3000](http://localhost:3000) and register an account.
 2. Navigate to **Library** and upload one or more PDF documents.
 3. Wait for the status to change from "processing" to "ready" (the worker handles chunking, embedding, and link generation).
-4. Open a document in the **Reader**. The right-side Matches panel shows AI-discovered semantic links to other documents.
-5. **Confirm** or **Reject** each match. Every interaction is a retrieval-practice event.
-6. Visit the **Graph** tab to explore your knowledge graph — concepts extracted from your papers with force-directed visualization.
+4. Open a document in the **Reader**. Try the optional **Before reading** warm-up, then choose **Continue reading**. The Connections panel offers source-grounded reflection prompts.
+5. Compare exact passages or quietly flag **This link is wrong**. These actions do not count as recall success. Use **End-reading check** for separate AI practice feedback.
+6. Visit **Review** for due practice and **Progress** for observed delayed attempts, exposure distinctions and UTC streaks. **Quizzes** remains the separate fixed study-assessment system.
 
 ---
 

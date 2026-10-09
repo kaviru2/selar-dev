@@ -30,8 +30,9 @@ export function PracticeCard({item,phase,onDone}:{item:PracticeItem;phase:'warmu
  </section>;
 }
 
-export function ReadingPractice({documentId,children}:{documentId:string;children:ReactNode}) {
+export function ReadingPractice({documentId,children,onReadingChange}:{documentId:string;children:ReactNode;onReadingChange?:(visible:boolean)=>void}) {
  const [stage,setStage]=useState<'warmup'|'reading'|'check'>('warmup');
+ useEffect(()=>{onReadingChange?.(Boolean(documentId)&&stage==='reading');return()=>onReadingChange?.(false);},[documentId,stage,onReadingChange]);
  const [items,setItems]=useState<PracticeItem[]>([]);const [message,setMessage]=useState('Loading practice…');
  async function load(){
   setMessage('Loading practice…');

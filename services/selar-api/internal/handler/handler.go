@@ -395,6 +395,9 @@ func (h *Handler) RespondToSuggestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.requireLearningLinks(w, r) {
+		return
+	}
 	if err := h.store.RespondToSuggestion(r.Context(), userID, id, status, req.Label, req.TimeToRespondMs); err != nil {
 		switch {
 		case errors.Is(err, store.ErrUnclassifiedNotConfirmable):
