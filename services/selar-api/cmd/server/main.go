@@ -156,6 +156,8 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.Verify)
 
+		// Private generated practice is separate from the fixed formal quiz system.
+		r.Post("/practice", h.Practice)
 		// Users
 		r.Get("/users/me", h.GetCurrentUser)
 		r.Patch("/users/me/preferences", h.UpdatePreferences)
