@@ -186,3 +186,26 @@ effect on the app's behaviour. It is separate from the legacy `users.cohort` col
 still hard-coded at registration (see #14). **Protocol decision needed:** how participants are
 allocated to groups, and who assigns the labels, belongs in the study protocol. This feature
 only records the label.
+
+## Measurement change log
+
+### 2026-10-09: continuous-scroll Reader (#91, PR #104)
+
+Approved by Kaviru on 2026-10-09 (option A: adopt the new definitions).
+
+- **`pages_viewed`** now counts pages that stayed the main page in view for at
+  least **1.5 s** of visible time. Time is paused while the tab is hidden; the
+  threshold is `VIEWED_DWELL_MS` in `app/(app)/reader/page.tsx` and
+  `lib/reader/dwell.ts`. Before this change it counted pages navigated to with
+  the page buttons. Under continuous scroll, the old rule would have counted
+  every page scrolled past.
+- **`max_scroll_depth`** (0–100) is now depth through the **whole document**.
+  Before, it was depth within the single page on screen.
+- **Comparability.** Reading sessions recorded before this release are not
+  directly comparable with later ones on these two fields. Use the deploy time
+  of this release as the cut-over (see the GitHub deployment for PR #104).
+  This is fine if no participant study data was collected before it; do not
+  pool across the cut-over otherwise.
+- Unchanged: `duration_ms`, session start/end, and `reader_page_viewed`
+  (consent-gated, one event per page left, visible time only).
+

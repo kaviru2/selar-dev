@@ -36,9 +36,9 @@ const type = async (field: HTMLTextAreaElement | HTMLInputElement, value: string
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
-const render = async () => {
+const render = async (extra: Partial<Parameters<typeof ConnectionsPanel>[0]> = {}) => {
   await act(async () => root.render(
-    <ConnectionsPanel docId="new-doc" links={links} loading={false} mentalModel={null} reloadLinks={reload} />,
+    <ConnectionsPanel docId="new-doc" links={links} loading={false} mentalModel={null} reloadLinks={reload} {...extra} />,
   ));
   await settle();
 };
@@ -114,6 +114,25 @@ describe("guided connections sidebar", () => {
     expect(respondCalls()).toHaveLength(0);
     expect(fetchSpy.mock.calls.some(([, init]) => String(init?.body || "").includes("recall strengthens"))).toBe(false);
     expect(storageSpy).not.toHaveBeenCalled();
+  });
+
+  it("lets the reader open a compare quote in place, and falls back to the link otherwise", async () => {
+    const onOpenWitness = vi.fn((docId: string) => docId === "new-doc");
+    await render({ onOpenWitness });
+    await click(/think about this link/i);
+    await click(/show me the passages/i);
+    const [thisReading, other] = Array.from(container.querySelectorAll("figure a")) as HTMLAnchorElement[];
+    const clickLink = async (anchor: HTMLAnchorElement) => {
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+      await act(async () => { anchor.dispatchEvent(event); });
+      return event.defaultPrevented;
+    };
+    expect(await clickLink(thisReading)).toBe(true);
+    expect(onOpenWitness).toHaveBeenCalledWith("new-doc", { page: 1 }, link.source_quote);
+    expect(await clickLink(other)).toBe(false);
+    expect(onOpenWitness).toHaveBeenLastCalledWith("old-doc", { block_index: 0 }, link.target_quote);
+    // Still on the compare step: the guided card is not lost.
+    expect(container.textContent).toContain("Compare with the sources");
   });
 
   it("keeps a link with a revision-bound decision and offers undo", async () => {
