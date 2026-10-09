@@ -171,7 +171,7 @@ export default function ChatPage() {
         </div>
         <div className="chat-policy-note">
           <strong>Evidence-first</strong>
-          <span>Answer ratings are feedback, not confirmation of a concept relationship. Review source passages before accepting a connection.</span>
+          <span>Answer ratings are feedback, not evidence of a concept relationship. Use learning connections to reflect and compare exact source passages.</span>
         </div>
       </aside>
 

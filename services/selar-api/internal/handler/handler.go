@@ -649,6 +649,9 @@ func (h *Handler) RespondToMentalModelLink(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "valid id, explicit revision and supported action required"})
 		return
 	}
+	if !h.requireLearningLinks(w, r) {
+		return
+	}
 	if err := h.store.RespondToMentalModelLink(r.Context(), userID, chi.URLParam(r, "id"), response); err != nil {
 		if errors.Is(err, store.ErrMentalModelLinkNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "mental-model link not found"})

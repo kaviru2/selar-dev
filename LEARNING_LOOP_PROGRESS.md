@@ -27,5 +27,11 @@ Owner-scoped live-source due queue and one-at-a-time review page. Atomic attempt
 - Full worker pytest with isolated Postgres → passed (`m3-worker.log`).
 - Full console tests/build → receipts `m3-console.log`, `m3-build.log`.
 
+## Milestone 4 — reflection links
+Replaced reader keep/reject approval UI with locally drafted neutral reflection and comparison of live exact witnesses. Quiet flag uses existing revision-bound audit transaction to reject candidate or retract a historical saved link; it adds no assertion or recall success. Historical records, formal instruments and evidence files preserved. Added server cohort gate to direct witness preview/respond/flag, including known-ID locked-cohort real DB regression. Current reader/onboarding/chat/README/deployment copy updated; removed graph candidate promotion controls. Explicit user-authored graph correction remains a separate editing tool, not an automatic-link approval step.
+- RED: `m4-go-red.log`, `m4-ui-red.log`, `m4-copy-red.log`.
+- `TEST_DATABASE_URL=... go test ./...` → passed (`m4-go.log`).
+- Console full regression/build: `m4-ui.log`, `m4-build.log`.
+
 ## Remaining milestones
-4–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
+5–6 pending implementation and full integrated acceptance testing. Provider tests use explicitly synthetic model fixtures; no production model quality, deployment or participant efficacy is claimed.
