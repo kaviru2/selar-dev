@@ -277,6 +277,81 @@ def test_derived_subterm_witness_is_grounded_in_both_quotes():
     assert "compensation" in source["content"].lower() and "compensation" in target["content"].lower()
 
 
+@db
+@pytest.mark.parametrize("side,field", [(side, field) for side in ("source_evidence", "target_evidence")
+                                        for field in ("source_snapshot_hash", "quote", "text_sha256", "asserting_source_id")])
+def test_multi_concept_insert_rejects_tampered_two_sided_snapshot(multi_worker, side, field):
+    import asyncpg
+
+    async def exercise():
+        conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+        owner, early, late = await _owner_with_docs(conn)
+        try:
+            await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+            await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+            link = dict((await _links(conn, owner))[0])
+            evidence = json.loads(link[side]); evidence[field] = "not-the-current-source"
+            link[side] = json.dumps(evidence)
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            with pytest.raises(asyncpg.RaiseError, match="two-sided owner-matched"):
+                await conn.execute("""INSERT INTO mental_model_links
+                    (user_id,source_model_id,target_model_id,link_type,source_evidence_chunk_id,target_evidence_chunk_id,
+                     source_evidence,target_evidence,status,created_via)
+                    VALUES ($1,$2,$3,'concept_overlap',$4,$5,$6::jsonb,$7::jsonb,'candidate','ai_suggested')""",
+                    owner, link["source_model_id"], link["target_model_id"], link["source_evidence_chunk_id"],
+                    link["target_evidence_chunk_id"], link["source_evidence"], link["target_evidence"])
+            assert await _links(conn, owner) == []
+        finally:
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            await conn.execute("DELETE FROM users WHERE id=$1", owner)
+            await conn.close()
+    asyncio.run(exercise())
+
+
+@db
+@pytest.mark.parametrize("direct", [False, True])
+def test_concurrent_opposite_direction_generation_keeps_one_per_concept(multi_worker, direct):
+    import asyncpg
+    from candidate_generation import link_pair, _norm
+
+    async def exercise():
+        conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+        owner, early, late = await _owner_with_docs(conn)
+        peers = []
+        try:
+            await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+            await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+            models = [dict(r) for r in await conn.fetch(
+                "SELECT id AS model_id,document_id,key_concepts FROM document_mental_models WHERE user_id=$1 ORDER BY document_id", owner)]
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            peers = [await asyncpg.connect(os.environ["TEST_DATABASE_URL"]) for _ in range(8)]
+            if direct:
+                from candidate_contract import persist_grounded_overlap
+                from candidate_generation import _ROWS_SQL
+                passages = [dict(await conn.fetchrow(_ROWS_SQL, m["document_id"], owner, 600)) for m in models]
+
+                async def insert_all(c, i):
+                    a, b = i % 2, 1 - i % 2
+                    for name in MULTI:
+                        await persist_grounded_overlap(c, {"key_concepts": [name]}, passages[a], passages[b], owner,
+                                                       models[a]["document_id"], models[b]["document_id"],
+                                                       models[a]["model_id"], models[b]["model_id"], 0.0)
+                await asyncio.gather(*(insert_all(c, i) for i, c in enumerate(peers)))
+            else:
+                await asyncio.gather(*(link_pair(c, owner, models[i % 2], models[1 - i % 2]) for i, c in enumerate(peers)))
+            links = await _links(conn, owner)
+            assert len(links) == MAX_LINKS_PER_PAIR
+            assert len({_norm(json.loads(r["source_evidence"])["asserted_concept"]) for r in links}) == MAX_LINKS_PER_PAIR
+            assert all(r["valid"] for r in links)
+        finally:
+            for c in peers:
+                await c.close()
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            await conn.execute("DELETE FROM users WHERE id=$1", owner)
+            await conn.close()
+    asyncio.run(exercise())
+
+
 MULTI = ["orchard ledger protocol", "harvest audit trail", "fabricated orchard yield",
          "toy grading rubric", "invented crate tally", "imaginary trellis spacing", "pretend pruning cadence"]
 MULTI_A = "# Invented A\n" + " ".join(f"Notebook A defines the {n} carefully." for n in MULTI) + "\n"

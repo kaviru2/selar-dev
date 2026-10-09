@@ -21,6 +21,46 @@ END $$;
 CREATE UNIQUE INDEX mental_model_links_pair_concept_key ON mental_model_links
   (source_model_id, target_model_id, link_type, lower(source_evidence->>'asserted_concept'));
 
+-- Match the worker's ASCII case/punctuation/plural deduplication exactly.
+CREATE FUNCTION mental_link_concept_key(term text) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(string_agg(CASE WHEN length(word) > 3 AND right(word, 1) = 's'
+                                 THEN left(word, length(word)-1) ELSE word END, ' ' ORDER BY n), '')
+  FROM regexp_split_to_table(lower(coalesce(term, '')), '[^a-z0-9]+') WITH ORDINALITY AS t(word, n)
+  WHERE word <> '';
+$$;
+
+-- New inserts are bounded even for writers other than link_pair. Do not rewrite
+-- or delete historical/reviewed rows, including any pre-existing reverse pair.
+-- VOLATILE trigger queries get a fresh READ COMMITTED snapshot after waiting.
+CREATE FUNCTION bound_mental_link_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.link_type <> 'concept_overlap' THEN RETURN NEW; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.user_id::text || ':' ||
+    least(NEW.source_model_id::text, NEW.target_model_id::text) || ':' ||
+    greatest(NEW.source_model_id::text, NEW.target_model_id::text), 0));
+  IF EXISTS (
+    SELECT 1 FROM mental_model_links l
+    WHERE l.user_id = NEW.user_id AND l.link_type = 'concept_overlap'
+      AND least(l.source_model_id, l.target_model_id) = least(NEW.source_model_id, NEW.target_model_id)
+      AND greatest(l.source_model_id, l.target_model_id) = greatest(NEW.source_model_id, NEW.target_model_id)
+      AND mental_link_concept_key(l.source_evidence->>'asserted_concept') =
+          mental_link_concept_key(NEW.source_evidence->>'asserted_concept')
+  ) OR (NEW.status IN ('candidate', 'confirmed', 'relabeled') AND (
+    SELECT count(*) FROM mental_model_links l
+    WHERE l.user_id = NEW.user_id AND l.link_type = 'concept_overlap'
+      AND least(l.source_model_id, l.target_model_id) = least(NEW.source_model_id, NEW.target_model_id)
+      AND greatest(l.source_model_id, l.target_model_id) = greatest(NEW.source_model_id, NEW.target_model_id)
+      AND l.status IN ('candidate', 'confirmed', 'relabeled')
+  ) >= 5) THEN
+    RETURN NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER bound_mental_link_insert BEFORE INSERT ON mental_model_links
+FOR EACH ROW EXECUTE FUNCTION bound_mental_link_insert();
+
 CREATE OR REPLACE FUNCTION valid_grounded_mental_link(link mental_model_links) RETURNS boolean
 LANGUAGE sql STABLE AS $$
   SELECT EXISTS (

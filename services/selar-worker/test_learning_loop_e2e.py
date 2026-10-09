@@ -76,8 +76,11 @@ def test_upload_warmup_reading_check_day_n_review_progress_and_private_boundarie
     prompt.get_by_role('button',name='This link is wrong',exact=True).click()
    assert flagged.value.status==200
    assert json.loads(flagged.value.request.post_data)['revision']==link['revision']
-   page.get_by_text('No suggested connections yet.',exact=False).wait_for(timeout=10000)
-   assert not any(e.get('mental_link_id')==link['id'] for e in _request(client,'GET',f'{api}/api/graph',token)['edges'])
+   # Multi-concept pairs retain their other independently grounded suggestions.
+   expect(page.get_by_role('region',name='Connection reflection')).to_have_count(len(links)-1)
+   graph_ids={e['id'] for e in _request(client,'GET',f'{api}/api/graph',token)['edges']}
+   assert f"candidate:{link['id']}" not in graph_ids
+   assert {f"candidate:{item['id']}" for item in links[1:]} <= graph_ids
    page.get_by_role('button',name='End-reading check',exact=True).click()
    page.get_by_role('textbox',name='Your recall').fill('Gradient descent optimization reduces error')
    page.get_by_role('button',name='Check my recall').click();page.get_by_text('Reference answer:',exact=False).wait_for(timeout=20000)

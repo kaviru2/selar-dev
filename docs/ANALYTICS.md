@@ -195,8 +195,10 @@ Approved by Kaviru on 2026-10-09 (show the top 3-5 links per pair, cap 5).
 
 - Treatment participants may see up to 5 suggestions per pair of readings
   instead of 1. Each suggestion is a distinct shared concept with an exact
-  two-sided witness; counts of suggested/confirmed/rejected mental-model links
-  per participant are therefore not comparable across this change.
+  two-sided witness of term mentions, not a claim of semantic equivalence or entailment.
+  Counts of suggestions and reader flags/retractions per participant are therefore
+  not comparable across this change. The current UI has no learner approval action;
+  legacy confirmed/relabeled storage statuses still count toward the cap.
 - Existing reviewed links are untouched; a backfill (`backfill_candidates.py`,
   see docs/BACKFILL_CANDIDATES.md) may add candidates to existing pairs when run.
 

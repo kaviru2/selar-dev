@@ -18,7 +18,7 @@ def _same_identity(left, right):
             and bool(str(left)) and bool(str(right)) and str(left) == str(right))
 
 
-# A derived sub-term of a key concept (migration 021): lowercase, >= 8 chars.
+# A derived sub-term of a key concept (migration 025): lowercase, >= 8 chars.
 SUBTERM_RE = re.compile(r"^[a-z][a-z0-9 -]{7,}$")
 
 

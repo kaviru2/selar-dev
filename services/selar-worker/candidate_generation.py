@@ -190,6 +190,15 @@ async def link_pair(conn, owner, first, second, rows_cache=None, similarity=0.0)
     """
     if str(first["document_id"]) == str(second["document_id"]):
         return []
+    # A transaction-scoped, direction-independent lock covers the read/count and
+    # every insert. Concurrent ingestion and backfill must not both see vacancies.
+    pair = ":".join(sorted((str(first["model_id"]), str(second["model_id"]))))
+    async with conn.transaction():
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", str(owner) + ":" + pair)
+        return await _link_pair_locked(conn, owner, first, second, rows_cache, similarity)
+
+
+async def _link_pair_locked(conn, owner, first, second, rows_cache, similarity):
     existing = await existing_pair_concepts(conn, owner, first["model_id"], second["model_id"])
     if sum(1 for st in existing.values() if st in ACTIVE_STATUSES) >= MAX_LINKS_PER_PAIR:
         return []

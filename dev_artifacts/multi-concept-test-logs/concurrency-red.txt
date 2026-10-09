@@ -1,0 +1,102 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_concurrent_opposite_direction_generation_keeps_one_per_concept ______
+
+multi_worker = <module 'main' from '/Users/kavirum1a/.hermes/cache/scratch/selar-legacy-pr-integration/services/selar-worker/main.py'>
+
+    @db
+    def test_concurrent_opposite_direction_generation_keeps_one_per_concept(multi_worker):
+        import asyncpg
+        from candidate_generation import link_pair, _norm
+    
+        async def exercise():
+            conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+            owner, early, late = await _owner_with_docs(conn)
+            peers = []
+            try:
+                await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+                await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+                models = [dict(r) for r in await conn.fetch(
+                    "SELECT id AS model_id,document_id,key_concepts FROM document_mental_models WHERE user_id=$1 ORDER BY document_id", owner)]
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                peers = [await asyncpg.connect(os.environ["TEST_DATABASE_URL"]) for _ in range(8)]
+                await asyncio.gather(*(link_pair(c, owner, models[i % 2], models[1 - i % 2]) for i, c in enumerate(peers)))
+                links = await _links(conn, owner)
+                assert len(links) == MAX_LINKS_PER_PAIR
+                assert len({_norm(json.loads(r["source_evidence"])["asserted_concept"]) for r in links}) == MAX_LINKS_PER_PAIR
+                assert all(r["valid"] for r in links)
+            finally:
+                for c in peers:
+                    await c.close()
+                await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+                await conn.execute("DELETE FROM users WHERE id=$1", owner)
+                await conn.close()
+>       asyncio.run(exercise())
+
+test_candidate_generation.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/kavirum1a/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/kavirum1a/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise():
+        conn = await asyncpg.connect(os.environ["TEST_DATABASE_URL"])
+        owner, early, late = await _owner_with_docs(conn)
+        peers = []
+        try:
+            await multi_worker.process_document_task(early, source_type="text", raw_text=MULTI_A, title="Invented A")
+            await multi_worker.process_document_task(late, source_type="text", raw_text=MULTI_B, title="Invented B")
+            models = [dict(r) for r in await conn.fetch(
+                "SELECT id AS model_id,document_id,key_concepts FROM document_mental_models WHERE user_id=$1 ORDER BY document_id", owner)]
+            await conn.execute("DELETE FROM mental_model_links WHERE user_id=$1", owner)
+            peers = [await asyncpg.connect(os.environ["TEST_DATABASE_URL"]) for _ in range(8)]
+            await asyncio.gather(*(link_pair(c, owner, models[i % 2], models[1 - i % 2]) for i, c in enumerate(peers)))
+            links = await _links(conn, owner)
+>           assert len(links) == MAX_LINKS_PER_PAIR
+E           assert 10 == 5
+E            +  where 10 = len([<Record id=UUID('ead660aa-abaf-4f8f-8a45-0182d73a90c9') user_id=UUID('b659da5a-9176-499c-8edf-daa7d48153a1') source_m...11372e508353325c0474e93c"}' review_revision=0 valid=True source_doc=UUID('e75f0e0a-963f-42eb-94b9-69491c4be1fb')>, ...])
+
+test_candidate_generation.py:298: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Warning: GEMINI_API_KEY is not set.
+----------------------------- Captured stdout call -----------------------------
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for 66c87177-534f-499b-94a7-1a819940903f...
+Link Generation results - New relationships: INSERT 0 0
+Generating structured mental model for 66c87177-534f-499b-94a7-1a819940903f...
+Mental model -> Concepts: 7, unverified edges deferred
+Successfully processed 66c87177-534f-499b-94a7-1a819940903f
+Extracted 1 chunks. Generating embeddings...
+Generated 1 embeddings. Inserting into Postgres...
+Generating Semantic Links for e75f0e0a-963f-42eb-94b9-69491c4be1fb...
+Link Generation results - New relationships: INSERT 0 1
+Generating structured mental model for e75f0e0a-963f-42eb-94b9-69491c4be1fb...
+Mental model -> Concepts: 7, unverified edges deferred
+Grounded mental-model candidate links: 5
+Successfully processed e75f0e0a-963f-42eb-94b9-69491c4be1fb
+=============================== warnings summary ===============================
+test_candidate_generation.py::test_concurrent_opposite_direction_generation_keeps_one_per_concept
+test_candidate_generation.py::test_concurrent_opposite_direction_generation_keeps_one_per_concept
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+test_candidate_generation.py::test_concurrent_opposite_direction_generation_keeps_one_per_concept
+test_candidate_generation.py::test_concurrent_opposite_direction_generation_keeps_one_per_concept
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+test_candidate_generation.py::test_concurrent_opposite_direction_generation_keeps_one_per_concept
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_candidate_generation.py::test_concurrent_opposite_direction_generation_keeps_one_per_concept
+1 failed, 15 deselected, 5 warnings in 14.96s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
