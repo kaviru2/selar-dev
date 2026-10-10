@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { clientFetch, type ChatMessage, type ChatThread } from "@/lib/api";
 import { GraphCorrectionProposal } from "@/components/GraphCorrectionProposal";
 import { SavedAssertionPicker, type AssertionSelection } from "@/components/SavedAssertionPicker";
+import { AnswerFeedback } from "@/components/chat/AnswerFeedback";
 
 // The worker answers explicit "update the graph" commands with this boundary
 // version instead of a library search (issue #9).
@@ -20,11 +21,6 @@ export default function ChatPage() {
   const [assertionSelection, setAssertionSelection] = useState<AssertionSelection>();
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [feedbackBusy, setFeedbackBusy] = useState("");
-  const [commentFor, setCommentFor] = useState("");
-  const [commentText, setCommentText] = useState("");
-  const [correctionFor, setCorrectionFor] = useState("");
-  const [correctionText, setCorrectionText] = useState("");
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -119,30 +115,6 @@ export default function ChatPage() {
     }
   }
 
-  async function sendFeedback(messageId: string, action: "helpful" | "unhelpful" | "correction", note = "") {
-    setFeedbackBusy(`${messageId}:${action}`);
-    setError("");
-    try {
-      await clientFetch(`/api/chat/messages/${messageId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          correction_text: action === "correction" ? correctionText : note.trim(),
-        }),
-      });
-      await loadMessages(activeThread);
-      setCorrectionFor("");
-      setCorrectionText("");
-      setCommentFor("");
-      setCommentText("");
-    } catch (feedbackError) {
-      setError(feedbackError instanceof Error ? feedbackError.message : "Unable to record feedback");
-    } finally {
-      setFeedbackBusy("");
-    }
-  }
-
   function recordCitationOpen(citationId?: string) {
     if (!citationId) return;
     clientFetch(`/api/chat/citations/${citationId}/open`, { method: "POST" }).catch(() => undefined);
@@ -172,8 +144,8 @@ export default function ChatPage() {
           ))}
         </div>
         <div className="chat-policy-note">
-          <strong>Evidence-first</strong>
-          <span>Answer ratings are feedback, not evidence of a concept relationship. Use learning connections to reflect and compare exact source passages.</span>
+          <strong>Sources first</strong>
+          <span>Open a citation to check an answer against its passage. 👍/👎 tell SELAR whether an answer helped; they are never evidence that concepts are related.</span>
         </div>
       </aside>
 
@@ -203,8 +175,8 @@ export default function ChatPage() {
           {messages.map((message) => (
             <article key={message.id} className={`chat-message ${message.role} ${message.status === "superseded" ? "superseded" : ""}`}>
               <div className="chat-message-label">
-                {message.role === "user" ? "You" : message.role === "system" ? "Recorded correction" : "SELAR"}
-                {message.status === "superseded" && <span> · superseded</span>}
+                {message.role === "user" ? "You" : message.role === "system" ? "Your report" : "SELAR"}
+                {message.status === "superseded" && <span> · reported as wrong</span>}
               </div>
               <div className={`chat-message-content ${message.role === "assistant" ? "chat-markdown" : ""}`}>
                 {message.role === "assistant" ? (
@@ -212,7 +184,7 @@ export default function ChatPage() {
                 ) : message.content}
               </div>
               {message.citations.length > 0 && (
-                <div className="chat-citations">
+                <div className="chat-citations" aria-label="Sources for this answer">
                   {message.citations.map((citation) => (
                     <Link key={citation.chunk_id} href={citation.source_type === "pdf"
                       ? `/reader?docId=${citation.document_id}&page=${citation.page}`
@@ -228,92 +200,8 @@ export default function ChatPage() {
               {message.role === "assistant" && message.model_version === GRAPH_COMMAND_VERSION && (
                 <GraphCorrectionProposal messages={messages.slice(0, messages.indexOf(message))} sourceMessageId={message.id} />
               )}
-              {message.graph_update?.retracted && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
-                <div className="chat-graph-update chat-graph-update-retracted" role="status">
-                  <span className="chat-graph-update-mark">↺</span>
-                  <span>
-                    <strong>Citation-concept associations withdrawn</strong>
-                    <small>Your feedback retracted this answer&apos;s evidence; it no longer shapes your graph or retrieval.</small>
-                  </span>
-                </div>
-              )}
-              {message.graph_update && !message.graph_update.retracted && (message.graph_update.concepts_created > 0 || message.graph_update.concepts_reinforced > 0) && (
-                <Link className="chat-graph-update" href="/graph">
-                  <span className="chat-graph-update-mark">↗</span>
-                  <span>
-                    <strong>{message.graph_update.concepts_created > 0 ? "Candidate concept found in cited passage" : "Citation-concept associations recorded"}</strong>
-                    <small>
-                      {message.graph_update.concepts_created > 0 ? `${message.graph_update.concepts_created} candidate concept(s) from cited text · ` : ""}
-                      {message.graph_update.concepts_reinforced} existing concept(s) associated with citations · Relationships require separate review.
-                    </small>
-                  </span>
-                </Link>
-              )}
-              {message.role === "assistant" && message.status !== "superseded" && (
-                <>
-                  <div className="chat-feedback">
-                    <span>Useful?</span>
-                    {(() => {
-                      const rating = message.feedback?.find((item) => item.action === "helpful" || item.action === "unhelpful");
-                      return (
-                        <>
-                          <button
-                            className={rating?.action === "helpful" ? "selected" : ""}
-                            aria-label="Thumbs up — helpful"
-                            title="Helpful"
-                            disabled={feedbackBusy !== "" || Boolean(rating)}
-                            onClick={() => sendFeedback(message.id, "helpful", commentFor === message.id ? commentText : "")}
-                          >👍</button>
-                          <button
-                            className={rating?.action === "unhelpful" ? "selected negative" : ""}
-                            aria-label="Thumbs down — not useful"
-                            title="Not useful"
-                            disabled={feedbackBusy !== "" || Boolean(rating)}
-                            onClick={() => sendFeedback(message.id, "unhelpful", commentFor === message.id ? commentText : "")}
-                          >👎</button>
-                          <button
-                            className="chat-comment-toggle"
-                            disabled={feedbackBusy !== ""}
-                            onClick={() => {
-                              setCommentFor(commentFor === message.id ? "" : message.id);
-                              setCommentText(rating?.correction_text || "");
-                            }}
-                          >{rating?.correction_text ? "Edit comment" : "Add comment"}</button>
-                          {rating && <span className="chat-feedback-saved">Saved</span>}
-                        </>
-                      );
-                    })()}
-                    <button disabled={feedbackBusy !== ""} onClick={() => setCorrectionFor(correctionFor === message.id ? "" : message.id)}>Correct answer</button>
-                  </div>
-                  {commentFor === message.id && (
-                    <div className="chat-feedback-comment">
-                      <textarea
-                        value={commentText}
-                        onChange={(event) => setCommentText(event.target.value)}
-                        maxLength={2000}
-                        rows={2}
-                        placeholder="Optional: what was useful or missing?"
-                      />
-                      {message.feedback?.some((item) => item.action === "helpful" || item.action === "unhelpful") ? (
-                        <button
-                          disabled={!commentText.trim() || feedbackBusy !== ""}
-                          onClick={() => {
-                            const rating = message.feedback?.find((item) => item.action === "helpful" || item.action === "unhelpful");
-                            if (rating?.action === "helpful" || rating?.action === "unhelpful") {
-                              sendFeedback(message.id, rating.action, commentText);
-                            }
-                          }}
-                        >Save comment</button>
-                      ) : <span>Your comment is sent with the thumb rating.</span>}
-                    </div>
-                  )}
-                </>
-              )}
-              {correctionFor === message.id && (
-                <div className="chat-correction">
-                  <textarea value={correctionText} onChange={(event) => setCorrectionText(event.target.value)} maxLength={2000} rows={3} placeholder="Describe what should replace or supersede this answer…" />
-                  <button disabled={!correctionText.trim() || feedbackBusy !== ""} onClick={() => sendFeedback(message.id, "correction")}>Record correction</button>
-                </div>
+              {message.role === "assistant" && message.model_version !== GRAPH_COMMAND_VERSION && (
+                <AnswerFeedback message={message} onChanged={() => loadMessages(activeThread)} />
               )}
             </article>
           ))}
@@ -335,7 +223,7 @@ export default function ChatPage() {
             }} />
             <button type="submit" disabled={!input.trim() || sending}>Ask</button>
           </form>
-          <span className="chat-disclaimer">Answers cite retrieved passages; co-retrieval and ratings do not verify relationships.</span>
+          <span className="chat-disclaimer">AI suggests, sources show, you explain — check the cited passages.</span>
         </div>
       </main>
     </div>
