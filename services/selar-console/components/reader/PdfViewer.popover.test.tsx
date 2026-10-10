@@ -1,20 +1,27 @@
-import { act, useEffect } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LinkSuggestion } from "../../lib/api";
+import type { Annotation, LinkSuggestion } from "../../lib/api";
 
 // jsdom cannot render PDFs: Document reports a 2-page document and Page is a stub.
 // What is under test is the suggestion popover (ported from PdfCanvas, #96/#102).
 vi.mock("react-pdf", () => ({
   pdfjs: { GlobalWorkerOptions: {} },
-  Document: function MockDocument({ children, onLoadSuccess }: { children: React.ReactNode; onLoadSuccess?: (pdf: unknown) => void }) {
+  Document: function MockDocument({ children, onLoadSuccess, error }: { children: React.ReactNode; onLoadSuccess?: (pdf: unknown) => void; error?: React.ReactNode }) {
+    // Each mount consumes one queued failure, like a real refetch after "Try again".
+    const [failing] = useState(() => {
+      const queued = (globalThis as { __pdfFail?: number }).__pdfFail ?? 0;
+      if (queued > 0) (globalThis as { __pdfFail?: number }).__pdfFail = queued - 1;
+      return queued > 0;
+    });
     useEffect(() => {
+      if (failing) return;
       onLoadSuccess?.({
         numPages: 2,
         getPage: async () => ({ getViewport: () => ({ width: 600, height: 800 }), getTextContent: async () => ({ items: [] }) }),
       });
-    }, [onLoadSuccess]);
-    return <div>{children}</div>;
+    }, [onLoadSuccess, failing]);
+    return failing ? <div>{error}</div> : <div>{children}</div>;
   },
   Page: () => <div data-testid="pdf-page" />,
 }));
@@ -92,7 +99,47 @@ describe("PdfViewer annotation controls", () => {
     const control = container.querySelector<HTMLButtonElement>('button[aria-label="My highlights"]');
     expect(control).toBeTruthy();
     await act(async () => control!.click());
-    expect(container.querySelector('section[aria-label="My highlights"]')?.textContent).toContain("My note");
+    expect(container.querySelector('[aria-label="My highlights"]:not(button)')?.textContent).toContain("My note");
+    expect(control!.getAttribute("aria-expanded")).toBe("true");
+    // Escape from the viewer closes the list.
+    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
+    expect(container.querySelector('[aria-label="My highlights"]:not(button)')).toBeNull();
+  });
+
+  it("opens a saved highlight for editing when it is clicked on the page", async () => {
+    const legacy = { id: "mark", page: 1, type: "highlight", color: "sage", comment: "", bbox: [{ x: 0.1, y: 0.1, w: 0.5, h: 0.05 }], document_id: "doc-a", user_id: "owner", chunk_id: null, created_at: "", updated_at: "" } satisfies Annotation;
+    await act(async () => root.render(viewer({ annotationsOn: true, suggestionsOn: false, suggestions: [], annotations: [legacy], onUpdateAnnotation: vi.fn(), onDeleteAnnotation: vi.fn() })));
+    await settle();
+    const page = container.querySelector<HTMLElement>('.rd-page[data-page="1"]')!;
+    page.getBoundingClientRect = () => ({ left: 0, top: 0, width: 600, height: 800, right: 600, bottom: 800, x: 0, y: 0, toJSON: () => ({}) });
+    await act(async () => { page.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 120, clientY: 100 })); });
+    const editor = container.querySelector('[role="dialog"][aria-label="Edit highlight"]');
+    expect(editor).toBeTruthy();
+    expect(editor!.querySelector('[role="radio"][aria-label="Green"]')?.getAttribute("aria-checked")).toBe("true");
+    expect(editor!.textContent).toContain("Delete highlight");
+  });
+
+  it("does not open the editor for a click outside every mark", async () => {
+    const legacy = { id: "mark", page: 1, type: "highlight", color: "sage", comment: "", bbox: [{ x: 0.1, y: 0.1, w: 0.5, h: 0.05 }], document_id: "doc-a", user_id: "owner", chunk_id: null, created_at: "", updated_at: "" } satisfies Annotation;
+    await act(async () => root.render(viewer({ annotationsOn: true, suggestionsOn: false, suggestions: [], annotations: [legacy], onUpdateAnnotation: vi.fn() })));
+    await settle();
+    const page = container.querySelector<HTMLElement>('.rd-page[data-page="1"]')!;
+    page.getBoundingClientRect = () => ({ left: 0, top: 0, width: 600, height: 800, right: 600, bottom: 800, x: 0, y: 0, toJSON: () => ({}) });
+    await act(async () => { page.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 500, clientY: 700 })); });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+});
+
+describe("PdfViewer load failure", () => {
+  it("explains the failure and retries the load", async () => {
+    (globalThis as { __pdfFail?: number }).__pdfFail = 1;
+    await act(async () => root.render(viewer()));
+    await settle();
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(/Couldn.t open this PDF/);
+    await act(async () => { button(/try again/i)!.click(); });
+    await settle();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector(".page-indicator")?.textContent).toBe("1 / 2");
   });
 });
 

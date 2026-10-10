@@ -1,18 +1,151 @@
-.rd-highlights, .rd-annotation-editor { flex: 0 1 auto; max-height: 38vh; overflow: auto; padding: 12px 16px; border-bottom: 1px solid var(--rule); background: var(--bg); color: var(--ink-2); font-size: var(--t-sm); }
-.rd-highlights h3, .rd-annotation-editor h3 { margin: 0 0 8px; font-size: var(--t-md); }
-.rd-highlights ol { list-style: none; margin: 0; padding: 0; }
-.rd-highlights li { padding: 10px 0; border-bottom: 1px solid var(--rule); }
-.rd-highlights blockquote, .rd-annotation-editor blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--rule); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6em; overflow: auto; }
-.rd-annotation-meta { color: var(--ink-3); font: var(--t-xs) var(--font-mono); }
-.rd-annotation-note { white-space: pre-wrap; overflow-wrap: anywhere; }
-.rd-annotation-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.rd-highlights button, .rd-annotation-editor button, .rd-annotation-editor select { min-height: 32px; padding: 5px 10px; border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--bg); color: var(--ink-2); font: inherit; cursor: pointer; }
+/* annotation-tools.css — highlights list, note editor, selection menu, swatches.
+ * Colours come from design tokens or the --rd-hl-* / --rd-sw-* variables in reader.css. */
+
+.rd-body { position: relative; }
+
+/* ——— Sheets: overlay the right edge of the document column instead of pushing pages down ——— */
+.rd-sheet, .rd-highlights {
+  position: absolute;
+  z-index: 20;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  width: min(360px, calc(100% - 20px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--rule-2, var(--rule));
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-3);
+  font-size: var(--t-sm);
+  animation: rd-sheet-in 140ms ease-out;
+}
+.rd-annotation-editor.rd-sheet { display: block; bottom: auto; max-height: calc(100% - 20px); overflow: auto; padding-bottom: 12px; }
+@keyframes rd-sheet-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rd-sheet, .rd-highlights { animation: none; } }
+
+.rd-sheet-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px 16px; border-bottom: 1px solid var(--rule); flex-shrink: 0; }
+.rd-sheet-head h3 { margin: 0; font: 600 var(--t-md) var(--font-sans); color: var(--ink); }
+.rd-sheet-sub { color: var(--ink-4); font-weight: 500; font-size: var(--t-sm); margin-left: 4px; }
+.rd-sheet-close { margin-left: auto; display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--ink-3); cursor: pointer; }
+.rd-sheet-close:hover { background: var(--bg-2); color: var(--ink); }
+
+.rd-highlights ol { list-style: none; margin: 0; padding: 4px 8px 12px; overflow-y: auto; flex: 1; overscroll-behavior: contain; }
+.rd-highlights li { padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.rd-highlights li:last-child { border-bottom: 0; }
+.rd-hl-card {
+  display: grid; gap: 4px; width: 100%; padding: 8px 10px 8px 12px; text-align: left;
+  border: 0; border-left: 3px solid var(--rd-sw-solid, var(--rd-hl-yellow)); border-radius: var(--r-sm);
+  background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.rd-hl-card:hover:not(:disabled) { background: var(--bg-2); }
+.rd-hl-card:disabled { cursor: default; opacity: .7; }
+.rd-highlights li.here .rd-hl-card { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.rd-quote-text { color: var(--ink); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.rd-quote-text.muted { color: var(--ink-4); font-style: italic; }
+.rd-annotation-meta { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-3); font-size: var(--t-xs); font-weight: 500; }
+.rd-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rd-sw-solid, var(--rd-hl-yellow)); }
+.rd-annotation-note { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); padding: 6px 8px; border-radius: var(--r-sm); background: var(--bg-2); }
+.rd-warn { margin: 4px 12px; color: var(--ink-3); font-size: var(--t-xs); }
+.rd-empty-hint { display: grid; justify-items: center; gap: 4px; padding: 32px 24px; text-align: center; color: var(--ink-3); }
+.rd-empty-hint p { margin: 0; }
+.rd-empty-hint strong { color: var(--ink); }
+.rd-status:empty { display: none; }
+.rd-status, .rd-status-inline { margin: 6px 16px; color: var(--ink-3); font-size: var(--t-xs); }
+.rd-status-inline { margin: 0 0 6px; }
+
+.rd-annotation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.rd-annotation-actions.compact { margin: 2px 0 0 12px; gap: 2px; }
+.rd-actions-spacer { flex: 1; }
+.rd-kbd-hint { color: var(--ink-4); font-size: var(--t-xs); }
+.rd-highlights button:not(.rd-hl-card):not(.rd-sheet-close), .rd-annotation-editor button:not(.rd-swatch):not(.rd-sheet-close) {
+  min-height: 30px; padding: 4px 10px; border: 1px solid var(--rule); border-radius: var(--r-sm);
+  background: var(--bg); color: var(--ink-2); font: 500 var(--t-sm) var(--font-sans); cursor: pointer;
+}
+.rd-highlights .rd-annotation-actions.compact button { border-color: transparent; background: transparent; min-height: 26px; padding: 2px 8px; font-size: var(--t-xs); color: var(--ink-3); }
+.rd-highlights .rd-annotation-actions.compact button:hover:not(:disabled) { color: var(--ink); background: var(--bg-2); }
 .rd-highlights button:disabled, .rd-annotation-editor button:disabled { opacity: .5; cursor: default; }
-.rd-annotation-editor label { display: block; margin: 8px 0; }
-.rd-annotation-editor textarea { display: block; box-sizing: border-box; width: 100%; min-height: 64px; max-height: 140px; padding: 8px; background: var(--bg); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--r-sm); font: inherit; resize: vertical; }
-.rd-highlights [role=alert], .rd-annotation-editor [role=alert], .rd-selection-menu [role=alert] { color: var(--error); }
-.rd-highlights [role=status]:empty { display: none; }
-.rd-selection-menu { flex-wrap: wrap; max-width: min(350px, 90vw); }
-.rd-selection-menu select { max-width: 100px; min-height: 30px; background: var(--bg); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--r-sm); }
-.rd-selection-menu > span { flex-basis: 100%; padding: 6px; white-space: normal; }
-.rd-highlights button:focus-visible, .rd-annotation-editor :focus-visible, .rd-selection-menu :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rd-annotation-editor button.rd-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent, #fff); }
+.rd-annotation-editor button.rd-primary:hover:not(:disabled) { background: var(--accent-strong, var(--accent)); }
+.rd-sheet button.rd-ghost-danger, .rd-highlights .rd-annotation-actions.compact button.rd-ghost-danger { color: var(--error); border-color: transparent; background: transparent; }
+.rd-sheet button.rd-danger, .rd-highlights button.rd-danger { background: var(--error); border-color: var(--error); color: #fff; }
+.rd-confirm { margin: 6px 12px; padding: 8px 10px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--error) 8%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rd-confirm p { margin: 0 0 4px; flex-basis: 100%; color: var(--ink); }
+.rd-confirm-inline { display: inline-flex; gap: 6px; }
+
+/* ——— Note editor ——— */
+.rd-annotation-editor form { padding: 0 16px; }
+.rd-annotation-editor blockquote.rd-quote {
+  margin: 12px 16px 4px; padding: 6px 10px; border-left: 3px solid var(--rd-sw-solid, var(--rd-hl-yellow));
+  background: color-mix(in srgb, var(--rd-sw-solid, var(--rd-hl-yellow)) 18%, transparent); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.5em; overflow: auto; line-height: 1.45;
+}
+.rd-field-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+.rd-field { display: grid; gap: 6px; margin: 4px 0 0; }
+.rd-field-label { color: var(--ink-3); font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.rd-annotation-editor textarea {
+  display: block; box-sizing: border-box; width: 100%; min-height: 88px; max-height: 40vh; padding: 8px 10px;
+  background: var(--bg); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  font: var(--t-sm)/1.5 var(--font-sans); resize: vertical;
+}
+.rd-annotation-editor textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.rd-highlights [role=alert], .rd-annotation-editor [role=alert], .rd-selection-menu [role=alert] { color: var(--error); margin: 6px 0 0; }
+
+/* ——— Colour swatches ——— */
+.rd-swatches { display: inline-flex; gap: 6px; align-items: center; }
+.rd-swatch {
+  width: 22px; height: 22px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 2px solid var(--bg); background: var(--rd-sw-solid); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.rd-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--ink-2); }
+.rd-swatch:disabled { opacity: .45; cursor: default; }
+.rd-swatch:hover:not(:disabled) { transform: scale(1.08); }
+.c-yellow { --rd-sw-solid: var(--rd-sw-yellow); }
+.c-wheat { --rd-sw-solid: var(--rd-sw-orange); }
+.c-coral { --rd-sw-solid: var(--rd-sw-pink); }
+.c-sage { --rd-sw-solid: var(--rd-sw-green); }
+
+/* ——— Selection menu ——— */
+.rd-selection-menu { flex-direction: column; align-items: stretch; max-width: min(420px, calc(100vw - 16px)); }
+.rd-selection-menu.above { transform: translateY(-100%); }
+.rd-menu-row { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; }
+.rd-selection-menu .rd-swatches { padding: 0 4px; }
+.rd-selection-menu button.rd-swatch, .rd-annotation-editor button.rd-swatch {
+  width: 20px; height: 20px; min-height: 0; padding: 0; border-radius: 50%;
+  border: 2px solid var(--bg); background: var(--rd-sw-solid);
+}
+.rd-selection-menu button.rd-swatch:hover:not(:disabled) { background: var(--rd-sw-solid); }
+.rd-menu-sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--rule); }
+.rd-selection-menu button.rd-menu-close { padding: 0 8px; color: var(--ink-4); }
+.rd-menu-msg { padding: 4px 8px 6px; white-space: normal; font-size: var(--t-xs); color: var(--ink-3); }
+.rd-highlights button:focus-visible, .rd-annotation-editor :focus-visible, .rd-selection-menu :focus-visible, .rd-sheet-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ——— Transient notices ——— */
+.rd-toast {
+  position: absolute; z-index: 30; left: 50%; bottom: 20px; transform: translateX(-50%);
+  padding: 8px 14px; border-radius: 999px; background: var(--ink); color: var(--bg);
+  font: 500 var(--t-sm) var(--font-sans); box-shadow: var(--shadow-3); pointer-events: none;
+}
+
+.rd-count { font: 600 var(--t-xs) var(--font-sans); }
+
+/* Wide columns: dock the list beside the pages (fit-width reflows to the remaining space)
+ * so highlights can be read in context, like Zotero's and Preview's sidebars. */
+@container rd-viewer (min-width: 760px) {
+  .rd-body > .rd-highlights {
+    position: relative; inset: auto; order: 2; flex: 0 0 300px; width: 300px; max-height: none;
+    border: 0; border-left: 1px solid var(--rule); border-radius: 0; box-shadow: none; animation: none;
+  }
+}
+
+/* ——— Touch / small screens: sheets dock to the bottom, bigger targets ——— */
+@media (max-width: 760px), (pointer: coarse) {
+  .rd-sheet, .rd-highlights { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 70%; border-radius: var(--r-md) var(--r-md) 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .rd-annotation-editor.rd-sheet { max-height: 85%; }
+  .rd-selection-menu button { min-height: 40px; }
+  .rd-selection-menu button.rd-swatch { width: 28px; height: 28px; }
+  .rd-highlights .rd-annotation-actions.compact button { min-height: 36px; }
+  .rd-kbd-hint { display: none; }
+}

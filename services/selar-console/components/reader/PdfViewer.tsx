@@ -17,7 +17,7 @@ import { visibleSuggestionBoxes } from "@/lib/reader-highlights";
 import type { Annotation, LinkSuggestion } from "@/lib/api";
 import type { TextAnchor } from "@/lib/reader/annotation-anchor";
 import { annotationBoxes, captureSelectionAnchor } from "@/lib/reader/annotation-dom";
-import { AnnotationEditor, HighlightsList, annotationColors } from "./AnnotationTools";
+import { AnnotationEditor, ColorSwatches, HighlightsList, annotationColorFor } from "./AnnotationTools";
 import {
   buildLayout,
   captureAnchor,
@@ -116,6 +116,8 @@ interface SelectionMenuState {
   boxes: NormalizedBBox[];
   x: number;
   y: number;
+  /** Menu sits above the selection when there is no room below it. */
+  above: boolean;
 }
 
 interface PopoverState {
@@ -180,7 +182,11 @@ export default function PdfViewer(props: PdfViewerProps) {
   const [textReady, setTextReady] = useState<Record<number, number>>({});
   const [flash, setFlash] = useState<Flash | null>(null);
   const [selectionMenu, setSelectionMenu] = useState<SelectionMenuState | null>(null);
-  const [selectionColor, setSelectionColor] = useState<Annotation["color"]>(annotationColors.includes(highlightColor as Annotation["color"]) ? highlightColor as Annotation["color"] : "yellow");
+  const [selectionColor, setSelectionColor] = useState<Annotation["color"]>(() => annotationColorFor(highlightColor));
+  const [notice, setNotice] = useState("");
+  // Bumping this remounts <Document>, so "Try again" refetches after a failed load.
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadingSkeleton = <div className="reader-empty rd-loading" role="status"><span className="rd-skeleton-page" aria-hidden="true" /><span>Loading document…</span></div>;
   const [annotationBusy, setAnnotationBusy] = useState(false);
   const [annotationError, setAnnotationError] = useState("");
   const [highlightsOpen, setHighlightsOpen] = useState(false);
@@ -482,6 +488,12 @@ export default function PdfViewer(props: PdfViewerProps) {
         if (popover) { setPopover(null); event.preventDefault(); return; }
         if (selectionMenu) { setSelectionMenu(null); window.getSelection()?.removeAllRanges(); event.preventDefault(); return; }
         if (findOpen) { closeFind(); event.preventDefault(); return; }
+        if (highlightsOpen) { setHighlightsOpen(false); event.preventDefault(); return; }
+      }
+      if (selectionMenu?.anchor && !isEditable(event.target) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === "h") { event.preventDefault(); rootRef.current?.querySelector<HTMLButtonElement>(".rd-selection-menu [data-action=highlight]")?.click(); return; }
+        if (key === "n") { event.preventDefault(); setEditor({ selection: selectionMenu }); return; }
       }
       const action = keyAction({
         key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey,
@@ -505,7 +517,7 @@ export default function PdfViewer(props: PdfViewerProps) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentPage, goToPage, zoomTo, scale, popover, selectionMenu, findOpen, closeFind]);
+  }, [currentPage, goToPage, zoomTo, scale, popover, selectionMenu, findOpen, closeFind, highlightsOpen]);
 
   // Ctrl/⌘ + wheel (and trackpad pinch) zooms around the pointer instead of the browser page.
   useEffect(() => {
@@ -535,42 +547,88 @@ export default function PdfViewer(props: PdfViewerProps) {
 
   // ——— Selection: capture immutable quote/offsets before focus moves to controls. ———
   useEffect(() => {
-    function onSelectionEnd(event: Event) {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest(".rd-selection-menu, .rd-popover, .rd-annotation-editor, .rd-highlights") || editor || annotationBusy) return;
-      if (event instanceof KeyboardEvent && !event.shiftKey) return;
-      requestAnimationFrame(() => {
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || !selection.rangeCount) { setSelectionMenu(null); return; }
-        const range = selection.getRangeAt(0);
-        const startPage = range.startContainer.parentElement?.closest<HTMLElement>(".rd-page");
-        const endPage = range.endContainer.parentElement?.closest<HTMLElement>(".rd-page");
-        if (!startPage || startPage !== endPage || !rootRef.current?.contains(startPage)) { setSelectionMenu(null); return; }
-        const page = Number(startPage.dataset.page);
-        const pageRect = startPage.getBoundingClientRect();
-        const boxes = normalizeRects(mergeLineRects(Array.from(range.getClientRects())), pageRect);
-        if (!boxes.length) return;
-        const last = boxes[boxes.length - 1];
-        const anchor = captureSelectionAnchor(startPage, range, sourceHash);
-        setPopover(null); setAnnotationError("");
-        setSelectionMenu({ page, boxes, anchor, quote: anchor?.exact || range.toString(),
-          x: Math.max(0, Math.min(last.x * pageRect.width, pageRect.width - 320)),
-          y: (last.y + last.h) * pageRect.height + 6 });
-      });
+    let pointerDown = false;
+    let timer = 0;
+    function evaluate() {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.rangeCount) {
+        // Focus moving into the menu itself must not dismiss it.
+        if (document.activeElement?.closest?.(".rd-selection-menu")) return;
+        setSelectionMenu(null);
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      const startPage = range.startContainer.parentElement?.closest<HTMLElement>(".rd-page");
+      const endPage = range.endContainer.parentElement?.closest<HTMLElement>(".rd-page");
+      if (!startPage || !endPage || !rootRef.current?.contains(startPage)) { setSelectionMenu(null); return; }
+      if (startPage !== endPage) {
+        setSelectionMenu(null);
+        setNotice("Highlights stay on one page. Select text within a single page.");
+        return;
+      }
+      const page = Number(startPage.dataset.page);
+      const pageRect = startPage.getBoundingClientRect();
+      const boxes = normalizeRects(mergeLineRects(Array.from(range.getClientRects())), pageRect);
+      if (!boxes.length) return;
+      const first = boxes[0];
+      const last = boxes[boxes.length - 1];
+      const anchor = captureSelectionAnchor(startPage, range, sourceHash);
+      // Keep the menu inside the visible part of the scroll column.
+      const visibleBottom = (scrollRef.current?.getBoundingClientRect().bottom ?? window.innerHeight) - pageRect.top;
+      const below = (last.y + last.h) * pageRect.height + 8;
+      const above = below + 56 > visibleBottom && first.y * pageRect.height > 64;
+      const menuWidth = Math.min(300, pageRect.width - 8);
+      setPopover(null); setAnnotationError("");
+      setSelectionMenu({ page, boxes, anchor, quote: anchor?.exact || range.toString(),
+        x: Math.max(4, Math.min((above ? first.x : last.x) * pageRect.width, pageRect.width - menuWidth - 4)),
+        y: above ? first.y * pageRect.height - 8 : below,
+        above });
     }
+    function onSelectionEnd(event: Event) {
+      if (event.type === "pointerup") pointerDown = false;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.(".rd-selection-menu, .rd-popover, .rd-sheet, .rd-highlights") || editor || annotationBusy) return;
+      if (event instanceof KeyboardEvent && !event.shiftKey) return;
+      requestAnimationFrame(evaluate);
+    }
+    function onPointerDown() { pointerDown = true; }
+    // Touch long-press and selection handles change the selection without a pointerup
+    // on the text; settle on the final range instead.
+    function onSelectionChange() {
+      if (pointerDown || editor || annotationBusy) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(evaluate, 350);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("pointerup", onSelectionEnd);
     document.addEventListener("keyup", onSelectionEnd);
-    return () => { document.removeEventListener("pointerup", onSelectionEnd); document.removeEventListener("keyup", onSelectionEnd); };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onSelectionEnd);
+      document.removeEventListener("keyup", onSelectionEnd);
+      document.removeEventListener("selectionchange", onSelectionChange);
+    };
   }, [sourceHash, editor, annotationBusy]);
 
-  async function createFromSelection() {
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  async function createFromSelection(color: Annotation["color"] = selectionColor) {
     if (!selectionMenu?.anchor || !onCreateAnnotation || annotationBusy) return;
-    setAnnotationBusy(true); setAnnotationError("");
+    setAnnotationBusy(true); setAnnotationError(""); setSelectionColor(color);
     try {
-      await onCreateAnnotation("highlight", selectionMenu.boxes, selectionColor, selectionMenu.page, "", selectionMenu.anchor);
+      await onCreateAnnotation("highlight", selectionMenu.boxes, color, selectionMenu.page, "", selectionMenu.anchor);
       window.getSelection()?.removeAllRanges(); setSelectionMenu(null); setAnnounce("Highlight saved");
       scrollRef.current?.focus({ preventScroll: true });
-    } catch (error) { setAnnotationError(error instanceof Error ? error.message : "Could not save highlight. Please retry."); }
+    } catch (error) {
+      const detail = error instanceof Error && error.message && error.message.length > 3 ? ` (${error.message})` : "";
+      setAnnotationError(`Couldn't save the highlight${detail}. Your selection is kept — try again.`);
+    }
     finally { setAnnotationBusy(false); }
   }
 
@@ -604,14 +662,26 @@ export default function PdfViewer(props: PdfViewerProps) {
   }
 
   function onPageClick(event: React.MouseEvent<HTMLDivElement>, page: number) {
-    if (!suggestionsOn) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;
     if ((event.target as HTMLElement).closest(".rd-popover, .rd-selection-menu, a")) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
-    const hit = (suggestionBoxesByPage.get(page) || []).find(({ bbox }) => x >= bbox.x && x <= bbox.x + bbox.w && y >= bbox.y - 0.004 && y <= bbox.y + bbox.h + 0.004);
+    const inside = (bbox: NormalizedBBox) => x >= bbox.x && x <= bbox.x + bbox.w && y >= bbox.y - 0.004 && y <= bbox.y + bbox.h + 0.004;
+    // The learner's own mark wins over a suggestion drawn on the same words.
+    const own = annotationsOn && onUpdateAnnotation
+      // Later marks paint on top, so the topmost hit is the last match.
+      ? annotations.findLast((annotation) => annotation.page === page && (markBoxes[annotation.id] || []).some(inside))
+      : undefined;
+    if (own && !(own.anchor && own.anchor.source_hash !== sourceHash)) {
+      setPopover(null);
+      setSelectionMenu(null);
+      setEditor({ annotation: own });
+      return;
+    }
+    if (!suggestionsOn) return;
+    const hit = (suggestionBoxesByPage.get(page) || []).find(({ bbox }) => inside(bbox));
     if (hit) openPopover(hit.suggestionID, page);
     else setPopover(null);
   }
@@ -637,7 +707,8 @@ export default function PdfViewer(props: PdfViewerProps) {
   // Transient UI belongs to a page; it disappears once that page leaves the view.
   const nearby = (page: number) => Math.abs(page - currentPage) <= 1;
   const popoverSuggestion = popover && nearby(popover.page) ? suggestionByID.get(popover.suggestionId) : undefined;
-  const menuVisible = selectionMenu && nearby(selectionMenu.page) ? selectionMenu : null;
+  // One colour picker at a time: the editor owns the selection while it is open.
+  const menuVisible = selectionMenu && !editor && nearby(selectionMenu.page) ? selectionMenu : null;
 
   return (
     <div ref={rootRef} className="rd-viewer" data-testid="pdf-viewer">
@@ -703,7 +774,11 @@ export default function PdfViewer(props: PdfViewerProps) {
           </button>
         </div>
         {toolbarExtras}
-        <button type="button" aria-label="My highlights" aria-expanded={highlightsOpen} onClick={() => setHighlightsOpen(value => !value)}>Highlights ({annotations.length})</button>
+        <div className="rd-grp">
+          <button type="button" className={`rd-icon ${highlightsOpen ? "on" : ""}`} aria-label="My highlights" aria-expanded={highlightsOpen} title="My highlights and notes" onClick={() => setHighlightsOpen(value => !value)}>
+            <Icon name="note" size={14} /> <span className="rd-count">{annotations.length}</span>
+          </button>
+        </div>
         <div className="rd-spacer" />
         {toolbarEnd}
       </div>
@@ -738,36 +813,47 @@ export default function PdfViewer(props: PdfViewerProps) {
         </div>
       )}
 
-      {editor && <AnnotationEditor key={editor.annotation?.id || "new-note"}
-        title={editor.annotation ? "Edit highlight" : "Add note"}
-        quote={editor.annotation?.anchor?.exact || editor.selection?.quote}
-        color={editor.annotation?.color || selectionColor} comment={editor.annotation?.comment || ""}
-        onCancel={() => setEditor(null)}
-        onSave={async (color, comment) => {
-          if (editor.annotation && onUpdateAnnotation) await onUpdateAnnotation(editor.annotation, color, comment);
-          else if (editor.selection?.anchor && onCreateAnnotation) {
-            if (editor.selection.anchor.source_hash !== sourceHash) throw new Error("Source changed. Select the passage again.");
-            await onCreateAnnotation("note", editor.selection.boxes, color, editor.selection.page, comment, editor.selection.anchor);
-          } else throw new Error("Annotation editing is unavailable.");
-          setEditor(null); setSelectionMenu(null); window.getSelection()?.removeAllRanges(); setAnnounce("Annotation saved");
-        }} />}
-      {highlightsOpen && <HighlightsList annotations={annotations} sourceHash={sourceHash}
-        onJump={a => {
-          if (a.anchor && a.anchor.source_hash !== sourceHash) return;
-          pendingFlashRef.current = { id: Date.now(), page: a.page, quote: a.anchor?.exact, anchor: a.anchor || undefined, bboxes: a.bbox };
-          goToPage(a.page); setHighlightsOpen(false); setTextReady(ready => ({...ready}));
-          scrollRef.current?.focus({ preventScroll: true });
-        }}
-        onEdit={a => setEditor({ annotation: a })}
-        onDelete={async a => { if (!onDeleteAnnotation) throw new Error("Deleting is unavailable."); await onDeleteAnnotation(a); }} />}
       <div className="rd-body">
+        {editor && <AnnotationEditor key={editor.annotation?.id || "new-note"}
+          title={editor.annotation ? (editor.annotation.comment ? "Edit note" : "Edit highlight") : "Add note"}
+          page={editor.annotation?.page || editor.selection?.page}
+          quote={editor.annotation?.anchor?.exact || editor.selection?.quote}
+          draftKey={editor.annotation ? `${docId}:${editor.annotation.id}` : editor.selection?.anchor ? `${docId}:new:${editor.selection.page}:${editor.selection.anchor.start}` : undefined}
+          color={editor.annotation?.color || selectionColor} comment={editor.annotation?.comment || ""}
+          onCancel={() => { setEditor(null); scrollRef.current?.focus({ preventScroll: true }); }}
+          onDelete={editor.annotation && onDeleteAnnotation ? async () => {
+            await onDeleteAnnotation(editor.annotation!);
+            setEditor(null); setAnnounce("Highlight deleted");
+          } : undefined}
+          onSave={async (color, comment) => {
+            if (editor.annotation && onUpdateAnnotation) await onUpdateAnnotation(editor.annotation, color, comment);
+            else if (editor.selection?.anchor && onCreateAnnotation) {
+              if (editor.selection.anchor.source_hash !== sourceHash) throw new Error("Source changed. Select the passage again.");
+              await onCreateAnnotation(comment ? "note" : "highlight", editor.selection.boxes, color, editor.selection.page, comment, editor.selection.anchor);
+            } else throw new Error("Annotation editing is unavailable.");
+            setEditor(null); setSelectionMenu(null); window.getSelection()?.removeAllRanges(); setAnnounce(comment ? "Note saved" : "Highlight saved");
+          }} />}
+        {highlightsOpen && !editor && <HighlightsList annotations={annotations} sourceHash={sourceHash} currentPage={currentPage}
+          onClose={() => { setHighlightsOpen(false); scrollRef.current?.focus({ preventScroll: true }); }}
+          onJump={a => {
+            if (a.anchor && a.anchor.source_hash !== sourceHash) return;
+            pendingFlashRef.current = { id: Date.now(), page: a.page, quote: a.anchor?.exact, anchor: a.anchor || undefined, bboxes: a.bbox };
+            goToPage(a.page); setTextReady(ready => ({...ready}));
+            // Keep the list open on wide screens (like Zotero/Preview); close it where it covers the page.
+            if (window.matchMedia?.("(max-width: 760px)").matches) setHighlightsOpen(false);
+          }}
+          onEdit={a => setEditor({ annotation: a })}
+          onDelete={async a => { if (!onDeleteAnnotation) throw new Error("Deleting is unavailable."); await onDeleteAnnotation(a); }} />}
+        {notice && <div className="rd-toast" role="status">{notice}</div>}
         <Document
+          key={loadAttempt}
           file={pdfSource}
           options={PDF_RANGE_OPTIONS}
           onLoadSuccess={onPdfLoad}
-          loading={<div className="reader-empty">Loading document…</div>}
-          noData={<div className="reader-empty">Loading document…</div>}
-          error={<div className="reader-empty"><strong>Document unavailable</strong><span>Upload or reprocess the PDF to continue.</span></div>}
+          loading={loadingSkeleton}
+          noData={loadingSkeleton}
+          error={<div className="reader-empty" role="alert"><strong>Couldn&apos;t open this PDF</strong><span>Check your connection and try again. If it keeps failing, reprocess the document from the Library.</span>
+            <button type="button" className="rd-btn rd-btn-pri" onClick={() => setLoadAttempt((n) => n + 1)}>Try again</button></div>}
           className="rd-document"
         >
           {showThumbnails && numPages > 0 && (
@@ -819,7 +905,8 @@ export default function PdfViewer(props: PdfViewerProps) {
                       {userMarks.flatMap((annotation) => (markBoxes[annotation.id] || []).map((bbox, markIndex) => (
                         <div
                           key={`a-${annotation.id}-${markIndex}`}
-                          className={`rd-mark rd-user ${annotation.type} c-${annotation.color}`}
+                          data-mark-id={annotation.id}
+                          className={`rd-mark rd-user ${annotation.type} c-${annotation.color}${annotation.comment ? " has-note" : ""}`}
                           style={{ left: `${bbox.x * 100}%`, top: `${bbox.y * 100}%`, width: `${bbox.w * 100}%`, height: `${bbox.h * 100}%` }}
                           title={annotation.comment || undefined}
                         />
@@ -830,14 +917,18 @@ export default function PdfViewer(props: PdfViewerProps) {
                     </div>
 
                     {menuVisible?.page === page && (
-                      <div className="rd-selection-menu" role="toolbar" aria-label="Selection actions" style={{ left: menuVisible.x, top: menuVisible.y }}>
-                        <select aria-label="Selection highlight color" value={selectionColor} onChange={e => setSelectionColor(e.target.value as Annotation["color"])} disabled={annotationBusy}>{annotationColors.map(color => <option key={color} value={color}>{color}</option>)}</select>
-                        <button type="button" disabled={!menuVisible.anchor || annotationBusy} onClick={createFromSelection}><Icon name="highlight" size={12} /> {annotationBusy ? "Saving…" : "Highlight"}</button>
-                        <button type="button" disabled={!menuVisible.anchor || annotationBusy} onClick={() => setEditor({ selection: menuVisible })}><Icon name="note" size={12} /> Add note</button>
-                        <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(menuVisible.quote); setAnnounce("Quote copied"); } catch { setAnnotationError("Could not copy. Use your browser's copy command."); } }}>Copy</button>
-                        <button type="button" aria-label="Close selection actions" disabled={annotationBusy} onClick={() => { setSelectionMenu(null); scrollRef.current?.focus({preventScroll:true}); }}>×</button>
-                        {!menuVisible.anchor && <span>Source not ready, or selection outside text. Copy is still available.</span>}
-                        {annotationError && <span role="alert">{annotationError}</span>}
+                      <div className={`rd-selection-menu ${menuVisible.above ? "above" : ""}`} role="toolbar" aria-label="Selection actions" style={{ left: menuVisible.x, top: menuVisible.y }}
+                        onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setSelectionMenu(null); scrollRef.current?.focus({ preventScroll: true }); } }}>
+                        <div className="rd-menu-row">
+                          <ColorSwatches value={selectionColor} label="Highlight in color" disabled={!menuVisible.anchor || annotationBusy} onPick={(color) => void createFromSelection(color)} />
+                          <span className="rd-menu-sep" aria-hidden="true" />
+                          <button type="button" disabled={!menuVisible.anchor || annotationBusy} data-action="highlight" onClick={() => void createFromSelection()} title="Highlight (H)"><Icon name="highlight" size={13} /> {annotationBusy ? "Saving…" : "Highlight"}</button>
+                          <button type="button" disabled={!menuVisible.anchor || annotationBusy} onClick={() => setEditor({ selection: menuVisible })} title="Add note (N)"><Icon name="note" size={13} /> Note</button>
+                          <button type="button" aria-label="Copy" title="Copy quote" onClick={async () => { try { await navigator.clipboard.writeText(menuVisible.quote); setAnnounce("Quote copied"); setNotice("Quote copied"); } catch { setAnnotationError("Could not copy. Use your browser's copy command."); } }}>Copy</button>
+                          <button type="button" className="rd-menu-close" aria-label="Close selection actions" disabled={annotationBusy} onClick={() => { setSelectionMenu(null); scrollRef.current?.focus({preventScroll:true}); }}><Icon name="x" size={12} /></button>
+                        </div>
+                        {!menuVisible.anchor && <span className="rd-menu-msg">Source not ready, or selection outside text. Copy is still available.</span>}
+                        {annotationError && <span className="rd-menu-msg" role="alert">{annotationError}</span>}
                       </div>
                     )}
 
