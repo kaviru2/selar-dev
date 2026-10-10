@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
@@ -12,6 +12,7 @@ import { AuthError, AuthField, AuthShell } from "@/components/auth/AuthShell";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { googleErrorMessage } from "@/lib/google-oauth";
 import { safeRedirectPath } from "@/lib/safe-redirect";
+import { purgePdfCache } from "@/lib/reader/pdf-cache";
 
 function LoginForm() {
   const router = useRouter();
@@ -22,6 +23,9 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(() => googleErrorMessage(searchParams.get("google_error")));
   const [loading, setLoading] = useState(false);
+  // Reaching sign-in means no session (signed out or expired): drop any PDFs
+  // a previous account left on this device.
+  useEffect(() => { void purgePdfCache(); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

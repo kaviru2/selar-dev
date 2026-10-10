@@ -37,6 +37,7 @@ import {
 } from "@/lib/reader/navigation";
 import { locateQuote, markMatches } from "@/lib/reader/text-anchor";
 import { mergeLineRects, normalizeRects, parseBBoxes, type NormalizedBBox } from "@/lib/reader/rects";
+import { PDF_RANGE_OPTIONS, usePdfSource } from "@/lib/reader/use-pdf-source";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import "./reader.css";
@@ -88,6 +89,8 @@ export interface PdfViewerProps {
   onPositionChange?: (anchor: ScrollAnchor) => void;
   onScrollDepth?: (depth: number) => void;
   sourceHash?: string;
+  /** Signed-in user; scopes the on-device PDF cache (lib/reader/pdf-cache.ts). */
+  userId?: string;
   onCreateAnnotation?: (type: string, bboxes: NormalizedBBox[], color: string, page: number, comment?: string, anchor?: TextAnchor) => Promise<void>;
   onUpdateAnnotation?: (annotation: Annotation, color: Annotation["color"], comment: string) => Promise<void>;
   onDeleteAnnotation?: (annotation: Annotation) => Promise<void>;
@@ -145,8 +148,9 @@ export default function PdfViewer(props: PdfViewerProps) {
     docId, initialPage, initialFraction = 0, zoom, onZoomChange, navRequest, annotationsOn, suggestionsOn,
     suggestions, annotations, showThumbnails, onToggleThumbnails, highlightColor = "yellow", toolbarStart, toolbarExtras, toolbarEnd, onStateChange,
     onPositionChange, onScrollDepth, onCreateAnnotation, onRespondSuggestion, onOpenSuggestionTarget,
-    sourceHash = "", onUpdateAnnotation, onDeleteAnnotation,
+    sourceHash = "", onUpdateAnnotation, onDeleteAnnotation, userId = "",
   } = props;
+  const { source: pdfSource, rememberPdf } = usePdfSource(docId, { userId, contentHash: sourceHash });
 
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -224,6 +228,10 @@ export default function PdfViewer(props: PdfViewerProps) {
       setSizesReady(true);
     }).catch(() => setSizesReady(true));
   }, []);
+  const onPdfLoad = useCallback((pdf: PDFDocumentProxy) => {
+    onDocumentLoad(pdf);
+    rememberPdf(pdf);
+  }, [onDocumentLoad, rememberPdf]);
 
   // ——— Viewport size (fit-width/fit-page follow it, keeping position) ———
   useEffect(() => {
@@ -754,9 +762,11 @@ export default function PdfViewer(props: PdfViewerProps) {
         onDelete={async a => { if (!onDeleteAnnotation) throw new Error("Deleting is unavailable."); await onDeleteAnnotation(a); }} />}
       <div className="rd-body">
         <Document
-          file={`/api/documents/${docId}/pdf`}
-          onLoadSuccess={onDocumentLoad}
+          file={pdfSource}
+          options={PDF_RANGE_OPTIONS}
+          onLoadSuccess={onPdfLoad}
           loading={<div className="reader-empty">Loading document…</div>}
+          noData={<div className="reader-empty">Loading document…</div>}
           error={<div className="reader-empty"><strong>Document unavailable</strong><span>Upload or reprocess the PDF to continue.</span></div>}
           className="rd-document"
         >

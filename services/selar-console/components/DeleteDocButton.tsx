@@ -3,6 +3,7 @@
 
 import { Icon } from "@/components/ui/Icon";
 import { clientFetch } from "@/lib/api";
+import { forgetDocumentPdf } from "@/lib/reader/pdf-cache";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -22,6 +23,7 @@ export function DeleteDocButton({ docId }: { docId: string }) {
 
     try {
       await clientFetch(`/api/documents/${docId}`, { method: "DELETE" });
+      await forgetDocumentPdf(docId);
       router.refresh();
     } catch (err) {
       console.error("Failed to delete document", err);

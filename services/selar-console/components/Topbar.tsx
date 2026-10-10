@@ -13,6 +13,7 @@ import { NAV_ITEMS, isActive, visibleNavItems } from "@/lib/nav";
 import { Icon } from "@/components/ui/Icon";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Wordmark } from "@/components/ui/Wordmark";
+import { purgePdfCache } from "@/lib/reader/pdf-cache";
 
 export function Topbar() {
   const pathname = usePathname() ?? "";
@@ -48,6 +49,8 @@ export function Topbar() {
   }, [menuOpen]);
 
   const handleLogout = async () => {
+    // Clear on-device PDFs first so a failed request cannot leave them behind.
+    await purgePdfCache();
     await fetch("/api/auth/logout", { method: "POST" });
     clearPracticeCache();
     router.push("/login");
