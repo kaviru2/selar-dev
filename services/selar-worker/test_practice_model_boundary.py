@@ -27,9 +27,8 @@ def test_untrusted_recall_stays_data_and_feedback_keeps_provider_uncertainty(mon
  assert feedback['model']==main.TEXT_MODEL and feedback['version']
 
 
-def test_verifier_outage_discards_the_draft():
+def test_generation_outage_publishes_nothing():
  async def provider(task,data):
-  if task=='generate':return {'question':'Q','answer':'A','quote':'exact'}
   raise TimeoutError('synthetic outage')
  with pytest.raises(TimeoutError):
   asyncio.run(generate_item({'id':'c','content':'exact','locator':{'page':1}},provider))

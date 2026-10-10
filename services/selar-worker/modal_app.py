@@ -48,7 +48,7 @@ JOB_TIMEOUT_SECONDS = 30 * 60
 SWEEP_TIMEOUT_SECONDS = 15 * 60
 LOCAL_MODULES = ["main", "ingestion", "storage", "worker_trigger", "candidate_contract", "candidate_generation",
                  "offline_evidence", "evaluation", "notify_schedule", "document_formats", "assertion_chat",
-                 "practice", "practice_service", "practice_routes", "practice_schedule"]
+                 "practice", "practice_service", "practice_routes", "practice_schedule", "genai_config"]
 
 if MODAL_AVAILABLE:  # pragma: no cover - exercised only on Modal
     image = (

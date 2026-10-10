@@ -206,7 +206,7 @@ Notes:
    | `WORKER_TRIGGER_SECRET` | same value as the API |
    | `STORAGE_BACKEND` | `s3` |
    | `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (+ `S3_FORCE_PATH_STYLE`) | same bucket as the API |
-   | optional `GEMINI_MULTIMODAL_EMBEDDING_MODEL` (`gemini-embedding-2`), `GEMINI_EMBEDDING_DIMENSION` (`3072`), `GEMINI_TEXT_MODEL`, `INGESTION_LEASE_SECONDS` (300) | tuning |
+   | optional `GEMINI_MULTIMODAL_EMBEDDING_MODEL` (`gemini-embedding-2`), `GEMINI_EMBEDDING_DIMENSION` (`3072`), `GEMINI_TEXT_MODEL` (default `gemini-2.5-flash-lite`, thinking off; see `genai_config.py`), `INGESTION_LEASE_SECONDS` (300) | tuning |
 
 3. Deploy from the worker directory: `cd services/selar-worker && modal deploy modal_app.py`.
    This creates:

@@ -11,7 +11,7 @@ def test_changed_extraction_cannot_rebind_old_attempts_to_new_item():
   conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
   try:
    item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
-   await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':'warmup','response':'Descent'},model)
+   await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':'warmup','response':'A gradient method'},model)
    await conn.execute("UPDATE chunks SET content='Descent reduces error. Changed extraction.' WHERE id=$1",chunk)
    await p.generate(conn,owner,doc,model)
    assert (await p.progress(conn,owner))['warmup']==0
