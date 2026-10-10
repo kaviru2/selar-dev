@@ -107,6 +107,8 @@ function check(name, value) { assert.ok(value, name); results.push({ name, ok: t
     await open();await openList();check("deleted mark stays absent after reload",await page.locator(`[data-annotation-id="${id}"]`).count()===0);
     // A failed PDF load explains itself and recovers with "Try again".
     let failPdf=true;
+    // Drop the on-device PDF cache so the reopen really goes to the network.
+    await page.evaluate(async()=>{if(self.caches)for(const k of await caches.keys())await caches.delete(k);});
     await page.route("**/api/documents/*/pdf",route=>failPdf?route.fulfill({status:503,body:"synthetic outage"}):route.continue());
     await page.goto(`${base}/reader?docId=${doc}&page=1`);
     const retry=page.getByRole("button",{name:"Try again",exact:true});
