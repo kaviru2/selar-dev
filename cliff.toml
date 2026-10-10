@@ -4,14 +4,14 @@ body = """
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | upper_first }}
 {% for commit in commits %}
-- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/Kavirubc/selar-dev/commit/{{ commit.id }}))
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/kaviru2/selar-dev/commit/{{ commit.id }}))
 {% endfor %}
 {% endfor %}
 """
 trim = true
 
 [remote.github]
-owner = "Kavirubc"
+owner = "kaviru2"
 repo = "selar-dev"
 
 [git]
