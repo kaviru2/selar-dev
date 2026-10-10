@@ -24,12 +24,19 @@
   --rd-evidence-confirmed-line: var(--selar-green-500);
   --rd-find: color-mix(in srgb, var(--selar-amber) 38%, transparent);
   --rd-find-current: color-mix(in srgb, var(--selar-rust) 55%, transparent);
-  --rd-hl-yellow: rgba(250, 204, 21, 0.38);
+  /* Marks are drawn on paper-white pages in both themes, so one multiply palette
+   * keeps text crisp. --rd-sw-* are the solid swatch colours for chips and list rules. */
+  --rd-hl-yellow: rgba(250, 204, 21, 0.36);
+  --rd-hl-orange: rgba(251, 146, 60, 0.32);
   --rd-hl-green: rgba(74, 222, 128, 0.32);
-  --rd-hl-blue: rgba(96, 165, 250, 0.32);
-  --rd-hl-pink: rgba(244, 114, 182, 0.32);
-  --rd-hl-purple: rgba(167, 139, 250, 0.34);
+  --rd-hl-blue: rgba(96, 165, 250, 0.36);
+  --rd-hl-pink: rgba(244, 114, 182, 0.30);
+  --rd-hl-purple: rgba(167, 139, 250, 0.38);
   --rd-hl-blend: multiply;
+  --rd-sw-yellow: rgb(245, 200, 30);
+  --rd-sw-orange: rgb(249, 140, 50);
+  --rd-sw-green: rgb(70, 190, 110);
+  --rd-sw-pink: rgb(236, 110, 170);
 
   flex: 1;
   min-height: 0;
@@ -59,12 +66,6 @@
   /* Pages stay paper-white for legibility of arbitrary PDFs; marks switch to
    * screen blending so they read as light tints on dark UI and on paper. */
   --rd-page-shadow: 0 0 0 1px var(--rule), 0 8px 24px rgba(0, 0, 0, 0.45);
-  --rd-hl-yellow: rgba(250, 204, 21, 0.45);
-  --rd-hl-green: rgba(74, 222, 128, 0.4);
-  --rd-hl-blue: rgba(96, 165, 250, 0.42);
-  --rd-hl-pink: rgba(244, 114, 182, 0.42);
-  --rd-hl-purple: rgba(167, 139, 250, 0.45);
-  --rd-hl-blend: multiply;
 }
 
 /* ——— Toolbar ——— */
@@ -228,16 +229,21 @@
 
 /* Marks never intercept the pointer: text stays selectable everywhere.
  * Suggestion clicks are hit-tested on the page instead. */
-.rd-marks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+/* The layer is its own stacking context (z-index), so blending must happen on the
+ * layer itself: per-mark mix-blend-mode would only blend with the empty layer and
+ * tint the glyphs underneath. Multiply keeps black text black on paper-white pages. */
+.rd-marks { position: absolute; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: var(--rd-hl-blend); }
 .rd-mark { position: absolute; border-radius: 2px; pointer-events: none; }
 .rd-mark[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; pointer-events: auto; }
-.rd-user { mix-blend-mode: var(--rd-hl-blend); background: var(--rd-hl-yellow); }
-.rd-user.c-yellow, .rd-user.c-wheat { background: var(--rd-hl-yellow); }
+.rd-user { background: var(--rd-hl-yellow); }
+.rd-user.c-yellow { background: var(--rd-hl-yellow); }
+.rd-user.c-wheat { background: var(--rd-hl-orange); }
 .rd-user.c-green, .rd-user.c-sage { background: var(--rd-hl-green); }
 .rd-user.c-blue { background: var(--rd-hl-blue); }
 .rd-user.c-pink, .rd-user.c-coral { background: var(--rd-hl-pink); }
 .rd-user.c-purple { background: var(--rd-hl-purple); }
-.rd-user.note { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ink) 55%, transparent); }
+/* Notes: the page is always paper-white, so the underline uses a fixed dark ink, not the theme ink. */
+.rd-user.has-note { box-shadow: inset 0 -2px 0 rgba(30, 30, 30, 0.55); }
 /* SELAR evidence: dashed underline + faint tint, visibly not the learner's own mark. */
 .rd-evidence {
   background: var(--rd-evidence-fill);
@@ -336,3 +342,14 @@
   .rd-thumbs { flex-basis: 96px; }
   .rd-thumb-img { width: 72px; min-height: 92px; }
 }
+
+/* ——— Load state: a page-shaped skeleton instead of a bare line of text ——— */
+.rd-loading { gap: 12px; }
+.rd-skeleton-page {
+  width: min(420px, 70%); aspect-ratio: 612 / 792; border-radius: 3px;
+  background: linear-gradient(100deg, var(--rd-page-bg) 40%, color-mix(in srgb, var(--rd-canvas) 60%, var(--rd-page-bg)) 50%, var(--rd-page-bg) 60%);
+  background-size: 200% 100%; box-shadow: var(--rd-page-shadow); animation: rd-shimmer 1.4s linear infinite;
+}
+@keyframes rd-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .rd-skeleton-page { animation: none; } }
+.rd-document > .reader-empty .rd-btn { margin-top: 6px; }
