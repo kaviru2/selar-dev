@@ -18,6 +18,7 @@ from ingestion import extract_source
 from storage import asset_prefix, get_storage
 from candidate_generation import link_pair
 from assertion_chat import AssertionSelection, selected_assertion_answer
+from genai_config import TEXT_MODEL, generate_text
 
 # Load root .env.development
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env.development'))
@@ -56,7 +57,7 @@ client = genai.Client(api_key=api_key) if api_key else None
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://selar:selar_dev@localhost:5432/selar?sslmode=disable")
 EMBEDDING_MODEL = os.getenv("GEMINI_MULTIMODAL_EMBEDDING_MODEL", "gemini-embedding-2")
 EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "3072"))
-TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "models/gemini-3-flash-preview")
+# Text model + thinking live in genai_config (one place, env-overridable).
 CHUNK_WORD_LIMIT = int(os.getenv("CHUNK_WORD_LIMIT", "120"))
 INGESTION_CONCURRENCY = max(1, int(os.getenv("INGESTION_CONCURRENCY", "1")))
 INGESTION_QUEUE_ENABLED = os.getenv("INGESTION_QUEUE_ENABLED", "false").strip().lower() in {
@@ -391,6 +392,39 @@ def deterministic_mental_model(contents: List[str], partial: Optional[Dict[str, 
     if not result["domain"] and result["key_concepts"]:
         result["domain"] = result["key_concepts"][0]["name"]
     return result
+
+
+MENTAL_MODEL_PROMPT_VERSION = "mental-model-v2"
+# v2 drops concept_edges: generated edges were never persisted (they lack
+# pair-specific evidence), so requesting them only spent output tokens.
+MENTAL_MODEL_PROMPT = """Build a structured article mental model for active learning.
+
+Return ONLY valid JSON with this structure:
+{
+  "main_claim": "The article's central argument in 1-2 sentences",
+  "key_concepts": [
+    {"name": "Concept", "description": "Grounded description", "evidence_chunk_index": 0}
+  ],
+  "assumptions": [
+    {"text": "An explicit or implicit premise", "evidence_chunk_index": 0}
+  ],
+  "open_questions": [
+    {"text": "A question the article leaves unresolved", "evidence_chunk_index": 0}
+  ],
+  "domain": "Specific subject area"
+}
+
+Rules:
+- Extract 5-8 specific, domain-relevant concepts.
+- Cite only chunk indexes that appear in the input.
+- Do not invent claims that are not supported by the text."""
+
+
+def generate_mental_model_payload(numbered_text: str) -> Any:
+    """The one text-generation call per ingested document."""
+    response = generate_text(client, f"{MENTAL_MODEL_PROMPT}\n\nTEXT:\n{numbered_text}",
+                             response_mime_type="application/json")
+    return safe_parse_json(response.text or "")
 
 
 def merge_word_bboxes(words: List[Dict[str, Any]], width: float, height: float) -> List[Dict[str, float]]:
@@ -797,40 +831,9 @@ async def process_document_task(
                 numbered_chunks.append(block)
                 current_length += len(block)
 
-            prompt = """Build a structured article mental model for active learning.
-
-Return ONLY valid JSON with this structure:
-{
-  "main_claim": "The article's central argument in 1-2 sentences",
-  "key_concepts": [
-    {"name": "Concept", "description": "Grounded description", "evidence_chunk_index": 0}
-  ],
-  "assumptions": [
-    {"text": "An explicit or implicit premise", "evidence_chunk_index": 0}
-  ],
-  "open_questions": [
-    {"text": "A question the article leaves unresolved", "evidence_chunk_index": 0}
-  ],
-  "domain": "Specific subject area",
-  "concept_edges": [
-    { "source": "Source Concept Name", "target": "Target Concept Name", "relation": "related_to" }
-  ]
-}
-
-Rules:
-- Extract 5-8 specific, domain-relevant concepts.
-- Cite only chunk indexes that appear in the input.
-- Do not invent claims that are not supported by the text.
-- Valid relations: prerequisite_of, related_to, sub_concept_of, contradicts, extends
-- Edge source/target must exactly match a key concept name."""
-
             try:
-                response = client.models.generate_content(
-                    model=TEXT_MODEL,
-                    contents=f"{prompt}\n\nTEXT:\n{''.join(numbered_chunks)}",
-                    config={"response_mime_type": "application/json"}
-                )
-                partial_mental_model = normalize_mental_model(safe_parse_json(response.text or ""))
+                partial_mental_model = normalize_mental_model(
+                    generate_mental_model_payload("".join(numbered_chunks)))
             except Exception as generation_error:
                 print(f"Structured model call failed; using deterministic fallback: {generation_error}")
                 partial_mental_model = normalize_mental_model({})
@@ -860,7 +863,7 @@ Rules:
                 INSERT INTO document_mental_models (
                     document_id, user_id, version, main_claim, key_concepts, assumptions,
                     open_questions, domain, embedding, model_version, prompt_version, status
-                ) VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, 'mental-model-v1', 'ready')
+                ) VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, 'ready')
                 ON CONFLICT (document_id, version) DO UPDATE SET
                     main_claim = EXCLUDED.main_claim,
                     key_concepts = EXCLUDED.key_concepts,
@@ -876,7 +879,7 @@ Rules:
             """, doc_id, user_id, mental_model["main_claim"],
                 [concept["name"] for concept in mental_model["key_concepts"]],
                 mental_model["assumptions"], mental_model["open_questions"],
-                mental_model["domain"], model_vector, TEXT_MODEL)
+                mental_model["domain"], model_vector, TEXT_MODEL, MENTAL_MODEL_PROMPT_VERSION)
             await conn.execute("UPDATE documents SET progress = 0.75 WHERE id = $1", doc_id)
 
             if concepts:
@@ -885,7 +888,7 @@ Rules:
                     c_vec = str(concept_embeddings[i])
                     row = await conn.fetchrow("""
                         INSERT INTO concepts (user_id, name, description, embedding, state, model_version, prompt_version)
-                        VALUES ($1, $2, $3, $4, 'supported', $5, 'mental-model-v1')
+                        VALUES ($1, $2, $3, $4, 'supported', $5, $6)
                         ON CONFLICT (user_id, name) DO UPDATE SET
                             description = EXCLUDED.description,
                             embedding = EXCLUDED.embedding,
@@ -893,7 +896,8 @@ Rules:
                             model_version = EXCLUDED.model_version,
                             prompt_version = EXCLUDED.prompt_version
                         RETURNING id
-                    """, user_id, concept['name'][:250], concept.get('description', ''), c_vec, TEXT_MODEL)
+                    """, user_id, concept['name'][:250], concept.get('description', ''), c_vec, TEXT_MODEL,
+                        MENTAL_MODEL_PROMPT_VERSION)
 
                     if row:
                         name_to_uuid[concept['name']] = row['id']
@@ -1426,11 +1430,7 @@ EVIDENCE:
 {chr(10).join(sources)}
 """
     generation_started = time.perf_counter()
-    response = await asyncio.to_thread(
-        client.models.generate_content,
-        model=TEXT_MODEL,
-        contents=prompt,
-    )
+    response = await asyncio.to_thread(generate_text, client, prompt)
     generation_ms = (time.perf_counter() - generation_started) * 1000
     answer_text = (response.text or "").strip()
     if not answer_text:

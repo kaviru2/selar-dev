@@ -12,9 +12,9 @@ def test_progress_separates_exposed_warmup_and_delayed_unassisted():
   try:
    item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
    for phase in ('warmup','reading_check'):
-    await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':phase,'response':'Descent','exposed':False},model)
+    await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':phase,'response':'A gradient method','exposed':False},model)
    await conn.execute("UPDATE practice_schedule SET due_at=now()-interval '1 day',last_attempt_at=now()-interval '2 days' WHERE user_id=$1",owner)
-   await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':'review','response':'Descent','exposed':False},model)
+   await p.attempt(conn,owner,{'item_id':item,'request_key':str(uuid.uuid4()),'phase':'review','response':'A gradient method','exposed':False},model)
    report=await p.progress(conn,owner)
    assert report['warmup']==1 and report['reading_check']==1
    assert report['delayed_unassisted']==1 and report['delayed_scored']==1 and report['delayed_mean_score']==.5

@@ -20,8 +20,6 @@ async def fixture(conn):
 async def model(task, data):
     if task == 'generate':
         return {'question': 'What reduces error?', 'answer': 'Descent', 'quote': 'Descent reduces error.'}
-    if task == 'verify':
-        return {'supported': True}
     return {'score': .5, 'confident': True, 'feedback': 'Partially correct'}
 
 
@@ -54,13 +52,19 @@ def test_attempt_is_private_atomic_idempotent_and_unavailable_unscored():
         try:
             generated = await p.generate(conn, owner, doc, model)
             item = generated['items'][0]['id']
-            request = {'item_id': item, 'request_key': str(uuid.uuid4()), 'response': 'Descent', 'phase': 'warmup', 'exposed': False}
+            request = {'item_id': item, 'request_key': str(uuid.uuid4()), 'response': 'A gradient method', 'phase': 'warmup', 'exposed': False}
             assert (await p.attempt(conn, other, request, model))['status'] == 'not_found'
             result = await p.attempt(conn, owner, request, model)
             assert result['feedback']['score'] == .5 and result['quote'] == 'Descent reduces error.'
             assert await p.attempt(conn, owner, request, model) == result
             assert (await p.attempt(conn, owner, {**request, 'response': 'changed'}, model))['status'] == 'conflict'
             assert await conn.fetchval('SELECT count(*) FROM practice_attempts WHERE user_id=$1', owner) == 1
+            calls = []
+            async def counting(task, data):
+                calls.append(task)
+                return await model(task, data)
+            exact = await p.attempt(conn, owner, {**request, 'request_key': str(uuid.uuid4()), 'response': 'descent'}, counting)
+            assert exact['feedback']['score'] == 1 and calls == []  # exact restatement: no model call
         finally:
             await conn.execute('DELETE FROM users WHERE id=ANY($1::uuid[])', [owner, other])
             await conn.close()
@@ -74,7 +78,7 @@ def test_due_queue_and_duplicate_review_atomicity():
         owner,other,doc,chunk=await fixture(conn)
         try:
             item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
-            req={'item_id':item,'request_key':str(uuid.uuid4()),'response':'Descent','phase':'reading_check','exposed':True}
+            req={'item_id':item,'request_key':str(uuid.uuid4()),'response':'A gradient method','phase':'reading_check','exposed':True}
             await p.attempt(conn,owner,req,model)
             assert (await p.daily(conn,owner))['items']==[]
             # Test-only persisted fixture aging, no production clock override.

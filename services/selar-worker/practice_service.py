@@ -2,7 +2,7 @@
 import asyncio
 import json
 GENERATION_BUDGET_SECONDS = 40  # below Go server WriteTimeout=60s and Modal=120s
-from practice import Unavailable, digest, generate_item, validated_feedback
+from practice import Unavailable, digest, exact_recall_feedback, generate_item, validated_feedback
 from practice_schedule import next_interval, streak
 
 async def progress(conn, owner):
@@ -53,8 +53,11 @@ async def attempt(conn, owner, request, model):
             return {'status':'not_due'}
         payload = json.loads(row['payload'])
         try:
-            raw = await model('grade', {'question': payload['question'], 'answer': payload['answer'],
-                                      'quote': payload['quote'], 'response': request['response']})
+            # Exact restatements are graded deterministically; only genuine
+            # free recall (paraphrase, partial, negated) reaches the model.
+            raw = exact_recall_feedback(payload, request['response']) or await model('grade', {
+                'question': payload['question'], 'answer': payload['answer'],
+                'quote': payload['quote'], 'response': request['response']})
             feedback = validated_feedback(raw)
         except Exception:
             feedback = validated_feedback({'feedback': 'AI feedback unavailable; this attempt is unscored.'})

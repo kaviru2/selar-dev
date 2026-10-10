@@ -136,7 +136,7 @@ curl --fail --output /dev/null http://127.0.0.1:13006/login
 
 Open `http://localhost:13006`, register a disposable test account, and confirm that **Library** loads with no readings. Use that same console hostname consistently when signing in. This tests the console-to-API-to-database path; a health response alone does not establish AI readiness.
 
-**To try real ingestion/chat/practice:** set your own `GEMINI_API_KEY` in the local environment file, reload the environment and restart the worker. Review costs and data handling first, then add one small non-sensitive reading using the [user guide](user-guide.md). The worker's current model defaults are `gemini-embedding-2`, dimension `3072`, and `models/gemini-3-flash-preview`; access and quota must be verified for your provider account. Changing embedding dimensions/models is not a drop-in workaround for existing stored vectors. This guide has not validated a live model call.
+**To try real ingestion/chat/practice:** set your own `GEMINI_API_KEY` in the local environment file, reload the environment and restart the worker. Review costs and data handling first, then add one small non-sensitive reading using the [user guide](user-guide.md). The worker's current model defaults are `gemini-embedding-2`, dimension `3072`, and `gemini-2.5-flash-lite` with thinking off (see `services/selar-worker/genai_config.py`); access and quota must be verified for your provider account. Changing embedding dimensions/models is not a drop-in workaround for existing stored vectors. This guide has not validated a live model call.
 
 ## Stop without deleting your data
 

@@ -33,7 +33,6 @@ def test_upload_warmup_reading_check_day_n_review_progress_and_private_boundarie
    if 'practice question' in system:
     passage=json.loads(kwargs['contents'])['passage']
     return SimpleNamespace(text=json.dumps({'question':'What reduces the fabricated error score?','answer':'Gradient descent optimization','quote':passage}))
-   if 'Independently check' in system:return SimpleNamespace(text=json.dumps({'supported':True,'reason':'Synthetic supported fixture'}))
    return SimpleNamespace(text=json.dumps({'main_claim':TEXT,'key_concepts':[{'name':'gradient descent optimization','description':'Synthetic','evidence_chunk_index':0}],'assumptions':[],'open_questions':[],'domain':'synthetic','concept_edges':[]}))
  monkeypatch.setattr(main,'client',SimpleNamespace(models=Models()))
  suffix=uuid.uuid4().hex
@@ -141,7 +140,7 @@ def test_upload_warmup_reading_check_day_n_review_progress_and_private_boundarie
 
 
 @pytest.mark.timeout(80)
-def test_six_eleven_second_provider_calls_fit_real_http_deadlines(services):
+def test_three_eleven_second_provider_calls_fit_real_http_deadlines(services):
  import time
  api,_=services
  with httpx.Client() as client:
@@ -158,5 +157,6 @@ def test_six_eleven_second_provider_calls_fit_real_http_deadlines(services):
   result=_request(client,'POST',f'{api}/api/practice',account['token'],json={'action':'generate','document_id':doc})
   duration=time.monotonic()-started
   assert result['status']=='ready' and len(result['items'])==3,result
-  assert 20<=duration<40,duration
-  print(f'Actual API/worker HTTP generation: six 11-second provider calls, three items, {duration:.2f}s; server deadline unchanged')
+  # One provider call per item now (the support check is deterministic).
+  assert 11<=duration<40,duration
+  print(f'Actual API/worker HTTP generation: three 11-second provider calls, three items, {duration:.2f}s; server deadline unchanged')

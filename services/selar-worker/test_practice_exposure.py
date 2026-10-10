@@ -9,7 +9,7 @@ def test_recent_reading_cannot_be_reported_as_delayed_unassisted():
   conn=await asyncpg.connect(DB);owner,other,doc,chunk=await fixture(conn)
   try:
    item=(await p.generate(conn,owner,doc,model))['items'][0]['id']
-   req={'item_id':item,'request_key':str(uuid.uuid4()),'phase':'warmup','response':'Descent','exposed':False}
+   req={'item_id':item,'request_key':str(uuid.uuid4()),'phase':'warmup','response':'A gradient method','exposed':False}
    await p.attempt(conn,owner,req,model)
    await conn.execute("UPDATE practice_schedule SET due_at=now()-interval '1 day',last_attempt_at=now()-interval '2 days' WHERE user_id=$1",owner)
    await conn.execute('INSERT INTO reading_sessions(user_id,document_id,started_at) VALUES($1,$2,now())',owner,doc)
