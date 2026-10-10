@@ -5,6 +5,7 @@
 "use client";
 
 import Link from "next/link";
+import { clearPracticeCache } from "@/lib/practice-cache";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { useSelar } from "@/lib/context";
@@ -48,6 +49,7 @@ export function Topbar() {
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
+    clearPracticeCache();
     router.push("/login");
     router.refresh();
   };

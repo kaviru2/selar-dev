@@ -112,3 +112,13 @@
 .graph-loading { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; backdrop-filter: blur(4px); }
 .graph-loading > div { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--accent); }
 .graph-loading span { color: var(--ink-3); font: 12px var(--font-mono); }
+
+/* Loading skeleton for review / progress (keeps the page shape while data loads). */
+.practice-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.practice-skeleton { display: grid; gap: 14px; margin: 14px 0; }
+.practice-skeleton-card { display: grid; gap: 10px; }
+.practice-skeleton-line { display: block; height: 14px; width: 80%; border-radius: 6px; background: var(--bg-3); animation: practice-skeleton-pulse 1.2s ease-in-out infinite; }
+.practice-skeleton-line--short { width: 35%; height: 10px; }
+.practice-skeleton-line--block { width: 100%; height: 64px; }
+@keyframes practice-skeleton-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .practice-skeleton-line { animation: none; } }
