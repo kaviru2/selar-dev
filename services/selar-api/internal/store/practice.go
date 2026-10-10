@@ -88,29 +88,34 @@ func PracticeStreak(days []time.Time, today time.Time) int {
 	return count
 }
 
+// practiceStreakSQL returns today's UTC date and the distinct UTC days with a
+// review attempt in one round trip (aggregates always yield one row).
+const practiceStreakSQL = `SELECT (now() AT TIME ZONE 'UTC')::date,
+	COALESCE(array_agg(DISTINCT (created_at AT TIME ZONE 'UTC')::date), '{}')
+	FROM practice_attempts WHERE user_id=$1 AND phase='review' AND created_at<=now()`
+
 func (s *Store) practiceStreak(ctx context.Context, owner string) (int, error) {
 	var today time.Time
-	if err := s.pool.QueryRow(ctx, `SELECT (now() AT TIME ZONE 'UTC')::date`).Scan(&today); err != nil {
-		return 0, err
-	}
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT (created_at AT TIME ZONE 'UTC')::date FROM practice_attempts
-		WHERE user_id=$1 AND phase='review' AND created_at<=now()`, owner)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
 	var days []time.Time
-	for rows.Next() {
-		var d time.Time
-		if err := rows.Scan(&d); err != nil {
-			return 0, err
-		}
-		days = append(days, d)
-	}
-	if err := rows.Err(); err != nil {
+	if err := s.pool.QueryRow(ctx, practiceStreakSQL, owner).Scan(&today, &days); err != nil {
 		return 0, err
 	}
 	return PracticeStreak(days, today), nil
+}
+
+type streakResult struct {
+	n   int
+	err error
+}
+
+// goStreak computes the streak on its own pooled connection.
+func (s *Store) goStreak(ctx context.Context, owner string) <-chan streakResult {
+	out := make(chan streakResult, 1)
+	go func() {
+		n, err := s.practiceStreak(ctx, owner)
+		out <- streakResult{n, err}
+	}()
+	return out
 }
 
 func (s *Store) practiceItems(ctx context.Context, query string, withVersion bool, args ...any) ([]PracticeItem, error) {
@@ -138,15 +143,18 @@ const practiceItemColumns = `SELECT p.id::text, p.document_id::text, COALESCE(p.
 
 // PracticeDailyQueue returns up to 20 due, still-live items and the streak.
 func (s *Store) PracticeDailyQueue(ctx context.Context, owner string) (*PracticeDaily, error) {
+	// The queue and the streak are independent: run them concurrently on two
+	// pooled connections so the page waits for one round trip, not two.
+	streak := s.goStreak(ctx, owner)
 	items, err := s.practiceItems(ctx, practiceItemColumns+practiceLive+practiceDue+` ORDER BY p.created_at,p.id LIMIT 20`, false, owner)
+	st := <-streak
 	if err != nil {
 		return nil, err
 	}
-	streak, err := s.practiceStreak(ctx, owner)
-	if err != nil {
-		return nil, err
+	if st.err != nil {
+		return nil, st.err
 	}
-	return &PracticeDaily{Status: "ready", Items: items, Streak: streak, Timezone: "UTC", Policy: practicePolicy}, nil
+	return &PracticeDaily{Status: "ready", Items: items, Streak: st.n, Timezone: "UTC", Policy: practicePolicy}, nil
 }
 
 // PracticeDocumentItems returns the owner's live items for one document.
@@ -157,6 +165,7 @@ func (s *Store) PracticeDocumentItems(ctx context.Context, owner, documentID str
 // PracticeProgressReport aggregates the owner's attempts on live items.
 func (s *Store) PracticeProgressReport(ctx context.Context, owner string) (*PracticeProgress, error) {
 	r := &PracticeProgress{Status: "ready", EstimateNote: practiceEstimateNote, Timezone: "UTC"}
+	streak := s.goStreak(ctx, owner)
 	const scored = `jsonb_typeof(a.feedback->'feedback'->'score')='number'`
 	err := s.pool.QueryRow(ctx, `SELECT
 		count(*) FILTER (WHERE a.phase='warmup'),
@@ -166,18 +175,18 @@ func (s *Store) PracticeProgressReport(ctx context.Context, owner string) (*Prac
 		count(*) FILTER (WHERE a.delayed_unassisted),
 		count(*) FILTER (WHERE NOT `+scored+`),
 		count(*) FILTER (WHERE a.delayed_unassisted AND `+scored+`),
-		avg((a.feedback->'feedback'->>'score')::float8) FILTER (WHERE a.delayed_unassisted AND `+scored+`)
+		avg((a.feedback->'feedback'->>'score')::float8) FILTER (WHERE a.delayed_unassisted AND `+scored+`),
+		(SELECT count(*) `+practiceLive+practiceDue+`)
 		FROM practice_attempts a
 		WHERE a.user_id=$1 AND a.created_at<=now() AND a.item_id IN (SELECT p.id `+practiceLive+`)`, owner).
-		Scan(&r.Warmup, &r.ReadingCheck, &r.Review, &r.Exposed, &r.DelayedUnassisted, &r.Unscored, &r.DelayedScored, &r.DelayedMeanScore)
+		Scan(&r.Warmup, &r.ReadingCheck, &r.Review, &r.Exposed, &r.DelayedUnassisted, &r.Unscored, &r.DelayedScored, &r.DelayedMeanScore, &r.Due)
+	st := <-streak
 	if err != nil {
 		return nil, err
 	}
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) `+practiceLive+practiceDue, owner).Scan(&r.Due); err != nil {
-		return nil, err
+	if st.err != nil {
+		return nil, st.err
 	}
-	if r.Streak, err = s.practiceStreak(ctx, owner); err != nil {
-		return nil, err
-	}
+	r.Streak = st.n
 	return r, nil
 }
