@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
   // forbidden() for the server-side /admin role gate (403 page).
   experimental: {
     authInterrupts: true,
+    // Reuse a visited page's RSC payload for 30 s in the browser's own router
+    // cache, so Library -> Quizzes -> back does not refetch every page.
+    // Client-side and per-tab only (never a shared/CDN cache); mutations
+    // already call router.refresh(), which invalidates it.
+    staleTimes: { dynamic: 30 },
   },
   turbopack: {
     root: path.resolve(__dirname),

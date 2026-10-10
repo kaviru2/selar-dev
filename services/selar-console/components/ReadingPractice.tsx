@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { quizApi } from '@/lib/quiz/client';
+import { clearPracticeCache } from '@/lib/practice-cache';
 import { buttonClass } from '@/components/ui/Button';
 
 export interface PracticeItem { id:string; document_id?:string; question:string; label:string }
@@ -15,7 +17,7 @@ export function PracticeCard({item,phase,onDone}:{item:PracticeItem;phase:'warmu
   setBusy(true);setError('');
   try {const value=await practiceRPC({action:'attempt',item_id:item.id,request_key:key,response,phase,exposed});
    if(value.status!=='recorded') throw new Error(value.status==='conflict'?'This saved attempt has different contents. Start a new attempt.':'Source changed or practice unavailable; reload.');
-   setResult(value);onDone?.();
+   clearPracticeCache();setResult(value);onDone?.();
   } catch(e){setError(e instanceof Error?e.message:'Practice unavailable; retry');} finally {setBusy(false);}
  }
  return <section aria-label="Practice question" className="ui-card practice-card">
@@ -42,7 +44,7 @@ export function ReadingPractice({documentId,children,onReadingChange}:{documentI
  }
  useEffect(()=>{if(documentId) void load(); /* keyed by document in reader */},[documentId]); // eslint-disable-line react-hooks/exhaustive-deps
  if(!documentId)return <>{children}</>;
- if(stage==='reading')return <><div className="practice-bar"><button type="button" className={buttonClass({size:'sm'})} onClick={()=>setStage('check')}>End-reading check</button> <a className="practice-link" href="/review">Daily review</a></div>{children}</>;
+ if(stage==='reading')return <><div className="practice-bar"><button type="button" className={buttonClass({size:'sm'})} onClick={()=>setStage('check')}>End-reading check</button> <Link className="practice-link" href="/review">Daily review</Link></div>{children}</>;
  return <main className="practice-page" aria-label="Reading practice"><div className="practice-inner">
   <span className="ui-eyebrow">Reading practice</span>
   <h2 className="practice-title">{stage==='warmup'?'Before reading':'End-reading check'}</h2>
@@ -50,6 +52,6 @@ export function ReadingPractice({documentId,children,onReadingChange}:{documentI
   {message&&<p role="status" className="practice-status">{message}</p>}
   {items.map(item=><PracticeCard key={`${stage}:${item.id}`} item={item} phase={stage==='warmup'?'warmup':'reading_check'}/>)}
   <div className="practice-actions">{!items.length&&<button type="button" className={buttonClass({size:'sm'})} onClick={load}>Retry practice</button>}
-  <button type="button" className={buttonClass({variant:'primary',size:'sm'})} onClick={()=>setStage('reading')}>Continue reading</button> <a className="practice-link" href="/review">Daily review</a></div>
+  <button type="button" className={buttonClass({variant:'primary',size:'sm'})} onClick={()=>setStage('reading')}>Continue reading</button> <Link className="practice-link" href="/review">Daily review</Link></div>
  </div></main>;
 }

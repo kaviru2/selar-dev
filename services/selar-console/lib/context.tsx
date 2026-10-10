@@ -136,3 +136,11 @@ export function useSelar(): SelarState {
   }
   return ctx;
 }
+
+/**
+ * The signed-in user's id, or null outside <SelarProvider> (e.g. isolated
+ * component tests). Used to scope per-user client caches.
+ */
+export function useSelarUserId(): string | null {
+  return useContext(SelarContext)?.user?.id ?? null;
+}
