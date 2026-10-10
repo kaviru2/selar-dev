@@ -63,7 +63,7 @@ Open **Chat**, ask about material already processed into your library, then open
 | No connections | Check that readings are ready and related. A blank result can be legitimate; suggestion visibility may also be restricted by the instance. |
 | Google or Drive controls are missing | They are optional and not enabled by the local smoke setup. Ask the instance operator rather than sharing credentials. |
 | Practice unavailable or provisional | Continue reading, or use **Retry practice** after ingestion/provider availability is fixed. Provisional/unscored feedback is not a failed study test. |
-| An answer or connection is wrong | Inspect the cited passages; use **This link is wrong** for a connection or chat feedback for an answer. Do not treat generated wording or confidence as source evidence. |
+| An answer or connection is wrong | Inspect the cited passages; use **This link is wrong** for a connection, or **Report a wrong claim** under a chat answer (👎 alone just marks it not helpful). Do not treat generated wording or confidence as source evidence. |
 | Your screen differs from this guide | Ask which revision is deployed. Pending work is not necessarily in the hosted instance. |
 
 When reporting a bug, include the action, error text and deployed revision if known. Do not attach secrets, sensitive readings or other users' information.

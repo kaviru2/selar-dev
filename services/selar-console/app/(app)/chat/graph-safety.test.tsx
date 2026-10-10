@@ -24,8 +24,9 @@ it("keeps citations and answer feedback visible without calling a rating relatio
     await act(async () => { root.render(<ChatPage />); });
     await act(async () => { await Promise.resolve(); });
     expect(container.textContent).toContain("Source");
-    expect(container.textContent).toContain("Saved");
+    expect(container.querySelector('button[aria-label="Helpful"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(container.textContent).toContain("candidate");
+    expect(container.textContent).toContain("never shows that concepts are related");
     expect(container.textContent).not.toMatch(/feedback-approved|reinforced|candidate relationships observed|promoted to supported/i);
   } finally { await act(async () => root.unmount()); }
 });
@@ -45,8 +46,8 @@ it("shows retracted chat evidence as withdrawn instead of linking it into the gr
     await act(async () => { root.render(<ChatPage />); });
     await act(async () => { await Promise.resolve(); });
     expect(container.textContent).toContain("withdrawn");
-    expect(container.textContent).not.toContain("associated with citations");
-    expect(container.querySelector('a[href="/graph"].chat-graph-update')).toBeNull();
+    expect(container.textContent).not.toContain("associated with");
+    expect(container.querySelector('a[href="/graph"]')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -72,6 +73,9 @@ it("routes a graph-command answer to a source-scoped proposal form, not to a lib
     expect(forms.length).toBe(1);
     expect(forms[0].closest("article")?.textContent).toContain("No graph change was made");
     expect(forms[0].textContent).toContain("Later paper");
+    // The command-boundary reply gets the proposal form only, not a second feedback surface.
+    expect(forms[0].closest("article")?.querySelector('[aria-label="Answer feedback"]')).toBeNull();
+    expect(container.querySelectorAll('[aria-label="Answer feedback"]').length).toBe(1);
     expect(clientFetch.mock.calls.every(([, init]) => !init || init.method !== "POST")).toBe(true);
   } finally { await act(async () => root.unmount()); }
 });
