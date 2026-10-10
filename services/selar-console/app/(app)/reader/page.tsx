@@ -47,7 +47,7 @@ interface OpenTarget {
 export default function ReaderPage() {
   const searchParams = useSearchParams();
   // Reader defaults from Settings (lib/settings.ts, same shape as readerPreferences()).
-  const { preferences } = useSelar();
+  const { preferences, user } = useSelar();
   const prefs = useMemo(() => readerPreferences(preferences), [preferences]);
   const positions = useMemo(() => browserPositionStore(), []);
 
@@ -478,6 +478,7 @@ export default function ReaderPage() {
             onUpdateAnnotation={updateAnnotation}
             onDeleteAnnotation={deleteAnnotation}
             sourceHash={documentContent?.document.content_hash || ""}
+            userId={user?.id}
             onRespondSuggestion={respondToPassage}
             onOpenSuggestionTarget={(suggestion) => {
               if (!suggestion.tgt_document_id) return;

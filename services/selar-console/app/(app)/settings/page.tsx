@@ -33,6 +33,7 @@ import {
   type ReaderSettings,
   type ZoomMode,
 } from "@/lib/settings";
+import { purgePdfCache } from "@/lib/reader/pdf-cache";
 
 const PAPERS: { id: Exclude<Theme, "dark">; label: string }[] = [
   { id: "paper", label: "Paper" },
@@ -206,6 +207,7 @@ export default function SettingsPage() {
     setBusy("delete");
     try {
       await deleteAccount(deletePw);
+      await purgePdfCache();
       window.location.assign("/");
     } catch (err) {
       setDeleteMsg(fail(err));

@@ -108,6 +108,7 @@ browser ──► console (Vercel) ──/api/* proxy──► Go API (Vercel) �
   2. PUTs the file straight to the bucket;
   3. calls `POST /api/documents/upload-complete`. The API checks the object exists, its size (≤ 50 MB), its stored type and the `%PDF-` magic bytes before creating records and queueing ingestion.
 - Reading a PDF or figure returns a 302 to a 5-minute presigned GET after the ownership check.
+- The Reader loads PDFs with HTTP range requests, so the first page renders before the whole file arrives. Each presigned URL is new, so the browser HTTP cache cannot help on the next open. Instead, the console keeps the verified bytes (SHA-256 must equal the document's `content_hash`) in the browser's Cache Storage. They are keyed by user, document and hash, capped at 12 files / 300 MB / 14 days, and never pass through a shared or CDN cache. The cache is cleared on sign-out, account deletion, on reaching the sign-in page, and when another account opens the Reader; a deleted document's entry is removed too (`lib/reader/pdf-cache.ts`).
 - The ingestion queue in Postgres is the source of truth. A trigger is only a hint: Modal claims the job with the same lease SQL as the local poller (`FOR UPDATE SKIP LOCKED`, backoff, max attempts), so duplicate triggers cannot double-process a job. The scheduled sweep picks up anything a lost trigger missed.
 
 ## 1. Managed Postgres (Neon recommended)
