@@ -56,6 +56,7 @@ def test_support_check_accepts_answers_grounded_in_the_quote(answer, quote):
     ('it is gradient descent optimisation', None),        # spelling variant -> model decides
     ('Gradient descent', None),                           # partial -> model decides
     ('not gradient descent optimization', None),          # negation -> model decides
+    ('gradient descent optimization increases error', None),  # extra claim needs semantic review
     ('gradient descent optimization ' + 'banana apple cherry kiwi mango pear plum fig lime date grape melon peach', None),
 ])
 def test_exact_recall_is_graded_without_a_model_call_only_when_unambiguous(response, expected):

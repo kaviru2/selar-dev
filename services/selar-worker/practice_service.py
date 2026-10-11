@@ -2,7 +2,7 @@
 import asyncio
 import json
 GENERATION_BUDGET_SECONDS = 40  # below Go server WriteTimeout=60s and Modal=120s
-from practice import Unavailable, digest, exact_recall_feedback, generate_item, validated_feedback
+from practice import VERSION, Unavailable, digest, exact_recall_feedback, generate_item, validated_feedback
 from practice_schedule import next_interval, streak
 
 async def progress(conn, owner):
@@ -83,7 +83,7 @@ LIVE = """FROM practice_items p JOIN documents d ON d.id=p.document_id AND d.use
  WHERE p.user_id=$1 AND d.status='ready' AND d.content_hash=p.document_hash
  AND encode(sha256(convert_to(c.content,'UTF8')),'hex')=p.chunk_hash
  AND c.locator=p.payload->'locator' AND c.locator<>'{}'::jsonb
- AND position(p.payload->>'quote' in c.content)>0"""
+ AND position(p.payload->>'quote' in c.content)>0""" + f" AND p.payload->>'version'='{VERSION}'"
 
 async def items(conn, owner, document):
     rows = await conn.fetch("SELECT p.id,p.document_id,p.payload " + LIVE + ' AND p.document_id=$2 ORDER BY p.created_at,p.id', owner, document)
@@ -106,14 +106,25 @@ async def generate(conn, owner, document, model):
         if not sources:
             return {'status': 'unavailable', 'message': 'No located source passages; retry after ingestion', 'items': []}
         try:
-            generated = await asyncio.wait_for(asyncio.gather(*(generate_item(dict(source), model) for source in sources)), timeout=GENERATION_BUDGET_SECONDS)
+            drafts = await asyncio.wait_for(asyncio.gather(*(generate_item(dict(source), model) for source in sources), return_exceptions=True), timeout=GENERATION_BUDGET_SECONDS)
+            # Do not pad a fixed quota or discard valid items because a different
+            # source is unsuitable. A whole-request timeout still publishes none.
+            generated = [item for item in drafts if isinstance(item, dict)]
         except Exception:
-            return {'status': 'unavailable', 'message': 'AI generation or separate grounding check unavailable/rejected; retry', 'items': []}
+            return {'status': 'unavailable', 'message': 'Practice could not be prepared. You can continue reading.', 'items': []}
+        if not generated:
+            return {'status': 'unavailable', 'message': 'We could not prepare supported practice questions from these passages. You can continue reading.', 'items': []}
+        # The schema allows one row per source snapshot/chunk. Only replace
+        # never-attempted, unscheduled retired payloads; preserve all history.
+        # Attempted retired rows stay hidden, even if that leaves fewer items.
         for item in generated:
             await conn.execute("""INSERT INTO practice_items(user_id,document_id,chunk_id,document_hash,chunk_hash,payload)
                 VALUES($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(user_id,document_id,document_hash,chunk_id)
-                DO NOTHING""",
+                DO UPDATE SET payload=EXCLUDED.payload,chunk_hash=EXCLUDED.chunk_hash
+                WHERE practice_items.payload->>'version' IS DISTINCT FROM EXCLUDED.payload->>'version'
+                AND NOT EXISTS(SELECT 1 FROM practice_attempts a WHERE a.item_id=practice_items.id)
+                AND NOT EXISTS(SELECT 1 FROM practice_schedule s WHERE s.item_id=practice_items.id)""",
                 owner, document, item['chunk_id'], doc['content_hash'], item['chunk_hash'], json.dumps(item))
         published = await items(conn, owner, document)
         return {'status': 'ready' if published else 'unavailable', 'items': published,
-                'message': '' if published else 'Source extraction changed; re-ingest before generating new practice.'}
+                'message': '' if published else 'Current practice could not be saved. Older attempts are kept unchanged. You can continue reading.'}

@@ -9,9 +9,9 @@ import json
 import math
 import re
 
-VERSION = 'practice-grounding-v2'
+VERSION = 'practice-meaningful-v3'
 SUPPORT_CHECK = 'deterministic-quote-support-v1'
-EXACT_RECALL = 'deterministic-exact-recall-v1'
+EXACT_RECALL = 'deterministic-exact-recall-v2'
 
 NEGATIONS = {'not', 'no', 'never', 'none', 'nor', 'neither', 'cannot', 'without', 'nothing', 'nobody'}
 STOP_WORDS = {
@@ -74,18 +74,16 @@ def answer_supported_by_quote(answer, quote):
 def exact_recall_feedback(payload, response):
     """Full credit without a model call when recall restates the reference answer.
 
-    Returns None (defer to the model for free-recall grading) unless every key
-    term of the reference answer is present, negation matches, and the response
-    is not padded far beyond the answer (resists keyword stuffing).
+    Full credit is reserved for matching content-word sequences with matching
+    negation. Extra claims, partial answers and paraphrases need semantic review.
     """
-    terms = key_terms(payload['answer'])
-    said = key_terms(response)
-    if (not terms or not terms <= said or negated(response) != negated(payload['answer'])
-            or len(said) > max(3 * len(terms), len(terms) + 12)):
+    answer_words = [_stem(word) for word in _tokens(payload['answer'])]
+    response_words = [_stem(word) for word in _tokens(response)]
+    if not answer_words or answer_words != response_words:
         return None
     return {'score': 1, 'confident': True, '_model': EXACT_RECALL,
-            'feedback': 'Your recall contains every key term of the reference answer. '
-                        'Compare it with the source quote below.'}
+            'feedback': 'Your answer matches the reference wording. '
+                        'Compare it with the source below.'}
 
 
 async def generate_item(source, model):
@@ -99,6 +97,23 @@ async def generate_item(source, model):
         raise Unavailable('No exact source witness; retry practice')
     if not answer_supported_by_quote(draft['answer'], quote):
         raise Unavailable('Reference answer is not supported by the exact source quote')
+    # Conservative surface gates, not a semantic quality certificate. The model
+    # selects the central idea; these catch common low-value or unclear drafts.
+    question = draft['question'].strip()
+    weak_target = (
+        r'\bwho\s+(?:authored|wrote|published)\b|'
+        r'\b(?:what|which)\s+(?:year|date)\b.*\b(?:book|paper|publish|publication|edition)\b|'
+        r'\b(?:what|which)\s+(?:author|citation|reference)\b|'
+        r'\b(?:name|list|identify)\b.*\b(?:authors?|citations?|references?)\b|'
+        r'\b(?:what|which|in which)\s+(?:areas|domains|benchmarks)\b.*\b(?:improv|perform|achiev)|'
+        r'\b(?:sources?|names?|items?)\s+(?:mentioned|listed|cited)\b|'
+        r'\baccording to (?:the )?(?:passage|text)\b|'
+        r'\b(?:this approach|this method|it)\b(?=\s*\?)'
+    )
+    if (len(question) > 350 or question.count('?') != 1
+            or not question.endswith('?') or re.search(weak_target, question, re.I)
+            or key_terms(draft['answer']) <= key_terms(question)):
+        raise Unavailable('No clear, meaningful learning target; skip this practice item')
     return {**{k: draft[k][:8000] for k in ('question', 'answer', 'quote')},
             'chunk_id': str(source['id']), 'chunk_hash': digest(source['content']),
             'locator': json.loads(source['locator']) if isinstance(source['locator'], str) else source['locator'],

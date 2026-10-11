@@ -45,6 +45,24 @@ describe("practice cache", () => {
     expect(peekPractice("bob", "daily")).toBeUndefined();
   });
 
+  it("does not let an invalidated pending read restore stale practice", async () => {
+    let resolveOld!: (v: number) => void;
+    let resolveNew!: (v: number) => void;
+    const old = loadPractice("alice", "daily", () => new Promise<number>(r => { resolveOld = r; }));
+    clearPracticeCache("alice");
+    const fresh = loadPractice("alice", "daily", () => new Promise<number>(r => { resolveNew = r; }));
+    resolveOld(1);
+    await old;
+    expect(peekPractice("alice", "daily")).toBeUndefined();
+    const duplicateFetcher = vi.fn(async () => 3);
+    const duplicate = loadPractice("alice", "daily", duplicateFetcher);
+    expect(duplicateFetcher).not.toHaveBeenCalled();
+    resolveNew(2);
+    expect(await fresh).toBe(2);
+    expect(await duplicate).toBe(2);
+    expect(peekPractice("alice", "daily")).toBe(2);
+  });
+
   it("does not cache failures", async () => {
     await expect(loadPractice("alice", "daily", async () => { throw new Error("down"); })).rejects.toThrow("down");
     expect(peekPractice("alice", "daily")).toBeUndefined();

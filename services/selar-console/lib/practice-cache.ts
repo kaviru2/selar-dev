@@ -45,10 +45,12 @@ export function loadPractice<T>(userId: string | null | undefined, name: string,
   if (pending) return pending as Promise<T>;
   const request = fetcher()
     .then((value) => {
-      entries.set(key, { value, at: Date.now() });
+      // A cleared request may still resolve after an attempt/logout. Only the
+      // currently registered request can repopulate this cache entry.
+      if (inflight.get(key) === request) entries.set(key, { value, at: Date.now() });
       return value;
     })
-    .finally(() => inflight.delete(key));
+    .finally(() => { if (inflight.get(key) === request) inflight.delete(key); });
   inflight.set(key, request);
   return request;
 }
