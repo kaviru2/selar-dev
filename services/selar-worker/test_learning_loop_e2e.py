@@ -61,11 +61,10 @@ def test_upload_warmup_reading_check_day_n_review_progress_and_private_boundarie
     try:return await conn.fetchval('SELECT count(*) FROM reading_sessions WHERE user_id=$1',owner['user']['id'])
     finally:await conn.close()
    assert database_call(session_count)==0, 'warm-up must not start formal reading anchors'
-   page.get_by_role('textbox',name='Your recall').fill('Gradient descent optimization')
-   page.get_by_role('button',name='Check my recall').click()
-   page.get_by_text('Reference answer:',exact=False).wait_for(timeout=20000)
-   expect(page.get_by_role('blockquote')).to_have_text(TEXT)
-   page.get_by_role('button',name='Continue reading',exact=True).click()
+   expect(page.get_by_role('textbox',name='What you already know')).to_be_visible()
+   assert page.get_by_role('textbox',name='Your recall').count()==0
+   assert page.get_by_text('Reference answer:',exact=False).count()==0
+   page.get_by_role('button',name="I don't know yet",exact=True).click()
    page.locator('.textLayer').get_by_text(TEXT).wait_for(timeout=20000)
    assert database_call(session_count)==1
    prompt=page.get_by_role('region',name='Connection reflection').first
@@ -81,7 +80,7 @@ def test_upload_warmup_reading_check_day_n_review_progress_and_private_boundarie
    assert f"candidate:{link['id']}" not in graph_ids
    assert {f"candidate:{item['id']}" for item in links[1:]} <= graph_ids
    page.get_by_role('button',name='End-reading check',exact=True).click()
-   page.get_by_role('textbox',name='Your recall').fill('Gradient descent optimization reduces error')
+   page.get_by_role('textbox',name='Your recall').fill('Gradient descent optimization')
    page.get_by_role('button',name='Check my recall').click();page.get_by_text('Reference answer:',exact=False).wait_for(timeout=20000)
    page.goto(f'{console}/review');page.get_by_text('Nothing due.',exact=False).wait_for(timeout=20000)
    async def day_n():
@@ -125,11 +124,11 @@ def test_upload_warmup_reading_check_day_n_review_progress_and_private_boundarie
     database_call(unlock_fixture)
    browser.close()
   report=_request(client,'POST',f'{api}/api/practice',token,json={'action':'progress'})
-  assert report['warmup']==1 and report['reading_check']==1 and report['delayed_unassisted']==1 and report['streak']==1
+  assert report['warmup']==0 and report['reading_check']==1 and report['delayed_unassisted']==1 and report['streak']==1
   async def persisted():
    conn=await asyncpg.connect(os.environ['TEST_DATABASE_URL'])
    try:
-    assert await conn.fetchval('SELECT count(*) FROM practice_attempts WHERE user_id=$1',owner['user']['id'])==3
+    assert await conn.fetchval('SELECT count(*) FROM practice_attempts WHERE user_id=$1',owner['user']['id'])==2
     assert await conn.fetchval('SELECT count(*) FROM quiz_attempts WHERE user_id=$1',owner['user']['id'])==0
     assert await conn.fetchval('SELECT count(*) FROM learner_concept_state WHERE user_id=$1 AND success_count>0',owner['user']['id'])==0
     await conn.execute("UPDATE documents SET content_hash='stale-loop-fixture' WHERE id=$1",doc)

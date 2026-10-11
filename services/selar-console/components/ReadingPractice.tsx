@@ -25,7 +25,7 @@ export function PracticeCard({item,phase,onDone}:{item:PracticeItem;phase:'warmu
   {!result ? <><label className="practice-field">Your recall<textarea aria-label="Your recall" value={response} onChange={e=>setResponse(e.target.value)} disabled={busy}/></label>
    <label className="practice-check"><input type="checkbox" checked={exposed} onChange={e=>setExposed(e.target.checked)} disabled={phase==='reading_check'||busy}/> I used the source or a hint</label>
    <div className="practice-actions"><button type="button" className={buttonClass({variant:'primary',size:'sm'})} onClick={submit} disabled={busy||!response.trim()}>{busy?'Checking…':'Check my recall'}</button></div></> : <div role="status" className="practice-result">
-    <strong>{result.feedback?.provisional?'Provisional / unscored AI feedback':'AI practice feedback'}</strong>
+    <strong>{result.feedback?.provisional?'AI feedback · not scored':'AI practice feedback'}</strong>
     <p>{result.feedback?.feedback}</p><p>Reference answer: {result.answer}</p>
     <blockquote>{result.quote}</blockquote><small>Source locator: {JSON.stringify(result.locator)}. A source match and AI feedback do not establish mastery.</small>
    </div>}
@@ -35,6 +35,7 @@ export function PracticeCard({item,phase,onDone}:{item:PracticeItem;phase:'warmu
 
 export function ReadingPractice({documentId,children,onReadingChange}:{documentId:string;children:ReactNode;onReadingChange?:(visible:boolean)=>void}) {
  const [stage,setStage]=useState<'warmup'|'reading'|'check'>('warmup');
+ const [priorKnowledge,setPriorKnowledge]=useState('');
  useEffect(()=>{onReadingChange?.(Boolean(documentId)&&stage==='reading');return()=>onReadingChange?.(false);},[documentId,stage,onReadingChange]);
  const [items,setItems]=useState<PracticeItem[]>([]);const [message,setMessage]=useState('Loading practice…');
  async function load(){
@@ -42,16 +43,34 @@ export function ReadingPractice({documentId,children,onReadingChange}:{documentI
   try {const value=await practiceRPC({action:'generate',document_id:documentId});setItems(value.items||[]);setMessage(value.message||(!value.items?.length?'Practice unavailable; retry after ingestion.':''));}
   catch{setMessage('Practice unavailable; retry. You can continue reading.');}
  }
- useEffect(()=>{if(documentId) void load(); /* keyed by document in reader */},[documentId]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{
+  if(!documentId)return;
+  let active=true;
+  practiceRPC({action:'generate',document_id:documentId}).then(value=>{
+   if(!active)return;
+   setItems(value.items||[]);
+   setMessage(value.message||(!value.items?.length?'Practice unavailable; retry after ingestion.':''));
+  }).catch(()=>{if(active)setMessage('Practice unavailable; retry. You can continue reading.');});
+  return()=>{active=false;};
+ },[documentId]);
  if(!documentId)return <>{children}</>;
  if(stage==='reading')return <><div className="practice-bar"><button type="button" className={buttonClass({size:'sm'})} onClick={()=>setStage('check')}>End-reading check</button> <Link className="practice-link" href="/review">Daily review</Link></div>{children}</>;
  return <main className="practice-page" aria-label="Reading practice"><div className="practice-inner">
   <span className="ui-eyebrow">Reading practice</span>
   <h2 className="practice-title">{stage==='warmup'?'Before reading':'End-reading check'}</h2>
-  <p className="practice-lede">{stage==='warmup'?'Try recalling what you already know before opening the source. Optional; you can skip.':'Close the reading and recall the main ideas. This immediate, source-exposed check is not delayed retention.'}</p>
-  {message&&<p role="status" className="practice-status">{message}</p>}
-  {items.map(item=><PracticeCard key={`${stage}:${item.id}`} item={item} phase={stage==='warmup'?'warmup':'reading_check'}/>)}
-  <div className="practice-actions">{!items.length&&<button type="button" className={buttonClass({size:'sm'})} onClick={load}>Retry practice</button>}
+  <p className="practice-lede">{stage==='warmup'?'Optional preparation, not a test. You do not need to know the reading yet. These notes stay on this screen and are not saved or scored.':'Put the reading aside and try to recall the main ideas. This immediate practice is not a delayed retention test.'}</p>
+  {stage==='warmup' ? <section className="ui-card practice-card" aria-label="Prior knowledge">
+   <label className="practice-field">What, if anything, do you already know about this reading&apos;s topic?
+    <textarea aria-label="What you already know" value={priorKnowledge} onChange={e=>setPriorKnowledge(e.target.value)} placeholder="A brief note is enough. You can leave this blank."/>
+   </label>
+   <div className="practice-actions"><button type="button" className={buttonClass({size:'sm'})} onClick={()=>setStage('reading')}>I don&apos;t know yet</button></div>
+  </section> : <>
+   <p className="practice-lede">Optional AI-generated practice, not a study test.</p>
+   {message&&<p role="status" className="practice-status">{message}</p>}
+   {items.map(item=><PracticeCard key={`check:${item.id}`} item={item} phase="reading_check"/>)}
+   {!items.length&&<button type="button" className={buttonClass({size:'sm'})} onClick={load}>Retry practice</button>}
+  </>}
+  <div className="practice-actions">
   <button type="button" className={buttonClass({variant:'primary',size:'sm'})} onClick={()=>setStage('reading')}>Continue reading</button> <Link className="practice-link" href="/review">Daily review</Link></div>
  </div></main>;
 }
